@@ -1,6 +1,6 @@
 ---
 name: Genpic 生图应用设计
-overview: 在「服务端统一持钥、平台 baseUrl + 平台 API Key」前提下，Go 后端、OpenAPI 契约、NewAPI 聊天应用集成、三模型适配、Token/作品/社区与付费等可落地方案；含工程规范（高内聚/低耦合、公共封装、文档与代码注释要求）；原「Apidoc」指 apidoc-php（PHP 专用），Go 侧以 OpenAPI 替代，细节从简。
+overview: 在「服务端统一持钥、平台 baseUrl + 平台 API Key」前提下，采用双轨策略：优先开发最简生图版本（base + apiKey + model-id 即可生成图片，代码/依赖/文件尽量少），同时保留完整系统演进路线；Go 后端、OpenAPI 契约、NewAPI 聊天应用集成、三模型适配、Token/作品/社区与付费等可逐步扩展；含工程规范（高内聚/低耦合、公共封装、文档与代码注释要求）。
 todos:
   - id: contract-table
     content: 与 NewAPI 运营对齐：三张模型在聚合站的 model 名、路径、超时、计费字段，输出 machine-readable 契约表（YAML/JSON）作为适配器配置源
@@ -25,6 +25,9 @@ todos:
     status: pending
   - id: engineering-standards
     content: 在 M0 落地公共封装骨架（pkg/httpclient、provider、objstore、idempotency、ratelimit、billing、auth、errors、logger）、CI lint、PR 模板与 ADR 目录
+    status: pending
+  - id: mvp-lite
+    content: 优先开发最简生图版本：单 Go 服务、最少依赖、最少文件；用户只填 base URL、API Key、model-id、prompt 即可生图
     status: pending
 isProject: false
 ---
@@ -67,6 +70,31 @@ isProject: false
 - **禁止**在公开接口中接受「用户自带上游 NewAPI 用户密钥」作为默认路径（若未来要 B/C 模式，另开管理端能力，不纳入首期）。
 - 多域名/CDN 场景：若存在多个对外 Host，在配置中维护**允许的 Host 列表**（便于日志与风控对齐「官方入口」）；**控制台「一键集成」与文档中的 `{address}` 仅允许从该列表选取或自动生成**，避免用户复制到非官方镜像域名。
 - **验收口径（baseUrl 限制）**：任何成功鉴权的 API 调用，其请求 Host 必须落在「官方对外域名」配置内；响应体与错误信息中**不得**回显可拼接为直连上游的完整 Base URL 或渠道密钥（防「借用你们 Key 打别家 Host」的误配与信息泄露）。
+
+### 2.2 双轨版本策略：MVP Lite 优先，完整系统并存
+
+为降低首期复杂度，产品与技术采用**双轨版本**：
+
+| 版本 | 目标 | 范围 | 代码策略 |
+|------|------|------|----------|
+| **MVP Lite（优先开发）** | 最快验证“用户填 base + apiKey + model-id + prompt 即可生图” | 单模型/多模型透传、生图调用、返回图片 URL 或 base64、基础错误提示 | **单 Go 服务、最少依赖、最少文件、最少语言种类** |
+| **Full Platform（完整系统）** | 演进到作品库、社区、付费、计费、权限、审核、多 provider 能力 | 本文 §4–§16 的完整平台能力 | 按模块化、公共封装、队列、对象存储、账本等逐步扩展 |
+
+**融合原则**：
+
+- MVP Lite **不是废弃原型**，而是完整系统的第一阶段：保留与完整系统一致的核心概念（`base_url`、`api_key`、`model_id`、`prompt`、统一响应结构、错误码）。
+- MVP Lite 的实现可以先**不引入**用户系统、数据库、队列、对象存储、社区、付费、OpenAPI 生成链；但接口命名与配置结构要为后续迁移留口。
+- 完整系统上线后，MVP Lite 可继续作为“极简 API 模式 / 调试模式 / 私有部署轻量版”存在，不与完整系统互斥。
+- 任何在 MVP Lite 中写死的 provider 特性，必须集中在一个适配函数/文件中，避免后续扩展时散落重构。
+
+**MVP Lite 最小用户路径**：
+
+1. 用户在页面或配置文件中填写：`base_url`、`api_key`、`model_id`。
+2. 用户输入 `prompt`，点击生成。
+3. 后端按 OpenAI 兼容 `POST {base_url}/v1/images/generations` 或配置的等价路径转发。
+4. 后端返回图片 URL/base64；前端直接展示。
+
+**MVP Lite 暂不做**：注册登录、余额、支付、社区、作品长期保管、复杂队列、后台管理、NSFW 完整审核、跨 provider 能力矩阵。上述能力进入 Full Platform。
 
 ## 3. 技术栈选型：后端以 Golang 为主（已倾向）
 
@@ -207,7 +235,8 @@ flowchart LR
 
 ## 11. 交付里程碑（建议）
 
-1. **M0**：仓库脚手架 + OpenAPI CI + `GET /v1/models` + Key 鉴权 + 限流。
+0. **MVP Lite**：单 Go 服务 + 极简 Web/API；用户填写 `base_url`、`api_key`、`model_id`、`prompt` 即可生图；不做数据库、队列、支付、社区。
+1. **M0**：在 MVP Lite 验证通过后，整理仓库脚手架 + OpenAPI CI + `GET /v1/models` + Key 鉴权 + 限流。
 2. **M1**：`images/generations` → gpt-image-2 全链路（异步 + 存储 + 任务查询）。
 3. **M2**：Gemini Banana 子页 + 适配器 +（可选）`chat/completions` 窄约定。
 4. **M3**：Wan2.7 子页（文生图 + 基础多图）+ 适配器。
