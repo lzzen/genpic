@@ -70,23 +70,29 @@ func main() {
 	// #endregion
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// #region agent log
-		agentDebugLog("run1", "H3", "cmd/mvplite/main.go:root-handler", "root handler entered", map[string]any{
-			"method": r.Method,
-			"path":   r.URL.Path,
-		})
-		// #endregion
-		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
-	}))
 	mux.HandleFunc("POST /api/generate", handleGenerate)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
+	// Root static: pattern "GET /" did not match GET / in practice (404, handler never ran — see debug log H5 vs missing H3).
+	// Use "/" fallback (registered after specific routes); only GET is allowed here, FileServer serves web/.
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// #region agent log
+		agentDebugLog("post-fix", "H3", "cmd/mvplite/main.go:root-handler", "slash handler entered", map[string]any{
+			"method": r.Method,
+			"path":   r.URL.Path,
+		})
+		// #endregion
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
+	}))
 	// #region agent log
 	agentDebugLog("run1", "H4", "cmd/mvplite/main.go:main", "routes-registered", map[string]any{
-		"rootPattern":   "GET /",
+		"rootPattern":   "/ (GET only inside handler)",
 		"healthPattern": "GET /health",
 		"genPattern":    "POST /api/generate",
 	})
