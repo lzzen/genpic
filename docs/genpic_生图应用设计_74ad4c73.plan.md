@@ -1,6 +1,6 @@
 ---
 name: Genpic 生图应用设计
-overview: 在「服务端统一持钥、用户仅使用平台 baseUrl + 平台发放的 API Key」前提下，输出可落地的架构与模块设计；后端倾向 Go；含 OpenAPI/文档、NewAPI 聊天应用集成、三模型适配、Token/记录/作品保管、社区与付费权限、以及 Go 学习路径建议。
+overview: 在「服务端统一持钥、平台 baseUrl + 平台 API Key」前提下，Go 后端、OpenAPI 契约、NewAPI 聊天应用集成、三模型适配、Token/作品/社区与付费等可落地方案；原「Apidoc」指 apidoc-php（PHP 专用），Go 侧以 OpenAPI 替代，细节从简。
 todos:
   - id: contract-table
     content: 与 NewAPI 运营对齐：三张模型在聚合站的 model 名、路径、超时、计费字段，输出 machine-readable 契约表（YAML/JSON）作为适配器配置源
@@ -141,15 +141,11 @@ flowchart LR
 
 **首期推荐**：OpenAI 兼容层专注 **GPT Image**（及可选 Chat 通道给 Gemini）；**Wan2.7 以平台原生 REST + Web 表单为主**，避免伪兼容误导生态客户端。
 
-### 5.3 Apidoc / 接口文档
+### 5.3 接口文档（关于「Apidoc」的澄清）
 
-「Apidoc」在业界常混指 **OpenAPI(Swagger)** 或 **apidocjs**。为同时满足「自动生成」与「可被网关/客户端导入」，建议：
+需求中的 **Apidoc** 指 Gitee 项目 [apidoc-php](https://gitee.com/hg-code/apidoc-php)（基于 PHP 注解/注释生成文档），**仅适用于 PHP 技术栈**。
 
-- **单一事实来源**：OpenAPI **3.0/3.1** 规范。
-- **本期主栈为 Go**：`swaggo/swag` 注释生成，或 **先手写 `openapi.yaml` + `oapi-codegen` 生成服务端接口类型**（契约更稳，适合不熟 Go 时靠生成代码防漂移）。
-- **若存在少量 PHP 服务**：可用 `hyperf/swagger` 作为旁路，但**不以 PHP 为对外 API 主实现**，避免双源契约。
-
-**额外**：静态发布 `openapi.json` + Scalar/Redoc UI；管理后台可开关「启用 API 文档入口」（与 NewAPI 文档里「启用 API 文档」理念一致）。
+**本期后端已倾向 Go**，故 **不将 apidoc-php 纳入主方案**；接口文档以 **OpenAPI 3.x**（`openapi.yaml` / `openapi.json`）为单一契约，配合 `swaggo/swag` 或 `oapi-codegen` + Scalar/Redoc 等静态 UI 即可，细节从简、实现阶段再定。
 
 ## 6. 领域模型与数据表（建议）
 
