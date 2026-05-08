@@ -59,3 +59,20 @@ func TestBuildGenerationsURL(t *testing.T) {
 		})
 	}
 }
+
+func TestUpstreamModelForOpenAIImages(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"openai/gpt-image-2", "gpt-image-2"},
+		{"gpt-image-2", "gpt-image-2"},
+		{"gemini/gemini-2.5-flash-image", "gemini-2.5-flash-image"},
+		{"wan/wan2.7-image", "wan2.7-image"},
+		{"  openai/gpt-image-2  ", "gpt-image-2"},
+	}
+	for _, tc := range cases {
+		if got := upstreamModelForOpenAIImages(tc.in); got != tc.want {
+			t.Errorf("upstreamModelForOpenAIImages(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

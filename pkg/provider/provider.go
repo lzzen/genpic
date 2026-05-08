@@ -170,13 +170,15 @@ func AllModels() []ModelInfo {
 }
 
 // ProviderForModel returns the registered Provider that owns the given model ID,
-// searching by ModelInfo.ID. Returns (nil, false) when no match is found.
+// matching either ModelInfo.ID (catalog id, e.g. openai/gpt-image-2) or
+// ModelInfo.UpstreamModel (wire id, e.g. gpt-image-2) so OpenAI-compatible
+// clients can send the upstream name directly.
 func ProviderForModel(modelID string) (Provider, ModelInfo, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 	for _, p := range registry {
 		for _, m := range p.Models() {
-			if m.ID == modelID {
+			if m.ID == modelID || m.UpstreamModel == modelID {
 				return p, m, true
 			}
 		}

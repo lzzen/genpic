@@ -237,11 +237,24 @@ func buildGenerationsURL(baseURL string) (string, error) {
 	return u.String(), nil
 }
 
+// upstreamModelForOpenAIImages strips the internal catalog prefix (openai/,
+// gemini/, wan/) from model IDs sent by the web UI so the value matches what
+// POST /v1/images/generations expects (e.g. gpt-image-2, not openai/gpt-image-2).
+func upstreamModelForOpenAIImages(model string) string {
+	model = strings.TrimSpace(model)
+	for _, prefix := range []string{"openai/", "gemini/", "wan/"} {
+		if strings.HasPrefix(model, prefix) {
+			return strings.TrimPrefix(model, prefix)
+		}
+	}
+	return model
+}
+
 // buildUpstreamBody serialises the generation parameters into the OpenAI
 // images/generations request body, omitting zero-value optional fields.
 func buildUpstreamBody(req *GenerateRequest) ([]byte, error) {
 	body := map[string]any{
-		"model":  req.Model,
+		"model":  upstreamModelForOpenAIImages(req.Model),
 		"prompt": req.Prompt,
 	}
 	if req.N > 0 {
