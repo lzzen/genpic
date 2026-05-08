@@ -4,7 +4,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,15 +16,14 @@ import (
 	"os"
 	"strings"
 	"time"
-)
 
-//go:embed web/*
-var webFS embed.FS
+	"genpic"
+)
 
 const maxBodyBytes = 1 << 20 // 1 MiB
 
 func main() {
-	webRoot, err := fs.Sub(webFS, "web")
+	webRoot, err := fs.Sub(genpic.WebStatic, "web")
 	if err != nil {
 		log.Fatal(err)
 	}

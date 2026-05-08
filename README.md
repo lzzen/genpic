@@ -1,6 +1,6 @@
 # Genpic
 
-MVP Lite：单 Go 服务 + 原生 HTML，通过 OpenAI 兼容 `POST /v1/images/generations` 调用上游（如 NewAPI）生图。
+MVP Lite：单 Go 服务 + 原生 HTML（仓库根目录 `web/`，由根包 [`static_embed.go`](static_embed.go) 的 `//go:embed web/*` 嵌入二进制），通过 OpenAI 兼容 `POST /v1/images/generations` 调用上游（如 NewAPI）生图。
 
 ## 运行
 
