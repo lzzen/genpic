@@ -1,0 +1,502 @@
+openapi: "3.1.0"
+
+info:
+  title: Genpic Platform API
+  version: "0.1.0"
+  description: |
+    OpenAI-compatible image generation API for the Genpic platform.
+
+    **Authentication**: All endpoints require `Authorization: Bearer <platform_api_key>`.
+    The API key is issued by the platform; the upstream provider keys are held
+    server-side and are never exposed to callers.
+
+    **Base URL**: `{address}/v1` where `{address}` is the official platform origin
+    (e.g. `https://imgapi.example.com`). Third-party clients using NewAPI
+    "chat application integration" should set `{address}` to this value exactly.
+  contact:
+    name: Genpic Engineering
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://imgapi.example.com/v1
+    description: Production (replace with your actual domain)
+  - url: http://localhost:8080/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: models
+    description: List available image generation models
+  - name: images
+    description: Image generation (OpenAI-compatible)
+  - name: jobs
+    description: Async job status and results
+  - name: community
+    description: Public artwork discovery (future M5)
+  - name: health
+    description: Service health and liveness
+
+paths:
+
+  # ── Health ─────────────────────────────────────
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # ── Models ─────────────────────────────────────
+
+  /models:
+    get:
+      operationId: listModels
+      tags: [models]
+      summary: List available image-generation models
+      description: |
+        Returns the subset of models available to the authenticated API key.
+        Response shape mirrors OpenAI `/v1/models` for compatibility with
+        OpenAI-compatible clients.
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Images ─────────────────────────────────────
+
+  /images/generations:
+    post:
+      operationId: createImageGeneration
+      tags: [images]
+      summary: Generate images from a text prompt
+      description: |
+        OpenAI-compatible image generation endpoint.
+
+        **Model routing**:
+        - `gpt-image-2` → OpenAI Images API shape
+        - `gemini-*` → single-turn chat/completions shape (image in assistant message)
+        - `wan2.7-*` → native DashScope shape (translated server-side)
+
+        The response is always normalized to the `ImageGenerationResponse` shape
+        regardless of which upstream was used. This makes the endpoint predictable
+        for OpenAI-compatible clients even when routing to non-OpenAI providers.
+
+        **Async vs sync**: In MVP Lite all calls are synchronous (wait for result).
+        In Full Platform, calls are dispatched to a job queue and the response
+        contains a `job_id`; poll `GET /jobs/{id}` for the result.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageGenerationRequest"
+            examples:
+              gpt_image:
+                summary: GPT Image 2 — basic text-to-image
+                value:
+                  model: gpt-image-2
+                  prompt: "A serene mountain lake at golden hour, photorealistic"
+                  n: 1
+                  size: "1024x1024"
+                  quality: high
+                  response_format: url
+              gemini_flash:
+                summary: Gemini 2.5 Flash — portrait
+                value:
+                  model: gemini-2.5-flash-image
+                  prompt: "Studio portrait of a fox wearing a graduation cap"
+                  n: 1
+                  response_format: b64_json
+              wan_landscape:
+                summary: Wan 2.7 — Chinese ink painting
+                value:
+                  model: wan2.7-image
+                  prompt: "水墨山水画，意境深远，云雾缭绕"
+                  n: 1
+                  size: "1024*1024"
+      responses:
+        "200":
+          description: Images generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageGenerationResponse"
+        "202":
+          description: |
+            Job accepted and queued (Full Platform async mode).
+            Poll `GET /jobs/{id}` for the result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+  # ── Jobs ───────────────────────────────────────
+
+  /jobs/{job_id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get generation job status and result
+      description: |
+        Poll this endpoint after receiving a `202 Accepted` from
+        `POST /images/generations`. Returns the current job state and,
+        when `status == succeeded`, the generated image URLs/data.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: ulid
+          description: Job ID returned in the `202` response
+      responses:
+        "200":
+          description: Job record (any status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List recent generation jobs for the authenticated key
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor (opaque, from previous response)
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/JobStatus"
+      responses:
+        "200":
+          description: Paginated job list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Platform-issued API key (never the upstream provider key)
+
+  schemas:
+
+    # ── Health ──
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    # ── Models ──
+
+    ModelObject:
+      type: object
+      required: [id, object, created, owned_by]
+      properties:
+        id:
+          type: string
+          example: gpt-image-2
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          format: int64
+          description: Unix timestamp
+        owned_by:
+          type: string
+          example: genpic
+        capabilities:
+          type: array
+          items:
+            type: string
+          example: [text_to_image, response_format_url]
+
+    ModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelObject"
+
+    # ── Image generation ──
+
+    ImageGenerationRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          description: Model ID as listed in /models
+          example: gpt-image-2
+        prompt:
+          type: string
+          maxLength: 32000
+          description: Text description of the desired image
+        n:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 1
+          description: Number of images to generate
+        size:
+          type: string
+          description: |
+            Image size. Accepted values depend on the model:
+            - GPT Image: `1024x1024` `1536x1024` `1024x1536` `1792x1024` `1024x1792` `auto`
+            - Gemini: ignored (use `aspect_ratio`)
+            - Wan: `1024*1024` `720*1280` `1280*720` `1280*1280`
+          example: "1024x1024"
+        quality:
+          type: string
+          enum: [auto, low, medium, high]
+          default: auto
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          default: url
+        style:
+          type: string
+          enum: [vivid, natural]
+          description: "GPT Image only"
+        # Extended params for Gemini
+        aspect_ratio:
+          type: string
+          description: "Gemini only — e.g. `16:9`, `1:1`"
+        thinking_budget:
+          type: integer
+          description: "Gemini thinking-capable models only; 0 = disabled"
+        # Extended params for Wan
+        watermark:
+          type: boolean
+          description: "Wan only — always true per Aliyun TOS"
+        thinking_mode:
+          type: boolean
+          description: "Wan Pro only — slower but higher quality"
+        # Idempotency
+        idempotency_key:
+          type: string
+          maxLength: 64
+          description: |
+            Client-supplied idempotency key. If a successful response was
+            already recorded for this key within the dedup window (5 min),
+            the cached response is returned without calling the upstream again.
+
+    ImageData:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Signed URL to the generated image (valid for 1 hour)
+        b64_json:
+          type: string
+          description: Base64-encoded PNG/JPEG image data
+        revised_prompt:
+          type: string
+          description: Prompt as revised by the upstream model (when available)
+
+    ImageGenerationResponse:
+      type: object
+      required: [created, data]
+      properties:
+        created:
+          type: integer
+          format: int64
+          description: Unix timestamp of the request
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageData"
+        # Non-standard extension fields (clearly marked)
+        x_job_id:
+          type: string
+          description: |
+            [Non-standard] Job ID for async result retrieval. Present in Full
+            Platform mode; absent in MVP Lite synchronous mode.
+        x_provider:
+          type: string
+          description: |
+            [Non-standard] Upstream provider that served this request.
+            Values: openai | gemini | wan
+
+    JobAcceptedResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: ulid
+        status:
+          type: string
+          enum: [queued]
+        poll_url:
+          type: string
+          format: uri
+          description: Absolute URL to GET for status updates
+
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed]
+
+    JobRecord:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: ulid
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        model:
+          type: string
+        provider:
+          type: string
+          enum: [openai, gemini, wan]
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        result:
+          $ref: "#/components/schemas/ImageGenerationResponse"
+          description: Present only when status == succeeded
+        error:
+          $ref: "#/components/schemas/APIError"
+          description: Present only when status == failed
+
+    JobList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobRecord"
+        next_cursor:
+          type: string
+          description: Pass as `cursor` in next request; absent when no more pages
+
+    # ── Errors ──
+
+    APIError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, message]
+          properties:
+            type:
+              type: string
+              description: Machine-readable error category
+              example: invalid_request
+            code:
+              type: string
+              description: Optional fine-grained code
+              example: prompt_too_long
+            message:
+              type: string
+              description: Human-readable description
+              example: "prompt exceeds 32 000 character limit"
+
+  responses:
+    BadRequest:
+      description: Malformed request (missing fields, invalid JSON)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    UnprocessableEntity:
+      description: Request is syntactically valid but semantically rejected
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until the rate limit window resets
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    UpstreamError:
+      description: Upstream provider returned an error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"

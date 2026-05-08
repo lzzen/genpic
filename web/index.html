@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>视觉工厂 — Genpic</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0e1018;
+      --surface:   #181b27;
+      --surface2:  #20243a;
+      --border:    #2b3050;
+      --accent:    #7c6af7;
+      --accent2:   #4ea8de;
+      --accent3:   #f97316;
+      --accent-h:  #9a85ff;
+      --text:      #e8eaf6;
+      --muted:     #7a83a8;
+      --danger:    #f56565;
+      --success:   #48bb78;
+      --radius:    10px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .logo { font-size: 1.2rem; font-weight: 700; letter-spacing: -.5px; }
+    .logo span { color: var(--accent); }
+    .logo-sub { font-size: .72rem; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; letter-spacing: .5px; }
+
+    /* ── Layout ── */
+    .layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+    /* ── Nav sidebar ── */
+    nav {
+      width: 60px; flex-shrink: 0; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 8px;
+    }
+    .nav-btn {
+      width: 42px; height: 42px; border-radius: 10px; border: 1px solid transparent;
+      background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; color: var(--muted); transition: all .15s;
+      position: relative;
+    }
+    .nav-btn:hover { background: var(--surface2); color: var(--text); }
+    .nav-btn.active { background: var(--surface2); border-color: var(--border); color: var(--accent); }
+    .nav-btn .tooltip {
+      position: absolute; left: 52px; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); font-size: .75rem; padding: 4px 8px; border-radius: 6px;
+      white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .15s;
+      z-index: 100;
+    }
+    .nav-btn:hover .tooltip { opacity: 1; }
+
+    /* ── Config panel ── */
+    .config-panel {
+      width: 300px; flex-shrink: 0; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto; padding: 20px 16px; gap: 18px;
+    }
+
+    /* ── Model tabs ── */
+    .model-tabs {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .model-tab {
+      padding: 5px 10px; border-radius: 7px; font-size: .78rem; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
+      transition: all .15s;
+    }
+    .model-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(124,106,247,.12); }
+    .model-tab[data-provider="gemini"].active { border-color: var(--accent2); color: var(--accent2); background: rgba(78,168,222,.12); }
+    .model-tab[data-provider="wan"].active { border-color: var(--accent3); color: var(--accent3); background: rgba(249,115,22,.12); }
+
+    /* ── Form sections ── */
+    .section-title { font-size: .68rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; }
+    .field { margin-bottom: 12px; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: .85rem;
+      padding: 8px 11px; outline: none; font-family: var(--font);
+      transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+    select option { background: var(--surface2); }
+    textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .api-wrap { position: relative; }
+    .api-wrap input { padding-right: 36px; }
+    .eye { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--muted); cursor: pointer; font-size: .9rem; padding: 0; }
+    .eye:hover { color: var(--text); }
+
+    /* Model-specific param sections */
+    .param-section { display: none; }
+    .param-section.show { display: block; }
+
+    /* Toggle switch */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .toggle-label { font-size: .8rem; color: var(--muted); }
+    .toggle { position: relative; width: 34px; height: 18px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 18px; cursor: pointer; transition: .2s; }
+    .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+    .toggle-slider::after { content: ''; position: absolute; width: 12px; height: 12px; left: 2px; top: 50%; transform: translateY(-50%); background: var(--muted); border-radius: 50%; transition: .2s; }
+    .toggle input:checked + .toggle-slider::after { transform: translate(16px, -50%); background: #fff; }
+
+    /* Range input */
+    input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
+    .range-row { display: flex; align-items: center; gap: 8px; }
+    .range-val { font-size: .8rem; color: var(--muted); min-width: 28px; text-align: right; }
+
+    /* Generate button */
+    .btn-gen {
+      width: 100%; background: var(--accent); color: #fff; border: none;
+      border-radius: var(--radius); padding: 11px; font-size: .9rem; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background .15s, opacity .15s;
+    }
+    .btn-gen:hover:not(:disabled) { background: var(--accent-h); }
+    .btn-gen:disabled { opacity: .45; cursor: not-allowed; }
+    [data-active-provider="gemini"] .btn-gen { background: var(--accent2); }
+    [data-active-provider="gemini"] .btn-gen:hover:not(:disabled) { background: #6bbae8; }
+    [data-active-provider="wan"] .btn-gen { background: var(--accent3); }
+    [data-active-provider="wan"] .btn-gen:hover:not(:disabled) { background: #fb923c; }
+
+    .note { font-size: .72rem; color: var(--muted); line-height: 1.5; padding: 8px 10px; background: var(--surface2); border-radius: 7px; border: 1px solid var(--border); }
+
+    /* ── Gallery area ── */
+    .gallery-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .status-bar { padding: 10px 18px; font-size: .85rem; display: none; flex-shrink: 0; }
+    .status-bar.show { display: block; }
+    .status-bar.loading { background: var(--surface2); color: var(--muted); border-bottom: 1px solid var(--border); }
+    .status-bar.error { background: rgba(245,101,101,.1); color: var(--danger); border-bottom: 1px solid rgba(245,101,101,.25); }
+    .status-bar.success { background: rgba(72,187,120,.08); color: var(--success); border-bottom: 1px solid rgba(72,187,120,.2); }
+
+    .gallery { flex: 1; overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-content: start; }
+
+    .empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 80px 0; color: var(--muted); }
+    .empty .icon { font-size: 3rem; }
+    .empty p { font-size: .88rem; }
+
+    .img-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+      overflow: hidden; transition: transform .15s, box-shadow .15s;
+    }
+    .img-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+    .img-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: cover; background: var(--surface2); }
+    .img-card .meta { padding: 8px 13px; font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+    .img-card .meta a { color: var(--accent); text-decoration: none; }
+    .img-card .meta a:hover { text-decoration: underline; }
+    .img-card .provider-badge { display: inline-block; font-size: .65rem; padding: 1px 6px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); }
+    .img-card .provider-badge.openai { border-color: var(--accent); color: var(--accent); }
+    .img-card .provider-badge.gemini { border-color: var(--accent2); color: var(--accent2); }
+    .img-card .provider-badge.wan { border-color: var(--accent3); color: var(--accent3); }
+    .img-card .revised { padding: 0 13px 8px; font-size: .73rem; color: var(--muted); font-style: italic; line-height: 1.4; }
+
+    .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 900px) {
+      nav { display: none; }
+      .config-panel { width: 260px; }
+    }
+    @media (max-width: 640px) {
+      .layout { flex-direction: column; }
+      .config-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Gen<span>pic</span></div>
+  <div class="logo-sub">视觉工厂</div>
+</header>
+
+<div class="layout" id="app">
+
+  <!-- ── Icon nav ── -->
+  <nav>
+    <button class="nav-btn active" data-tab="generate" title="">
+      🎨<span class="tooltip">生成</span>
+    </button>
+    <button class="nav-btn" data-tab="history" title="">
+      🕑<span class="tooltip">历史</span>
+    </button>
+  </nav>
+
+  <!-- ── Config / form sidebar ── -->
+  <aside class="config-panel" id="sidebar">
+
+    <!-- Model selector -->
+    <div>
+      <div class="section-title">模型</div>
+      <div class="model-tabs" id="model-tabs">
+        <!-- GPT Image group -->
+        <div class="model-tab active" data-model="openai/gpt-image-2" data-provider="openai">GPT Image 2</div>
+        <!-- Gemini group -->
+        <div class="model-tab" data-model="gemini/gemini-2.5-flash-image" data-provider="gemini">Gemini 2.5 Flash</div>
+        <div class="model-tab" data-model="gemini/gemini-3.1-flash-image-preview" data-provider="gemini">Gemini 3.1</div>
+        <div class="model-tab" data-model="gemini/gemini-3-pro-image-preview" data-provider="gemini">Gemini 3 Pro</div>
+        <!-- Wan group -->
+        <div class="model-tab" data-model="wan/wan2.7-image" data-provider="wan">万相 2.7</div>
+        <div class="model-tab" data-model="wan/wan2.7-image-pro" data-provider="wan">万相 2.7 Pro</div>
+      </div>
+    </div>
+
+    <!-- Prompt -->
+    <div class="field">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" placeholder="描述你想要生成的图片…" rows="5"></textarea>
+    </div>
+
+    <!-- ── OpenAI params ── -->
+    <div class="param-section show" id="params-openai">
+      <div class="section-title">GPT Image 参数</div>
+      <div class="row-2">
+        <div class="field">
+          <label for="gpt-size">尺寸</label>
+          <select id="gpt-size">
+            <option value="">auto</option>
+            <option value="1024x1024">1024×1024</option>
+            <option value="1536x1024">1536×1024</option>
+            <option value="1024x1536">1024×1536</option>
+            <option value="1792x1024">1792×1024</option>
+            <option value="1024x1792">1024×1792</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="gpt-quality">Quality</label>
+          <select id="gpt-quality">
+            <option value="">auto</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="gpt-n">数量</label>
+          <select id="gpt-n">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="gpt-style">Style</label>
+          <select id="gpt-style">
+            <option value="">default</option>
+            <option value="vivid">vivid</option>
+            <option value="natural">natural</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="gpt-format">返回格式</label>
+        <select id="gpt-format">
+          <option value="url">url</option>
+          <option value="b64_json">b64_json</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ── Gemini params ── -->
+    <div class="param-section" id="params-gemini">
+      <div class="section-title">Gemini 参数</div>
+      <div class="row-2">
+        <div class="field">
+          <label for="gem-aspect">Aspect Ratio</label>
+          <select id="gem-aspect">
+            <option value="1:1">1:1</option>
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="4:3">4:3</option>
+            <option value="3:4">3:4</option>
+            <option value="3:2">3:2</option>
+            <option value="2:3">2:3</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="gem-n">数量</label>
+          <select id="gem-n">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" id="gem-thinking-field" style="display:none">
+        <label>Thinking Budget: <span id="gem-thinking-val">0</span></label>
+        <div class="range-row">
+          <input type="range" id="gem-thinking" min="0" max="8192" step="256" value="0" />
+          <span class="range-val" id="gem-thinking-display">off</span>
+        </div>
+      </div>
+      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。</div>
+    </div>
+
+    <!-- ── Wan params ── -->
+    <div class="param-section" id="params-wan">
+      <div class="section-title">通义万相参数</div>
+      <div class="row-2">
+        <div class="field">
+          <label for="wan-size">尺寸</label>
+          <select id="wan-size">
+            <option value="1024*1024">1024×1024</option>
+            <option value="720*1280">720×1280</option>
+            <option value="1280*720">1280×720</option>
+            <option value="1280*1280">1280×1280</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="wan-n">数量</label>
+          <select id="wan-n">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+      </div>
+      <div class="toggle-row" id="wan-thinking-row" style="display:none">
+        <span class="toggle-label">Thinking Mode（高质量，较慢）</span>
+        <label class="toggle"><input type="checkbox" id="wan-thinking"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="note">🔒 阿里云 TOS 要求水印必须开启。</div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--border);" />
+
+    <!-- API config (collapsed by default) -->
+    <details id="api-config">
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--muted);margin-bottom:10px;list-style:none;">
+        ⚙️ API 配置 <span style="float:right">▸</span>
+      </summary>
+      <div class="field" style="margin-top:10px">
+        <label for="base-url">Base URL</label>
+        <input id="base-url" type="url" placeholder="https://imgapi.example.com" />
+      </div>
+      <div class="field">
+        <label for="api-key">API Key</label>
+        <div class="api-wrap">
+          <input id="api-key" type="password" placeholder="sk-…" />
+          <button class="eye" id="eye-btn">👁</button>
+        </div>
+      </div>
+    </details>
+
+    <button class="btn-gen" id="btn-gen">
+      <span id="btn-text">生成图片</span>
+    </button>
+
+    <div class="note">配置（Base URL、模型参数）自动保存在本机 localStorage。API Key 仅本次会话使用，不持久化。</div>
+
+  </aside>
+
+  <!-- ── Gallery ── -->
+  <main class="gallery-area">
+    <div id="status-bar" class="status-bar"></div>
+    <div class="gallery" id="gallery">
+      <div class="empty" id="empty">
+        <div class="icon">🎨</div>
+        <p>选择模型并输入 Prompt，点击「生成图片」开始</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ── Active state ────────────────────────────────────────
+let activeModel = 'openai/gpt-image-2';
+let activeProvider = 'openai';
+
+function setActiveModel(modelId, provider) {
+  activeModel = modelId;
+  activeProvider = provider;
+
+  // Update tab highlights
+  document.querySelectorAll('.model-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.model === modelId);
+  });
+
+  // Show/hide param sections
+  ['openai', 'gemini', 'wan'].forEach(p => {
+    const el = $('params-' + p);
+    if (el) el.classList.toggle('show', p === provider);
+  });
+
+  // Show thinking field only for thinking-capable Gemini models
+  const thinkingCapable = ['gemini/gemini-3.1-flash-image-preview', 'gemini/gemini-3-pro-image-preview'];
+  const gemThinking = $('gem-thinking-field');
+  if (gemThinking) gemThinking.style.display = thinkingCapable.includes(modelId) ? 'block' : 'none';
+
+  // Show wan thinking mode only for pro
+  const wanThinking = $('wan-thinking-row');
+  if (wanThinking) wanThinking.style.display = modelId === 'wan/wan2.7-image-pro' ? 'flex' : 'none';
+
+  // Update button color via data attribute
+  $('app').dataset.activeProvider = provider;
+
+  save('active-model', modelId);
+  save('active-provider', provider);
+}
+
+// ── Persist helpers ─────────────────────────────────────
+function save(k, v) { try { localStorage.setItem('genpic:' + k, v); } catch {} }
+function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def; } catch { return def; } }
+
+// Restore persisted values
+const persistFields = [
+  'base-url', 'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
+  'gem-aspect', 'gem-n', 'wan-size', 'wan-n'
+];
+persistFields.forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  const v = load(id, null);
+  if (v !== null) el.value = v;
+  el.addEventListener('change', () => save(id, el.value));
+  if (el.tagName === 'INPUT') el.addEventListener('input', () => save(id, el.value));
+});
+
+const savedModel = load('active-model', 'openai/gpt-image-2');
+const savedProvider = load('active-provider', 'openai');
+setActiveModel(savedModel, savedProvider);
+
+// ── Event handlers ──────────────────────────────────────
+document.querySelectorAll('.model-tab').forEach(tab => {
+  tab.addEventListener('click', () => setActiveModel(tab.dataset.model, tab.dataset.provider));
+});
+
+$('eye-btn').addEventListener('click', () => {
+  const inp = $('api-key');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+});
+
+// Thinking budget display
+const thinkSlider = $('gem-thinking');
+if (thinkSlider) {
+  thinkSlider.addEventListener('input', () => {
+    const v = parseInt(thinkSlider.value);
+    $('gem-thinking-display').textContent = v === 0 ? 'off' : v.toString();
+  });
+}
+
+// ── Status helpers ──────────────────────────────────────
+function setStatus(type, msg) {
+  const bar = $('status-bar');
+  bar.className = 'status-bar show ' + type;
+  bar.textContent = msg;
+}
+function clearStatus() { $('status-bar').className = 'status-bar'; }
+
+function setBusy(busy) {
+  $('btn-gen').disabled = busy;
+  $('btn-text').innerHTML = busy
+    ? '<span class="spinner"></span> 生成中…'
+    : '生成图片';
+}
+
+// ── Build request body per provider ────────────────────
+function buildBody() {
+  const prompt = $('prompt').value.trim();
+  const base = { model: activeModel, prompt };
+
+  if (activeProvider === 'openai') {
+    const size = $('gpt-size').value;
+    const quality = $('gpt-quality').value;
+    const style = $('gpt-style').value;
+    if (size) base.size = size;
+    if (quality) base.quality = quality;
+    if (style) base.style = style;
+    base.n = parseInt($('gpt-n').value) || 1;
+    base.response_format = $('gpt-format').value || 'url';
+  } else if (activeProvider === 'gemini') {
+    base.aspect_ratio = $('gem-aspect').value || '1:1';
+    base.n = parseInt($('gem-n').value) || 1;
+    base.response_format = 'b64_json';
+    const budget = parseInt($('gem-thinking')?.value ?? 0);
+    if (budget > 0) base.thinking_budget = budget;
+  } else if (activeProvider === 'wan') {
+    base.size = $('wan-size').value || '1024*1024';
+    base.n = parseInt($('wan-n').value) || 1;
+    if (activeModel === 'wan/wan2.7-image-pro') {
+      base.thinking_mode = $('wan-thinking')?.checked ?? false;
+    }
+  }
+  return base;
+}
+
+// ── Add images to gallery ───────────────────────────────
+function addImages(images, model, provider) {
+  $('empty').style.display = 'none';
+  const gallery = $('gallery');
+
+  images.forEach(img => {
+    const card = document.createElement('div');
+    card.className = 'img-card';
+
+    const image = document.createElement('img');
+    if (img.url) { image.src = img.url; }
+    else if (img.b64_json) { image.src = 'data:image/png;base64,' + img.b64_json; }
+    image.alt = model;
+    image.loading = 'lazy';
+    card.appendChild(image);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const badge = `<span class="provider-badge ${provider}">${provider}</span>`;
+    const time = new Date().toLocaleTimeString();
+    let link = '';
+    if (img.url) {
+      link = `<a href="${img.url}" target="_blank" rel="noopener">原图 ↗</a>`;
+    } else if (img.b64_json) {
+      const a = document.createElement('a');
+      a.href = image.src;
+      a.download = 'genpic-' + Date.now() + '.png';
+      a.textContent = '下载 ↓';
+      link = a.outerHTML;
+    }
+    meta.innerHTML = badge + `<span>${time}</span>` + link;
+    card.appendChild(meta);
+
+    if (img.revised_prompt) {
+      const rp = document.createElement('div');
+      rp.className = 'revised';
+      rp.textContent = '修订: ' + img.revised_prompt;
+      card.appendChild(rp);
+    }
+
+    gallery.insertBefore(card, gallery.firstChild);
+  });
+}
+
+// ── Generate ────────────────────────────────────────────
+$('btn-gen').addEventListener('click', async () => {
+  const baseURL = $('base-url').value.trim();
+  const apiKey  = $('api-key').value.trim();
+  const prompt  = $('prompt').value.trim();
+
+  if (!prompt) { setStatus('error', '请输入 Prompt'); return; }
+  if (!baseURL) { setStatus('error', '请在「API 配置」中填写 Base URL'); return; }
+  if (!apiKey)  { setStatus('error', '请在「API 配置」中填写 API Key'); return; }
+
+  const body = buildBody();
+  body.base_url = baseURL;
+  body.api_key  = apiKey;
+
+  clearStatus();
+  setBusy(true);
+
+  try {
+    // Full platform: POST to /api/generate (MVP Lite proxy)
+    // For multi-model full platform, we call the same endpoint since the
+    // server routes by model ID from the request body.
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setStatus('error', '失败：' + (data?.error?.message ?? `HTTP ${res.status}`));
+      return;
+    }
+
+    const images = data.images ?? (data.data ? data.data : []);
+    if (images.length === 0) {
+      setStatus('error', '未返回图片，请检查参数或稍后重试');
+      return;
+    }
+
+    setStatus('success', `✓ 生成 ${images.length} 张图片（${activeModel}）`);
+    addImages(images, activeModel, activeProvider);
+  } catch (err) {
+    setStatus('error', '网络错误：' + err.message);
+  } finally {
+    setBusy(false);
+  }
+});
+
+// Ctrl/Cmd+Enter to submit
+$('prompt').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('btn-gen').click();
+});
+</script>
+</body>
+</html>

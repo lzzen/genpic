@@ -1,0 +1,76 @@
+# Genpic platform configuration example.
+#
+# Copy this file to config.yaml (or use environment variables).
+# NEVER commit config.yaml — it is in .gitignore.
+# All values shown here are defaults or placeholders.
+
+server:
+  port: "8080"
+  # read_timeout and write_timeout apply to the HTTP server.
+  # write_timeout must be larger than the slowest upstream timeout.
+  read_timeout: "15s"
+  write_timeout: "300s"
+  idle_timeout: "120s"
+
+log:
+  # format: text (human-readable) or json (production)
+  format: "text"
+  # level: debug | info | warn | error
+  level: "info"
+
+# ── Upstream provider credentials ──────────────────────────────────────────
+# These are SERVER-SIDE keys for calling the upstream aggregator / providers.
+# They are NEVER returned to API callers.
+# Can also be set via environment variables: OPENAI_BASE_URL, OPENAI_API_KEY, etc.
+
+openai:
+  base_url: "https://api.openai.com"
+  # api_key: loaded from OPENAI_API_KEY env var
+  timeout: "120s"
+  max_retries: 2
+
+gemini:
+  # base_url should point to your NewAPI aggregator's OpenAI-compatible endpoint.
+  base_url: "https://your-newapi-aggregator.example.com"
+  # api_key: loaded from GEMINI_API_KEY env var
+  timeout: "180s"
+  max_retries: 1
+
+wan:
+  # base_url for DashScope (CN or AP endpoint; key region must match):
+  # CN: https://dashscope.aliyuncs.com
+  # AP: https://dashscope-intl.aliyuncs.com
+  base_url: "https://dashscope.aliyuncs.com"
+  # api_key: loaded from WAN_API_KEY env var
+  timeout: "180s"
+  max_retries: 1
+
+# ── Rate limiting ───────────────────────────────────────────────────────────
+rate_limit:
+  # Global RPM cap across all keys (0 = unlimited)
+  global_rpm: 0
+  # Per-API-key RPM cap (0 = use key's own limit from DB)
+  default_key_rpm: 60
+
+# ── Idempotency ─────────────────────────────────────────────────────────────
+idempotency:
+  # TTL for dedup window; must be short enough to avoid user confusion.
+  ttl: "5m"
+
+# ── Object storage ──────────────────────────────────────────────────────────
+# Uncomment and configure for Full Platform (M1+). MVP Lite does not use storage.
+# objstore:
+#   provider: s3          # s3 | oss | minio
+#   bucket: genpic-works
+#   region: ap-southeast-1
+#   # endpoint: (minio / custom S3-compatible endpoint only)
+#   # access_key_id:     loaded from OBJSTORE_ACCESS_KEY env var
+#   # secret_access_key: loaded from OBJSTORE_SECRET_KEY env var
+#   cdn_base_url: "https://cdn.example.com/works"
+
+# ── Database ─────────────────────────────────────────────────────────────────
+# Uncomment for Full Platform (M1+).
+# database:
+#   dsn: "postgres://user:password@localhost:5432/genpic?sslmode=require"
+#   max_open_conns: 20
+#   max_idle_conns: 5

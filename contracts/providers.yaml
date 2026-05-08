@@ -1,0 +1,257 @@
+# Provider contract table — machine-readable source of truth for all adapters.
+#
+# Each entry describes how Genpic maps an internal model ID to an upstream
+# request shape. Adapter code must read this file (or its compiled equivalent)
+# and must NOT hard-code any of these fields.
+#
+# Fields:
+#   id            – stable internal identifier (used in DB, logs, OpenAPI)
+#   display_name  – human-readable label shown in the UI
+#   provider      – upstream provider key: openai | gemini | wan
+#   upstream:
+#     model       – the exact model string sent to the upstream
+#     path        – URL path appended to base_url (no leading /v1 duplication)
+#     method      – HTTP method
+#     request_shape – openai_images | gemini_generate_content | wan_multimodal
+#     timeout_s   – per-request hard timeout in seconds
+#     stream      – whether the upstream supports streaming (false = polling)
+#   billing:
+#     unit        – token | image | second   (what the upstream charges per)
+#     cost_field  – JSON path in upstream response that carries usage info
+#                   (empty if upstream does not return usage)
+#   capabilities: list of supported features for UI gating
+#   params:       model-specific parameter schema (for form generation)
+
+schema_version: "1"
+
+providers:
+
+  # ────────────────────────────────────────────────
+  # OpenAI — gpt-image-2
+  # ────────────────────────────────────────────────
+  - id: openai/gpt-image-2
+    display_name: "GPT Image 2"
+    provider: openai
+    upstream:
+      model: gpt-image-2
+      path: /v1/images/generations
+      method: POST
+      request_shape: openai_images
+      timeout_s: 120
+      stream: false
+    billing:
+      unit: image
+      # OpenAI images/generations does not return a usage object; cost is
+      # accounted by (n × quality tier) on the platform side.
+      cost_field: ""
+    capabilities:
+      - text_to_image
+      - image_to_image   # via /v1/images/edits — separate adapter path
+      - response_format_url
+      - response_format_b64_json
+    params:
+      size:
+        type: enum
+        values: [auto, "1024x1024", "1536x1024", "1024x1536", "1792x1024", "1024x1792"]
+        default: "1024x1024"
+      quality:
+        type: enum
+        values: [auto, low, medium, high]
+        default: auto
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+      output_format:
+        type: enum
+        values: [png, jpeg, webp]
+        default: png
+      background:
+        type: enum
+        values: [auto, transparent, opaque]
+        default: auto
+      moderation:
+        type: enum
+        values: [auto, low]
+        default: auto
+
+  # ────────────────────────────────────────────────
+  # Google Gemini "Banana" series
+  # Aggregator routes all three through generateContent;
+  # the model string selects the capability tier.
+  # ────────────────────────────────────────────────
+  - id: gemini/gemini-2.5-flash-image
+    display_name: "Gemini 2.5 Flash Image"
+    provider: gemini
+    upstream:
+      model: gemini-2.5-flash-image
+      # Path used when aggregator exposes OpenAI-compatible chat endpoint.
+      # If aggregator uses native Gemini path, override via GEMINI_API_PATH env.
+      path: /v1/chat/completions
+      method: POST
+      request_shape: openai_chat_image   # single-turn user message with image instruction
+      timeout_s: 90
+      stream: false
+    billing:
+      unit: token
+      cost_field: "usage.total_tokens"
+    capabilities:
+      - text_to_image
+      - response_format_b64_json
+      - synthid_watermark   # cannot be disabled; disclose to users
+    params:
+      aspect_ratio:
+        type: enum
+        # Banana series aspect ratios per Google docs
+        values: ["1:1", "3:4", "4:3", "9:16", "16:9"]
+        default: "1:1"
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+
+  - id: gemini/gemini-3.1-flash-image-preview
+    display_name: "Gemini 3.1 Flash Image (Preview)"
+    provider: gemini
+    upstream:
+      model: gemini-3.1-flash-image-preview
+      path: /v1/chat/completions
+      method: POST
+      request_shape: openai_chat_image
+      timeout_s: 120
+      stream: false
+    billing:
+      unit: token
+      cost_field: "usage.total_tokens"
+    capabilities:
+      - text_to_image
+      - thinking           # expose thinking_budget param when supported
+      - response_format_b64_json
+      - synthid_watermark
+    params:
+      aspect_ratio:
+        type: enum
+        values: ["1:1", "3:4", "4:3", "9:16", "16:9"]
+        default: "1:1"
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+      thinking_budget:
+        type: integer
+        min: 0
+        max: 24576
+        default: 0
+        description: "0 = thinking disabled; >0 = max thinking tokens"
+
+  - id: gemini/gemini-3-pro-image-preview
+    display_name: "Gemini 3 Pro Image (Preview)"
+    provider: gemini
+    upstream:
+      model: gemini-3-pro-image-preview
+      path: /v1/chat/completions
+      method: POST
+      request_shape: openai_chat_image
+      timeout_s: 180
+      stream: false
+    billing:
+      unit: token
+      cost_field: "usage.total_tokens"
+    capabilities:
+      - text_to_image
+      - thinking
+      - response_format_b64_json
+      - synthid_watermark
+    params:
+      aspect_ratio:
+        type: enum
+        values: ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2"]
+        default: "1:1"
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+      thinking_budget:
+        type: integer
+        min: 0
+        max: 32768
+        default: 0
+
+  # ────────────────────────────────────────────────
+  # Aliyun Tongyi Wanxiang — wan2.7-image series
+  # Native DashScope path; NOT aliased as OpenAI images/generations
+  # to avoid semantic mismatch (see design §5.2).
+  # ────────────────────────────────────────────────
+  - id: wan/wan2.7-image
+    display_name: "通义万相 2.7"
+    provider: wan
+    upstream:
+      model: wan2.7-image
+      # DashScope multimodal generation endpoint
+      path: /api/v1/services/aigc/multimodal-generation/generation
+      method: POST
+      request_shape: wan_multimodal
+      timeout_s: 120
+      stream: false
+    billing:
+      unit: image
+      cost_field: ""
+    capabilities:
+      - text_to_image
+      - watermark          # always-on; cannot be disabled by callers
+    params:
+      size:
+        type: enum
+        # wan2.7 supports fixed resolution strings
+        values: ["1024*1024", "720*1280", "1280*720", "1280*1280"]
+        default: "1024*1024"
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+      watermark:
+        type: boolean
+        default: true
+        description: "Always true per Aliyun TOS; value is informational only"
+
+  - id: wan/wan2.7-image-pro
+    display_name: "通义万相 2.7 Pro"
+    provider: wan
+    upstream:
+      model: wan2.7-image-pro
+      path: /api/v1/services/aigc/multimodal-generation/generation
+      method: POST
+      request_shape: wan_multimodal
+      timeout_s: 180
+      stream: false
+    billing:
+      unit: image
+      cost_field: ""
+    capabilities:
+      - text_to_image
+      - image_to_image
+      - watermark
+      - thinking_mode      # thinking_mode param available on pro tier
+    params:
+      size:
+        type: enum
+        # Pro tier extends size options
+        values: ["1024*1024", "720*1280", "1280*720", "1280*1280", "2048*1152", "1152*2048"]
+        default: "1024*1024"
+      n:
+        type: integer
+        min: 1
+        max: 4
+        default: 1
+      watermark:
+        type: boolean
+        default: true
+      thinking_mode:
+        type: boolean
+        default: false
+        description: "Enable slow-thinking mode for higher quality (increases latency)"
