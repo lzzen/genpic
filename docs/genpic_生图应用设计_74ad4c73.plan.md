@@ -77,7 +77,7 @@ isProject: false
 
 | 版本 | 目标 | 范围 | 代码策略 |
 |------|------|------|----------|
-| **MVP Lite（优先开发）** | 最快验证“用户填 base + apiKey + model-id + prompt 即可生图” | 单模型/多模型透传、生图调用、返回图片 URL 或 base64、基础错误提示 | **单 Go 服务、最少依赖、最少文件、最少语言种类** |
+| **MVP Lite（优先开发）** | 最快验证“用户填 base + apiKey + model-id + prompt 即可生图” | 原生 HTML/JS 页面 + Go API；单模型/多模型透传、生图调用、返回图片 URL 或 base64、基础错误提示 | **单 Go 服务 + 静态 HTML/JS/CSS，最少依赖、最少文件、最少语言种类** |
 | **Full Platform（完整系统）** | 演进到作品库、社区、付费、计费、权限、审核、多 provider 能力 | 本文 §4–§16 的完整平台能力 | 按模块化、公共封装、队列、对象存储、账本等逐步扩展 |
 
 **融合原则**：
@@ -86,6 +86,13 @@ isProject: false
 - MVP Lite 的实现可以先**不引入**用户系统、数据库、队列、对象存储、社区、付费、OpenAPI 生成链；但接口命名与配置结构要为后续迁移留口。
 - 完整系统上线后，MVP Lite 可继续作为“极简 API 模式 / 调试模式 / 私有部署轻量版”存在，不与完整系统互斥。
 - 任何在 MVP Lite 中写死的 provider 特性，必须集中在一个适配函数/文件中，避免后续扩展时散落重构。
+
+**MVP Lite 前端策略**：
+
+- 前端可以只用 **HTML + 原生 JavaScript + 少量 CSS**，不引入 Vue/React、Node.js、npm、打包器或组件库。
+- 推荐由 Go 服务直接提供静态页面：`GET /` 返回 `index.html`，`POST /api/generate` 负责转发生成请求；部署时仍是**一个 Go 二进制 + 少量静态文件**。
+- 若希望文件更少，可用 Go `embed` 将 `index.html` 内嵌进二进制；若希望调试方便，则保留 `web/index.html`、`web/app.js`、`web/style.css` 三个静态文件。
+- `api_key` 首期可在浏览器表单填写并提交给后端；页面不做长期保存。若后续要记住配置，只允许保存在浏览器 `localStorage`，并明确提示“本机保存，勿在公共电脑使用”。
 
 **MVP Lite 最小用户路径**：
 
@@ -235,7 +242,7 @@ flowchart LR
 
 ## 11. 交付里程碑（建议）
 
-0. **MVP Lite**：单 Go 服务 + 极简 Web/API；用户填写 `base_url`、`api_key`、`model_id`、`prompt` 即可生图；不做数据库、队列、支付、社区。
+0. **MVP Lite**：单 Go 服务 + 原生 HTML/JS 极简页面/API；用户填写 `base_url`、`api_key`、`model_id`、`prompt` 即可生图；不做数据库、队列、支付、社区，不引入前端框架或 Node 构建链。
 1. **M0**：在 MVP Lite 验证通过后，整理仓库脚手架 + OpenAPI CI + `GET /v1/models` + Key 鉴权 + 限流。
 2. **M1**：`images/generations` → gpt-image-2 全链路（异步 + 存储 + 任务查询）。
 3. **M2**：Gemini Banana 子页 + 适配器 +（可选）`chat/completions` 窄约定。
