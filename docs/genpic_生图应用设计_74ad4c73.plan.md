@@ -1,6 +1,6 @@
 ---
 name: Genpic 生图应用设计
-overview: 在「服务端统一持钥、平台 baseUrl + 平台 API Key」前提下，Go 后端、OpenAPI 契约、NewAPI 聊天应用集成、三模型适配、Token/作品/社区与付费等可落地方案；原「Apidoc」指 apidoc-php（PHP 专用），Go 侧以 OpenAPI 替代，细节从简。
+overview: 在「服务端统一持钥、平台 baseUrl + 平台 API Key」前提下，Go 后端、OpenAPI 契约、NewAPI 聊天应用集成、三模型适配、Token/作品/社区与付费等可落地方案；含工程规范（高内聚/低耦合、公共封装、文档与代码注释要求）；原「Apidoc」指 apidoc-php（PHP 专用），Go 侧以 OpenAPI 替代，细节从简。
 todos:
   - id: contract-table
     content: 与 NewAPI 运营对齐：三张模型在聚合站的 model 名、路径、超时、计费字段，输出 machine-readable 契约表（YAML/JSON）作为适配器配置源
@@ -22,6 +22,9 @@ todos:
     status: pending
   - id: credit-ledger
     content: 设计算力预扣/冲正与失败回滚规则，并与任务状态机对齐
+    status: pending
+  - id: engineering-standards
+    content: 在 M0 落地公共封装骨架（pkg/httpclient、provider、objstore、idempotency、ratelimit、billing、auth、errors、logger）、CI lint、PR 模板与 ADR 目录
     status: pending
 isProject: false
 ---
@@ -284,12 +287,70 @@ flowchart LR
 - **静态检查**：`golangci-lint` CI 必过；`go vet`。
 - **可观测性**：`slog` + OpenTelemetry traceId 贯穿网关→worker→上游 HTTP。
 
-## 15. 风险与待办（实现前核对）
+## 15. 工程规范：高内聚 / 低耦合 / 可复用 / 可维护
+
+> 本节为**强约束**，覆盖 Go 后端、Web 前端及任何附属服务。所有 PR 评审与 CI 都按此校准。
+
+### 15.1 模块化与边界
+
+- **高内聚**：每个模块只解决一类问题；`auth` 不混 `billing`，`provider` 不混 `community`（与 §14.2 模块边界一致）。
+- **低耦合**：跨模块**只依赖接口**，不暴露内部 struct；新增上游 provider 不应触发 `billing`/`auth` 修改。
+- **依赖方向**：`api → application → domain → infrastructure`，单向；HTTP DTO 与 domain entity **分离**，避免 OpenAPI 字段渗透到核心逻辑。
+- **契约面稳定**：对外 API 由 OpenAPI 锁定；内部模块边界由 Go interface 锁定；任何破坏性修改必须发 ADR（见 §15.3）。
+
+### 15.2 公共封装清单（M0 阶段先落骨架，再写业务）
+
+> 凡被 ≥2 处复用、或属于横切关注点的能力，都抽到公共包，**禁止**散落在业务代码里。
+
+| 包 | 职责 | 主要复用方 |
+|----|------|------------|
+| `pkg/httpclient` | 超时、重试、熔断、上游错误归一化、出入参日志（脱敏） | 三家 provider 适配器、支付/审核外联 |
+| `pkg/provider` | `Provider` / `Capability` / `Request` / `Response` 抽象 + Registry | OpenAI / Gemini / Wan 等所有上游 |
+| `pkg/objstore` | S3/OSS/MinIO 统一封装：上传、预签名、生命周期、分桶策略 | 作品原图、缩略图、参考图 |
+| `pkg/idempotency` | `Idempotency-Key` 解析、KV 落地、并发去重 | 任务创建、支付回调、社区操作 |
+| `pkg/ratelimit` | 多维（Key / User / IP / 全局）滑动窗口限流 | 网关中间件、社区接口 |
+| `pkg/billing` | 算力换算、预扣/实扣/冲正、事务一致性 | 任务流程、订阅、按次解锁 |
+| `pkg/auth` | API Key 校验、scope/Origin/IP 检查、Web Session | 网关中间件、社区 ACL |
+| `pkg/errors` | 统一错误码 + OpenAI 兼容错误体（`{error:{type,code,message}}`） | 全栈 |
+| `pkg/logger` / `pkg/tracing` | `slog` wrapper + traceId 注入 + 字段脱敏 | 全栈 |
+
+**规则**：业务代码**只调用** `pkg/*` 与 `internal/*`，不直接 import `aws-sdk` / `redis-go` / 大型工具库；如需新增三方依赖，先在公共包内做薄壳封装，便于以后替换。
+
+### 15.3 文档与代码注释规范
+
+**仓库内文档分层**（与代码同仓维护，避免文档漂移）：
+
+- `README.md`：环境准备、跑起来、常用命令
+- `docs/architecture.md`：系统蓝图（本设计文档的精简引用版）
+- `docs/runbook.md`：生产运维手册（排障、上游故障切换、配额耗尽预案）
+- `docs/decisions/`：每次重大技术决策一篇 **ADR**（编号 + 日期 + 上下文 / 选项 / 结论 / 影响）
+- `openapi.yaml`：对外契约（CI 验证；`servers` 固定单一官方 origin）
+- `CHANGELOG.md`：面向用户/调用方的变更说明
+
+**代码注释**：
+
+- 每个包写 `doc.go`，一句话讲清职责与边界。
+- 所有**导出符号**（公共函数 / 接口 / 类型）必须有 godoc：意图、不变量、错误返回的语义。
+- **解释“为什么”，不解释“做什么”**：禁止 `// 自增计数器` 这类废话注释。
+- 绕坑、上游 quirk、性能权衡处**必须**留注释，并引用上游文档链接或 issue 编号。
+- 废弃代码用 `// Deprecated:` 起注释，注明替代方案与计划移除版本。
+- 所有 TODO 必须带责任人与 issue：`// TODO(@user, #123): ...`。
+
+### 15.4 PR 与机器约束
+
+- **CI 必过**：`gofmt -s` / `go vet` / `golangci-lint`；OpenAPI lint；单元测试覆盖关键路径；新增 provider 必须配套 fake 实现 + 用例。
+- **PR 模板**包含：变更点、影响面、回滚方案、是否需要 ADR、是否更新 OpenAPI/文档。
+- **跨模块改动**：触及 `pkg/*` 公共包的 PR 强制第二人评审。
+- **新增 Provider 必须**：实现 `provider.Provider` 接口、提供 `provider/<name>/fake` 供本地与 CI、写 godoc 与一篇 ADR。
+- **新增配置项**：必须在 `config.example.yaml` 与 `docs/runbook.md` 同步，否则 CI 拒绝合并（用模板检查脚本）。
+
+## 16. 风险与待办（实现前核对）
 
 - **NewAPI 渠道真实路径**：各模型在聚合站上的 **实际 model 名、是否支持流式、是否统一 OpenAI 路径** 需对照你们后台配置做一次「契约表」，适配器以该表为单一配置源。
 - **聊天应用集成**：仅保证 **baseUrl + apiKey** 不够时，要在文档中列出已验证客户端清单与已知限制（例如某客户端不支持 `images/generations`）。
 - **社区与版权**：公开作品的用户协议、侵权投诉通道、地域合规（尤其带真人肖像内容时）。
+- **公共包冻结时间点**：`pkg/*` 的接口形态须在 M0 末冻结一版（可演进，但破坏性修改要发 ADR），避免业务代码在多个 provider 接入后大面积返工。
 
 ---
 
-本修订版已将 **认证模式固定为 A（服务端统一持钥 + 仅平台 baseUrl）**；补充 **Token/成本/记录与作品保管**、**社区与付费权限**、以及 **后端以 Go 为主的学习与工程建议**。
+本修订版已将 **认证模式固定为 A（服务端统一持钥 + 仅平台 baseUrl）**；补充 **Token/成本/记录与作品保管**、**社区与付费权限**、**后端以 Go 为主的学习与工程建议**，以及 **工程规范（高内聚/低耦合、公共封装、文档与代码注释要求）**。
