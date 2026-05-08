@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -22,19 +23,74 @@ import (
 
 const maxBodyBytes = 1 << 20 // 1 MiB
 
+// #region agent log
+const agentDebugLogPath = "/home/pozenqi/workspace/genpic/.cursor/debug-8b59ed.log"
+
+func agentDebugLog(runID, hypothesisID, location, message string, data map[string]any) {
+	f, err := os.OpenFile(agentDebugLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	payload := map[string]any{
+		"sessionId":    "8b59ed",
+		"runId":        runID,
+		"hypothesisId": hypothesisID,
+		"location":     location,
+		"message":      message,
+		"data":         data,
+		"timestamp":    time.Now().UnixMilli(),
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+}
+
+// #endregion
+
 func main() {
+	// #region agent log
+	agentDebugLog("run1", "H1", "cmd/mvplite/main.go:main", "startup", map[string]any{
+		"goVersion": runtime.Version(),
+		"note":      "method patterns require go1.22+",
+	})
+	// #endregion
+
 	webRoot, err := fs.Sub(genpic.WebStatic, "web")
 	if err != nil {
+		// #region agent log
+		agentDebugLog("run1", "H2", "cmd/mvplite/main.go:main", "fs.Sub failed", map[string]any{"error": err.Error()})
+		// #endregion
 		log.Fatal(err)
 	}
+	// #region agent log
+	agentDebugLog("run1", "H2", "cmd/mvplite/main.go:main", "fs.Sub ok", map[string]any{"subdir": "web"})
+	// #endregion
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServer(http.FS(webRoot)))
+	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// #region agent log
+		agentDebugLog("run1", "H3", "cmd/mvplite/main.go:root-handler", "root handler entered", map[string]any{
+			"method": r.Method,
+			"path":   r.URL.Path,
+		})
+		// #endregion
+		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("POST /api/generate", handleGenerate)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
+	// #region agent log
+	agentDebugLog("run1", "H4", "cmd/mvplite/main.go:main", "routes-registered", map[string]any{
+		"rootPattern":   "GET /",
+		"healthPattern": "GET /health",
+		"genPattern":    "POST /api/generate",
+	})
+	// #endregion
 
 	addr := ":8080"
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
@@ -49,9 +105,29 @@ func main() {
 func withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		srw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(srw, r)
+		dur := time.Since(start).Round(time.Millisecond)
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, srw.status, dur)
+		// #region agent log
+		agentDebugLog("run1", "H5", "cmd/mvplite/main.go:withLogging", "request-finished", map[string]any{
+			"method": r.Method,
+			"path":   r.URL.Path,
+			"status": srw.status,
+			"durMs":  dur.Milliseconds(),
+		})
+		// #endregion
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
 }
 
 type generateReq struct {
