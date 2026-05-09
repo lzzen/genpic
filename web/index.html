@@ -177,6 +177,178 @@
     .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── CRT / 电子管屏风格生成中占位 ───────────────────── */
+    .crt-loading-wrap {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: center;
+      padding: 4px 0 24px;
+    }
+    .crt-bezel {
+      width: 100%;
+      max-width: 440px;
+      border-radius: 14px;
+      padding: 12px 14px 14px;
+      background: linear-gradient(155deg, #2c3040 0%, #181a24 55%, #12141c 100%);
+      border: 1px solid #3e4458;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.07),
+        0 16px 48px rgba(0,0,0,.5);
+    }
+    .crt-label {
+      font: 600 .62rem ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.35em;
+      color: #6b7289;
+      margin-bottom: 8px;
+    }
+    .crt-screen {
+      position: relative;
+      border-radius: 6px;
+      min-height: 200px;
+      max-height: 280px;
+      background: radial-gradient(ellipse 120% 80% at 50% 20%, #0d1a12 0%, #040806 55%, #020403 100%);
+      overflow: hidden;
+      box-shadow: inset 0 0 50px rgba(0, 40, 20, .85);
+    }
+    .crt-static-flicker {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      animation: crt-static 0.12s steps(2) infinite;
+      z-index: 1;
+    }
+    @keyframes crt-static {
+      0% { opacity: 0.03; transform: translate(0, 0); }
+      50% { opacity: 0.07; transform: translate(-1%, 1%); }
+      100% { opacity: 0.03; transform: translate(1%, -1%); }
+    }
+    .crt-scanbar {
+      position: absolute;
+      left: -2%;
+      right: -2%;
+      height: 22%;
+      top: -22%;
+      pointer-events: none;
+      background: linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(80, 255, 160, 0.04) 25%,
+        rgba(120, 255, 200, 0.55) 48%,
+        rgba(60, 220, 140, 0.35) 52%,
+        rgba(80, 255, 160, 0.06) 75%,
+        transparent 100%
+      );
+      box-shadow:
+        0 0 24px rgba(100, 255, 180, 0.35),
+        0 0 60px rgba(80, 255, 160, 0.12);
+      animation: crt-sweep 2.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      z-index: 2;
+      filter: blur(0.6px);
+    }
+    .crt-scanbar--trail {
+      animation-delay: 0.14s;
+      opacity: 0.55;
+      filter: blur(4px);
+      height: 28%;
+      background: linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(100, 255, 200, 0.15) 40%,
+        rgba(120, 255, 220, 0.25) 50%,
+        transparent 100%
+      );
+      box-shadow: 0 0 40px rgba(100, 255, 200, 0.2);
+    }
+    @keyframes crt-sweep {
+      0% { top: -22%; }
+      100% { top: 100%; }
+    }
+    .crt-scanlines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.18) 3px
+      );
+      mix-blend-mode: multiply;
+    }
+    .crt-content {
+      position: relative;
+      z-index: 4;
+      padding: 22px 18px 18px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #8fffc4;
+      text-shadow:
+        0 0 6px rgba(100, 255, 180, 0.45),
+        0 0 16px rgba(60, 200, 120, 0.25);
+      animation: crt-phosphor-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes crt-phosphor-pulse {
+      0%, 100% { opacity: 0.88; filter: brightness(0.95); }
+      50% { opacity: 1; filter: brightness(1.05); }
+    }
+    .crt-title {
+      font-size: .72rem;
+      letter-spacing: 0.2em;
+      color: #5ecf98;
+      margin-bottom: 10px;
+      opacity: 0.9;
+    }
+    .crt-model {
+      font-size: .8rem;
+      color: #b4ffd9;
+      word-break: break-all;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .crt-prompt-preview {
+      font-size: .65rem;
+      line-height: 1.45;
+      color: rgba(140, 240, 190, 0.55);
+      margin-bottom: 12px;
+      max-height: 4.6em;
+      overflow: hidden;
+      word-break: break-word;
+    }
+    .crt-status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: .78rem;
+      color: #7dffc0;
+    }
+    .crt-dots { display: inline-flex; gap: 2px; letter-spacing: 0; }
+    .crt-dots span {
+      display: inline-block;
+      animation: crt-dot-blink 1.2s ease-in-out infinite;
+      opacity: 0.35;
+    }
+    .crt-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .crt-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes crt-dot-blink {
+      0%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-1px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .crt-scanbar,
+      .crt-scanbar--trail,
+      .crt-static-flicker,
+      .crt-content,
+      .crt-dots span {
+        animation: none !important;
+      }
+      .crt-scanbar,
+      .crt-scanbar--trail { display: none; }
+      .crt-content { filter: none; opacity: 1; }
+    }
+
     @media (max-width: 900px) {
       nav { display: none; }
       .config-panel { width: 260px; }
@@ -650,6 +822,57 @@ function setBusy(busy) {
     : '生成图片';
 }
 
+function showGalleryCRTLoading() {
+  const gallery = $('gallery');
+  if (!gallery || $('gallery-crt-loading')) return;
+  const empty = $('empty');
+  if (empty) empty.style.display = 'none';
+  const wrap = document.createElement('div');
+  wrap.id = 'gallery-crt-loading';
+  wrap.className = 'crt-loading-wrap';
+  wrap.setAttribute('aria-busy', 'true');
+  wrap.setAttribute('aria-live', 'polite');
+  wrap.innerHTML = `
+    <div class="crt-bezel">
+      <div class="crt-label">OUTPUT</div>
+      <div class="crt-screen" role="progressbar" aria-valuetext="图像生成中">
+        <div class="crt-static-flicker" aria-hidden="true"></div>
+        <div class="crt-scanbar" aria-hidden="true"></div>
+        <div class="crt-scanbar crt-scanbar--trail" aria-hidden="true"></div>
+        <div class="crt-scanlines" aria-hidden="true"></div>
+        <div class="crt-content">
+          <div class="crt-title">PIPELINE ACTIVE</div>
+          <div class="crt-model"></div>
+          <div class="crt-prompt-preview"></div>
+          <div class="crt-status-row">
+            <span>RASTER SYNC</span><span class="crt-dots"><span>.</span><span>.</span><span>.</span></span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  wrap.querySelector('.crt-model').textContent = activeModel;
+  const pv = wrap.querySelector('.crt-prompt-preview');
+  const raw = ($('prompt').value || '').trim();
+  if (raw) {
+    const short = raw.length > 96 ? raw.slice(0, 96) + '…' : raw;
+    pv.textContent = '> ' + short.replace(/\s+/g, ' ');
+  } else {
+    pv.textContent = '> (no prompt)';
+  }
+  gallery.insertBefore(wrap, gallery.firstChild);
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideGalleryCRTLoading() {
+  const el = $('gallery-crt-loading');
+  if (el) el.remove();
+  const gallery = $('gallery');
+  const empty = $('empty');
+  if (gallery && empty && !gallery.querySelector('.img-card')) {
+    empty.style.display = '';
+  }
+}
+
 // ── Build request body per provider ────────────────────
 function buildBody() {
   const prompt = $('prompt').value.trim();
@@ -750,6 +973,7 @@ $('btn-gen').addEventListener('click', async () => {
 
   clearStatus();
   setBusy(true);
+  showGalleryCRTLoading();
 
   try {
     // Full platform: POST to /api/generate (MVP Lite proxy)
@@ -778,6 +1002,7 @@ $('btn-gen').addEventListener('click', async () => {
   } catch (err) {
     setStatus('error', '网络错误：' + err.message);
   } finally {
+    hideGalleryCRTLoading();
     setBusy(false);
   }
 });
