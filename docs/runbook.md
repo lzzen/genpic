@@ -4,12 +4,29 @@
 
 ### MVP Lite (development / minimal)
 
+最短步骤与 **URL 传参**：仓库根目录 **[how-to-use.md](../how-to-use.md)**。
+
+Copy `config.example.yaml` to `config.yaml` and set at least `mvp_lite` (see
+example file). The browser loads defaults from `GET /api/public-config`.
+
 ```bash
-# No upstream auth — user supplies keys in the browser form.
 go run ./cmd/mvplite
-# or with a specific port:
-PORT=9090 go run ./cmd/mvplite
+# or:
+go run ./cmd/mvplite -config /path/to/config.yaml
 ```
+
+Optional: `PORT=9090` overrides the listen port from `mvp_lite.port` / default.
+
+NewAPI-style deep link (query params are read once then stripped from the address bar):
+
+`http://localhost:8080/?address=https%3A%2F%2Fapi.example.com&key=sk-...`
+
+- **`address`** — optional if `mvp_lite.default_base_url` is set in `config.yaml`.
+- **`key`** — may be masked (`sk****…`); the UI warns you to paste the full key.
+
+Base URL + API Key are stored encrypted in **localStorage** (Web Crypto AES-GCM when available).
+
+Without `config.yaml`, the server still starts; the UI has no default Base URL until you add the file or open a link with `?address=`.
 
 ### Full platform
 

@@ -4,6 +4,13 @@
 # NEVER commit config.yaml — it is in .gitignore.
 # All values shown here are defaults or placeholders.
 
+# ── MVP Lite (cmd/mvplite) ─────────────────────────────────────────────────
+# go run ./cmd/mvplite -config config.yaml
+# Browser can omit ?address= when default_base_url is set. Never put API keys here.
+mvp_lite:
+  port: "8080"
+  default_base_url: "https://your-openai-compatible-aggregator.example.com"
+
 server:
   port: "8080"
   # read_timeout and write_timeout apply to the HTTP server.

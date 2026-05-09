@@ -3,10 +3,10 @@
 // OpenAI-compatible upstream (NewAPI aggregator or direct provider).
 //
 // Design constraints (see docs/genpic_生图应用设计.plan.md §2.2):
-//   - Zero external dependencies beyond the Go standard library.
+//   - One small YAML dependency (gopkg.in/yaml.v3) for config.yaml; otherwise stdlib.
 //   - One binary: static assets embedded via the root genpic package.
 //   - Upstream base_url and api_key are supplied per-request from the browser form;
-//     no long-term key storage on the server side in this Lite version.
+//     default base URL may come from config.yaml (GET /api/public-config).
 //   - The "/ fallback" routing pattern is used instead of "GET /" because
 //     Go 1.22 ServeMux does not route GET / to a handler registered as "GET /"
 //     when method-qualified patterns are mixed with catch-all patterns.
@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -86,8 +87,28 @@ type upstreamImageResponse struct {
 	} `json:"error"`
 }
 
+// mvpState holds values exposed to the static frontend (no secrets).
+var mvpState struct {
+	DefaultBaseURL string
+}
+
 func main() {
-	port := os.Getenv("PORT")
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port)")
+	flag.Parse()
+
+	filePort, defaultBase, found, err := readMvpLiteConfig(*configPath)
+	if err != nil {
+		log.Fatalf("mvplite: config: %v", err)
+	}
+	if !found {
+		log.Printf("mvplite: config file %q not found; default Base URL empty until you add mvp_lite.default_base_url", *configPath)
+	}
+	mvpState.DefaultBaseURL = defaultBase
+
+	port := strings.TrimSpace(filePort)
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		port = p
+	}
 	if port == "" {
 		port = "8080"
 	}
@@ -100,6 +121,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Specific routes must be registered before the catch-all "/".
+	mux.HandleFunc("GET /api/public-config", handlePublicConfig)
 	mux.HandleFunc("POST /api/generate", handleGenerate)
 	mux.HandleFunc("GET /health", handleHealth)
 
@@ -125,6 +147,14 @@ func main() {
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
+}
+
+// handlePublicConfig serves non-secret defaults for the browser (default Base URL).
+func handlePublicConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"default_base_url": mvpState.DefaultBaseURL,
+	})
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {

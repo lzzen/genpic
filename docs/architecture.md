@@ -39,7 +39,7 @@ Clients
 ```
 genpic/
 ├── cmd/
-│   ├── mvplite/      # Zero-dep MVP binary (stdlib only)
+│   ├── mvplite/      # MVP binary: stdlib net/http + config.yaml (mvp_lite)
 │   └── genpic/       # Full platform binary
 ├── internal/
 │   ├── api/          # HTTP handlers, DTOs, response helpers

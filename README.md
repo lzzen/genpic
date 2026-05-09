@@ -3,17 +3,28 @@
 Image generation platform supporting OpenAI GPT Image 2, Google Gemini Banana
 series, and Aliyun Tongyi Wanxiang 2.7 via an OpenAI-compatible API.
 
+**新手（MVP Lite 传参、链接、配置）先看：[how-to-use.md](how-to-use.md)**
+
 ## Quick start — MVP Lite
 
-The MVP Lite binary has zero external dependencies. Users supply their own
-`base_url` and `api_key` in the browser form.
+MVP Lite reads **`config.yaml`** (same file shape as the full platform example;
+see `mvp_lite` in `config.example.yaml`). Optional: `-config /path/to/config.yaml`.
+
+- **`mvp_lite.default_base_url`**: default OpenAI-compatible Base URL for the web UI
+  (exposed as `GET /api/public-config`; no secrets).
+- **`mvp_lite.port`**: listen port unless overridden by `PORT` env.
+
+The web UI supports **`?address=`** and **`?key=`** query parameters (NewAPI jump),
+encrypts Base URL + API Key into **localStorage**, and warns on masked keys (`****`).
 
 ```bash
 go run ./cmd/mvplite
-# Open http://localhost:8080
+# Open http://localhost:8080 (or the port from config / PORT env)
 ```
 
-Set `PORT` to override the listen port.
+```bash
+go run ./cmd/mvplite -config /etc/genpic/config.yaml
+```
 
 ## Full platform
 

@@ -135,6 +135,15 @@
 
     .note { font-size: .72rem; color: var(--muted); line-height: 1.5; padding: 8px 10px; background: var(--surface2); border-radius: 7px; border: 1px solid var(--border); }
 
+    .cred-warn {
+      display: none;
+      font-size: .72rem; color: #fdba74; line-height: 1.45;
+      padding: 8px 10px; margin-top: 8px;
+      background: rgba(249,115,22,.12); border-radius: 7px;
+      border: 1px solid rgba(249,115,22,.38);
+    }
+    .cred-warn.show { display: block; }
+
     /* ── Gallery area ── */
     .gallery-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -352,9 +361,10 @@
       <div class="field">
         <label for="api-key">API Key</label>
         <div class="api-wrap">
-          <input id="api-key" type="password" placeholder="sk-…" />
-          <button class="eye" id="eye-btn">👁</button>
+          <input id="api-key" type="password" placeholder="sk-…" autocomplete="off" />
+          <button class="eye" type="button" id="eye-btn">👁</button>
         </div>
+        <div id="cred-warn" class="cred-warn" role="status"></div>
       </div>
     </details>
 
@@ -362,7 +372,7 @@
       <span id="btn-text">生成图片</span>
     </button>
 
-    <div class="note">配置（Base URL、模型参数）自动保存在本机 localStorage。API Key 仅本次会话使用，不持久化。</div>
+    <div class="note">模型与参数保存在本机 localStorage。Base URL 与 API Key 使用浏览器 AES-GCM 加密写入本机（无 Web Crypto 时降级为 Base64 封装）。<code>?address=</code> 与 <code>?key=</code> 可从 NewAPI 跳转预填（进入后从地址栏移除）；<code>address</code> 可省略时使用服务器 <code>config.yaml</code> 里的 <code>mvp_lite.default_base_url</code>。脱敏 Key（如 <code>sk****…</code>）无法调用上游，请改为完整 Key。</div>
 
   </aside>
 
@@ -381,6 +391,168 @@
 
 <script>
 const $ = id => document.getElementById(id);
+
+window.__genpicDefaultBaseUrl = '';
+
+const CRED_PACK_KEY = 'genpic:cred-v1';
+
+function safeDecodeURIComponent(s) {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
+function looksLikeMaskedKey(key) {
+  const k = (key || '').trim();
+  if (!k) return false;
+  if (/\*{3,}/.test(k)) return true;
+  if (k.includes('****')) return true;
+  if (/^sk-/i.test(k) && k.includes('*')) return true;
+  return false;
+}
+
+function setCredWarn(msg) {
+  const el = $('cred-warn');
+  if (!el) return;
+  if (msg) {
+    el.textContent = msg;
+    el.classList.add('show');
+  } else {
+    el.textContent = '';
+    el.classList.remove('show');
+  }
+}
+
+function updateCredWarnUI() {
+  if (looksLikeMaskedKey($('api-key').value)) {
+    setCredWarn('检测到脱敏或占位符（如 sk****…）。NewAPI 传入的 Key 常不完整，请粘贴完整 API Key 后再生成。');
+  } else {
+    setCredWarn('');
+  }
+}
+
+let _derivedKeyPromise;
+function getDerivedKey() {
+  if (!window.crypto?.subtle) return Promise.reject(new Error('no subtle'));
+  if (!_derivedKeyPromise) {
+    const enc = new TextEncoder();
+    const pepper = enc.encode('genpic-mvp-lite-cred-v1');
+    _derivedKeyPromise = crypto.subtle.importKey('raw', pepper, 'PBKDF2', false, ['deriveBits', 'deriveKey']).then(
+      keyMaterial => crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: enc.encode('genpic-local-salt-v1'), iterations: 120000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      )
+    );
+  }
+  return _derivedKeyPromise;
+}
+
+async function saveCredentialsEncrypted(address, apiKey) {
+  const payload = JSON.stringify({ address, apiKey });
+  if (!window.crypto?.subtle) {
+    try {
+      localStorage.setItem('genpic:cred-fallback', btoa(encodeURIComponent(payload)));
+    } catch {}
+    return;
+  }
+  try {
+    const key = await getDerivedKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const pt = new TextEncoder().encode(payload);
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pt);
+    const pack = { v: 1, iv: Array.from(iv), ct: Array.from(new Uint8Array(ct)) };
+    localStorage.setItem(CRED_PACK_KEY, JSON.stringify(pack));
+    try { localStorage.removeItem('genpic:cred-fallback'); } catch {}
+  } catch (e) {
+    console.warn('encrypt credentials failed', e);
+  }
+}
+
+async function loadCredentialsEncrypted() {
+  try {
+    const fb = localStorage.getItem('genpic:cred-fallback');
+    if (fb) {
+      return JSON.parse(decodeURIComponent(atob(fb)));
+    }
+    const raw = localStorage.getItem(CRED_PACK_KEY);
+    if (!raw) return null;
+    const pack = JSON.parse(raw);
+    if (pack.v !== 1 || !pack.iv || !pack.ct) return null;
+    if (!window.crypto?.subtle) return null;
+    const key = await getDerivedKey();
+    const iv = new Uint8Array(pack.iv);
+    const ct = new Uint8Array(pack.ct);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch {
+    return null;
+  }
+}
+
+let _saveCredTimer;
+function scheduleSaveCredentials() {
+  clearTimeout(_saveCredTimer);
+  _saveCredTimer = setTimeout(() => {
+    saveCredentialsEncrypted($('base-url').value.trim(), $('api-key').value.trim());
+  }, 450);
+}
+
+function effectiveBaseURL() {
+  const u = $('base-url').value.trim();
+  if (u) return u;
+  return (window.__genpicDefaultBaseUrl || '').trim();
+}
+
+async function bootstrapCredentials() {
+  let defaultBase = '';
+  try {
+    const r = await fetch('/api/public-config');
+    if (r.ok) {
+      const j = await r.json();
+      defaultBase = (j.default_base_url || '').trim();
+    }
+  } catch (_) {}
+  window.__genpicDefaultBaseUrl = defaultBase;
+
+  let address = '';
+  let apiKey = '';
+  const fromStore = await loadCredentialsEncrypted();
+  if (fromStore && typeof fromStore === 'object') {
+    address = (fromStore.address || '').trim();
+    apiKey = (fromStore.apiKey || '').trim();
+  }
+
+  const legacyBase = load('base-url', null);
+  if (legacyBase) {
+    if (!address) address = legacyBase.trim();
+    try { localStorage.removeItem('genpic:base-url'); } catch {}
+  }
+
+  const params = new URLSearchParams(location.search);
+  const qAddr = (params.get('address') || params.get('Address') || '').trim();
+  const qKey = (params.get('key') || params.get('Key') || '').trim();
+  if (qAddr) address = safeDecodeURIComponent(qAddr);
+  if (qKey) apiKey = safeDecodeURIComponent(qKey);
+
+  const finalAddr = (address || defaultBase).trim();
+  $('base-url').value = finalAddr;
+  $('api-key').value = apiKey;
+  updateCredWarnUI();
+
+  if (qAddr || qKey) {
+    const dc = $('api-config');
+    if (dc) dc.open = true;
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
+  }
+
+  await saveCredentialsEncrypted($('base-url').value.trim(), $('api-key').value.trim());
+
+  $('base-url').addEventListener('input', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
+  $('base-url').addEventListener('change', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
+  $('api-key').addEventListener('input', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
+  $('api-key').addEventListener('change', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
+}
 
 // ── Active state ────────────────────────────────────────
 let activeModel = 'openai/gpt-image-2';
@@ -438,6 +610,8 @@ persistFields.forEach(id => {
 const savedModel = load('active-model', 'openai/gpt-image-2');
 const savedProvider = load('active-provider', 'openai');
 setActiveModel(savedModel, savedProvider);
+
+bootstrapCredentials().catch(e => console.warn('bootstrapCredentials', e));
 
 // ── Event handlers ──────────────────────────────────────
 document.querySelectorAll('.model-tab').forEach(tab => {
@@ -549,13 +723,23 @@ function addImages(images, model, provider) {
 
 // ── Generate ────────────────────────────────────────────
 $('btn-gen').addEventListener('click', async () => {
-  const baseURL = $('base-url').value.trim();
+  const baseURL = effectiveBaseURL();
   const apiKey  = $('api-key').value.trim();
   const prompt  = $('prompt').value.trim();
 
   if (!prompt) { setStatus('error', '请输入 Prompt'); return; }
-  if (!baseURL) { setStatus('error', '请在「API 配置」中填写 Base URL'); return; }
-  if (!apiKey)  { setStatus('error', '请在「API 配置」中填写 API Key'); return; }
+  if (!baseURL) {
+    setStatus('error', '请填写 Base URL，或在服务器 config.yaml 中配置 mvp_lite.default_base_url');
+    const dc = $('api-config');
+    if (dc) dc.open = true;
+    return;
+  }
+  if (!apiKey)  { setStatus('error', '请在「API 配置」中填写 API Key'); const ac = $('api-config'); if (ac) ac.open = true; return; }
+  if (looksLikeMaskedKey(apiKey)) {
+    setStatus('error', 'API Key 疑似脱敏/不完整，请替换为完整 Key');
+    const ac = $('api-config'); if (ac) ac.open = true;
+    return;
+  }
 
   const body = buildBody();
   body.base_url = baseURL;

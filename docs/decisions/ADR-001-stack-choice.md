@@ -18,8 +18,8 @@ Two candidates were evaluated: **Hyperf (PHP/Swoole)** and **Go (standard librar
 ## Decision
 
 **Go** is chosen as the primary backend language. The HTTP layer uses the
-**standard `net/http`** library for MVP Lite (zero external dependencies). For
-the Full Platform (`cmd/genpic`), **`chi`** is added as the sole HTTP router
+**standard `net/http`** library for MVP Lite, plus **`gopkg.in/yaml.v3`** only to
+read `config.yaml` (`mvp_lite` defaults). For the Full Platform (`cmd/genpic`), **`chi`** is added as the sole HTTP router
 dependency: it is interface-compatible with `net/http`, tiny (~1 500 lines),
 and the team can swap it out without rewriting handler logic.
 
@@ -28,7 +28,7 @@ and the team can swap it out without rewriting handler logic.
 ```
 genpic/                  ← Go module root; also embeds web/ assets
   cmd/
-    mvplite/             ← MVP Lite binary (stdlib only, no external deps)
+    mvplite/             ← MVP Lite binary (net/http + yaml for config.yaml)
     genpic/              ← Full platform binary (chi + future deps)
   internal/              ← Not importable by external modules
     api/                 ← HTTP handlers, DTOs, middleware wiring
@@ -87,7 +87,7 @@ sweet spot for auditability and ergonomics.
 
 - All HTTP handlers are `http.Handler`-compatible; `chi` is transparent in
   unit tests (pass a `net/http/httptest.ResponseRecorder` directly).
-- MVP Lite (`cmd/mvplite`) intentionally keeps zero external deps and is not
-  upgraded to `chi`; it remains a pure-stdlib reference implementation.
+- MVP Lite (`cmd/mvplite`) keeps a single YAML dependency for `config.yaml` and is not
+  upgraded to `chi`; it remains a small `net/http` reference implementation.
 - If the team later needs gRPC or WebSocket, those are added as separate
   `cmd/` entry points, not bolted onto the existing HTTP mux.
