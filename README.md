@@ -3,7 +3,8 @@
 Image generation platform supporting OpenAI GPT Image 2, Google Gemini Banana
 series, and Aliyun Tongyi Wanxiang 2.7 via an OpenAI-compatible API.
 
-**新手（MVP Lite 传参、链接、配置）先看：[how-to-use.md](how-to-use.md)**
+**新手（MVP Lite 传参、链接、配置）先看：[how-to-use.md](how-to-use.md)**  
+**正式服部署（编译、systemd、Nginx、宝塔）：[docs/deploy-production.md](docs/deploy-production.md)**
 
 ## Quick start — MVP Lite
 

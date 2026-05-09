@@ -1,5 +1,7 @@
 # Genpic Platform — Operations Runbook
 
+**正式服部署（MVP Lite）：[deploy-production.md](deploy-production.md)**
+
 ## Starting the service
 
 ### MVP Lite (development / minimal)
