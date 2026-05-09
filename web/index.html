@@ -372,7 +372,7 @@
       <span id="btn-text">生成图片</span>
     </button>
 
-    <div class="note">模型与参数保存在本机 localStorage。Base URL 与 API Key 使用浏览器 AES-GCM 加密写入本机（无 Web Crypto 时降级为 Base64 封装）。<code>?address=</code> 与 <code>?key=</code> 可从 NewAPI 跳转预填（进入后从地址栏移除）；<code>address</code> 可省略时使用服务器 <code>config.yaml</code> 里的 <code>mvp_lite.default_base_url</code>。脱敏 Key（如 <code>sk****…</code>）无法调用上游，请改为完整 Key。</div>
+    <div class="note" tips="模型、Prompt与参数保存在本机 localStorage。Base URL 与 API Key 使用浏览器 AES-GCM 加密写入本机（无 Web Crypto 时降级为 Base64 封装）。?address= 与 ?key= 可从 NewAPI 跳转预填（进入后从地址栏移除）；address 可省略时使用服务器 config.yaml 里的 mvp_lite.default_base_url。脱敏 Key（如 sk****…）无法调用上游，请改为完整 Key。">模型、<strong>Prompt</strong>与参数保存在本机 localStorage。Base URL 与 API Key 使用浏览器 AES-GCM 加密写入本机。</div>
 
   </aside>
 
@@ -595,7 +595,8 @@ function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def;
 
 // Restore persisted values
 const persistFields = [
-  'base-url', 'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
+  'prompt',
+  'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
   'gem-aspect', 'gem-n', 'wan-size', 'wan-n'
 ];
 persistFields.forEach(id => {
@@ -604,7 +605,9 @@ persistFields.forEach(id => {
   const v = load(id, null);
   if (v !== null) el.value = v;
   el.addEventListener('change', () => save(id, el.value));
-  if (el.tagName === 'INPUT') el.addEventListener('input', () => save(id, el.value));
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    el.addEventListener('input', () => save(id, el.value));
+  }
 });
 
 const savedModel = load('active-model', 'openai/gpt-image-2');
