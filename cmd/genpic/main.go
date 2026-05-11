@@ -8,6 +8,10 @@
 // environment variables. POST /api/generate uses base_url + api_key from the
 // JSON body per request (printed to stderr for debugging).
 //
+// Optional -config (default config.yaml): mvp_lite.default_base_url is exposed
+// as GET /api/public-config for the embedded web UI; mvp_lite.port is used
+// unless overridden by PORT (same as mvplite).
+//
 // Milestone coverage:
 //   - M0: /v1/models, /v1/images/generations (sync), /v1/jobs (stub),
 //     /health, static frontend, structured logging.
@@ -15,6 +19,7 @@
 package main
 
 import (
+	"flag"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -28,12 +33,25 @@ import (
 	"genpic/internal/provider/openai"
 	"genpic/internal/provider/wan"
 	"genpic/pkg/logger"
+	"genpic/pkg/mvpconfig"
 	"genpic/pkg/provider"
 )
 
 func main() {
 	logger.Init()
 	log := slog.Default()
+
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port)")
+	flag.Parse()
+
+	filePort, defaultBaseURL, cfgFound, err := mvpconfig.Read(*configPath)
+	if err != nil {
+		slog.Error("genpic: config", "error", err)
+		os.Exit(1)
+	}
+	if !cfgFound {
+		slog.Info("genpic: config file not found; default Base URL empty until you add mvp_lite.default_base_url", "path", *configPath)
+	}
 
 	registerProviders(log)
 
@@ -51,6 +69,9 @@ func main() {
 	// Same generation pipeline as /v1/images/generations; body may include
 	// base_url/api_key for SPA compatibility (ignored here; keys are env-only).
 	mux.HandleFunc("POST /api/generate", api.HandleCompatGenerate)
+	mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, _ *http.Request) {
+		api.JSON(w, http.StatusOK, map[string]string{"default_base_url": defaultBaseURL})
+	})
 	mux.HandleFunc("GET /v1/jobs/{job_id}", api.HandleGetJob)
 	mux.HandleFunc("GET /v1/jobs", api.HandleListJobs)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -66,7 +87,10 @@ func main() {
 		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
 	}))
 
-	port := os.Getenv("PORT")
+	port := strings.TrimSpace(filePort)
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		port = p
+	}
 	if port == "" {
 		port = "8080"
 	}

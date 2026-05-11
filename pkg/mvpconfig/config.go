@@ -1,4 +1,6 @@
-package main
+// Package mvpconfig reads the mvp_lite section of config.yaml for mvplite and
+// genpic (default Base URL for the embedded web UI, optional listen port).
+package mvpconfig
 
 import (
 	"errors"
@@ -9,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// mvpLiteYAML is the mvp_lite section of config.yaml (MVP Lite only reads this).
+// mvpLiteYAML is the mvp_lite section of config.yaml.
 type mvpLiteYAML struct {
 	Port           string `yaml:"port"`
 	DefaultBaseURL string `yaml:"default_base_url"`
@@ -21,9 +23,9 @@ type rootYAML struct {
 	MvpLite mvpLiteYAML `yaml:"mvp_lite"`
 }
 
-// readMvpLiteConfig loads MVP Lite settings from a YAML file. Missing file is
-// not an error (found=false).
-func readMvpLiteConfig(path string) (port, defaultBaseURL string, found bool, err error) {
+// Read loads MVP Lite settings from a YAML file. Missing file is not an error
+// (found=false).
+func Read(path string) (port, defaultBaseURL string, found bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

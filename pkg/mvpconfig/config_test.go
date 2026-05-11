@@ -1,4 +1,4 @@
-package main
+package mvpconfig
 
 import (
 	"os"
@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestReadMvpLiteConfigMissing(t *testing.T) {
-	port, base, found, err := readMvpLiteConfig(filepath.Join(t.TempDir(), "none.yaml"))
+func TestReadMissing(t *testing.T) {
+	port, base, found, err := Read(filepath.Join(t.TempDir(), "none.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +16,7 @@ func TestReadMvpLiteConfigMissing(t *testing.T) {
 	}
 }
 
-func TestReadMvpLiteConfigOK(t *testing.T) {
+func TestReadOK(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	content := `
@@ -27,7 +27,7 @@ mvp_lite:
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	port, base, found, err := readMvpLiteConfig(path)
+	port, base, found, err := Read(path)
 	if err != nil || !found {
 		t.Fatalf("err=%v found=%v", err, found)
 	}

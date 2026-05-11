@@ -29,6 +29,7 @@ import (
 	"time"
 
 	genpic "genpic"
+	"genpic/pkg/mvpconfig"
 )
 
 // GenerateRequest is the JSON body posted by the browser to /api/generate.
@@ -96,7 +97,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port)")
 	flag.Parse()
 
-	filePort, defaultBase, found, err := readMvpLiteConfig(*configPath)
+	filePort, defaultBase, found, err := mvpconfig.Read(*configPath)
 	if err != nil {
 		log.Fatalf("mvplite: config: %v", err)
 	}
