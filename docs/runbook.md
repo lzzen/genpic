@@ -64,9 +64,10 @@ curl http://localhost:8080/health
 | `PORT` | No | `8080` | Listen port |
 | `LOG_FORMAT` | No | `text` | `text` or `json` |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
+| `GENPIC_DEV` | No | — | `1` / `true` / `yes` / `on`: log Gemini `generateContent` URL, redacted key, request/response JSON previews (large `inlineData` redacted), and on **model not found** dump registered catalog/upstream ids |
 | `OPENAI_BASE_URL` | No | — | OpenAI-compatible aggregator base URL |
 | `OPENAI_API_KEY` | No | — | Server-side key for OpenAI channel |
-| `GEMINI_BASE_URL` | No | — | Aggregator base URL for Gemini routing |
+| `GEMINI_BASE_URL` | No | — | **Scheme + host only** (no path). Used as `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent` |
 | `GEMINI_API_KEY` | No | — | Server-side key for Gemini channel |
 | `WAN_BASE_URL` | No | — | DashScope endpoint (CN or AP) |
 | `WAN_API_KEY` | No | — | Server-side DashScope key |
@@ -86,6 +87,11 @@ curl http://localhost:8080/health
 The `model` field in the request does not match any registered model ID.
 Run `GET /v1/models` to see what is currently registered, and compare against
 `contracts/providers.yaml`.
+
+For Gemini image models, this often means **`GEMINI_BASE_URL` was not set** at
+startup (the Gemini provider is skipped). Set `GEMINI_BASE_URL` and
+`GEMINI_API_KEY`, restart, or run with `GENPIC_DEV=1` to print which models are
+registered and the dispatch line for each request.
 
 ### Provider not appearing in `/v1/models`
 

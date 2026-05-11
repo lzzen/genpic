@@ -54,6 +54,26 @@ func (r *GenerateRequest) validate() error {
 	return nil
 }
 
+// normalizeModelID removes a leading catalog prefix (gemini/, openai/, wan/) so
+// POST /api/generate and /v1/images/generations accept either full ids
+// (e.g. gemini/gemini-3.1-flash-image-preview) or upstream wire ids
+// (e.g. gemini-3.1-flash-image-preview). Gemini generateContent URLs must not
+// include the "gemini/" provider segment in the model path segment.
+func normalizeModelID(model string) string {
+	s := strings.TrimSpace(model)
+	for _, p := range []string{"gemini/", "openai/", "wan/"} {
+		if strings.HasPrefix(s, p) {
+			return strings.TrimPrefix(s, p)
+		}
+	}
+	return s
+}
+
+func looksLikeGeminiImageModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "gemini") && strings.Contains(m, "image")
+}
+
 // compatGenerateBody is the SPA body for POST /api/generate: same fields as
 // GenerateRequest plus optional base_url and api_key (used by MVP Lite proxy;
 // full platform ignores them and uses server-side env credentials).
@@ -65,15 +85,36 @@ type compatGenerateBody struct {
 
 func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[string]any, error) {
 	log := logger.FromContext(ctx)
+	req.Model = normalizeModelID(req.Model)
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
 
 	prov, modelInfo, ok := provider.ProviderForModel(req.Model)
 	if !ok {
-		return nil, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "model_not_found", "model "+req.Model+" is not available")
+		msg := "model " + req.Model + " is not available"
+		if looksLikeGeminiImageModel(req.Model) {
+			msg += " — for Gemini image models set GEMINI_BASE_URL (scheme + host only, no path) and GEMINI_API_KEY"
+		}
+		if logger.DevMode() {
+			log.Warn("model_not_found",
+				"requested_model", req.Model,
+				"registered_models", provider.DebugRegisteredModelLines())
+		}
+		return nil, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "model_not_found", msg)
 	}
 
+	if logger.DevMode() {
+		log.Info("generate_dispatch",
+			"request_model", req.Model,
+			"provider", prov.Name(),
+			"upstream_model", modelInfo.UpstreamModel,
+			"n", req.N,
+			"aspect_ratio", req.AspectRatio,
+			"image_size", req.ImageSize,
+			"prompt_bytes", len(req.Prompt),
+		)
+	}
 	log.Info("generating image", "model", req.Model, "provider", prov.Name(), "n", req.N)
 
 	n := req.N

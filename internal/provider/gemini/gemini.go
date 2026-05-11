@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -94,7 +95,9 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	var totalTokens int
 	var reqID string
 
+	round := 0
 	for range n {
+		round++
 		body, err := buildGenerateContentBody(req)
 		if err != nil {
 			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build Gemini generateContent request", err)
@@ -106,12 +109,44 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			"Authorization": "Bearer " + p.cfg.APIKey,
 		}
 
+		if logger.DevMode() {
+			log.Info("gemini_generateContent_request",
+				"round", round,
+				"of", n,
+				"method", http.MethodPost,
+				"url", url,
+				"gemini_base_url", strings.TrimRight(strings.TrimSpace(p.cfg.BaseURL), "/"),
+				"api_key", logger.Redact(p.cfg.APIKey),
+				"body_bytes", len(body),
+				"body_json", clipJSON(string(body), 900),
+			)
+		}
+
 		resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
 		if err != nil {
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
+			if logger.DevMode() {
+				log.Warn("gemini_generateContent_non_ok",
+					"round", round,
+					"url", url,
+					"status", resp.StatusCode,
+					"response_bytes", len(raw),
+					"response_body", clipJSON(redactLargeInlineDataJSON(string(raw)), 1400),
+				)
+			}
 			return nil, pkgerrors.UpstreamErr("upstream_http_error", extractGeminiAPIError(raw, resp.StatusCode), nil)
+		}
+
+		if logger.DevMode() {
+			log.Info("gemini_generateContent_http_ok",
+				"round", round,
+				"url", url,
+				"status", resp.StatusCode,
+				"response_bytes", len(raw),
+				"response_json", clipJSON(redactLargeInlineDataJSON(string(raw)), 2000),
+			)
 		}
 
 		batch, tokens, rid, err := parseGenerateContentResponse(raw)
@@ -125,6 +160,14 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		totalTokens += tokens
 		if rid != "" {
 			reqID = rid
+		}
+		if logger.DevMode() {
+			log.Info("gemini_generateContent_parsed",
+				"round", round,
+				"inline_images", len(batch),
+				"usage_total_tokens", tokens,
+				"response_id", rid,
+			)
 		}
 	}
 
@@ -239,4 +282,21 @@ func extractGeminiAPIError(body []byte, statusCode int) string {
 		return env.Error.Message
 	}
 	return "upstream HTTP " + http.StatusText(statusCode)
+}
+
+func clipJSON(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+// Redacts very long JSON string values for "data" (typical base64 image payloads) so dev logs stay readable.
+var longInlineDataField = regexp.MustCompile(`"data"\s*:\s*"[^"]{200,}"`)
+
+func redactLargeInlineDataJSON(s string) string {
+	return longInlineDataField.ReplaceAllString(s, `"data":"[redacted large payload]"`)
 }

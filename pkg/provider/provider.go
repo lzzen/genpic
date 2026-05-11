@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -186,4 +187,19 @@ func ProviderForModel(modelID string) (Provider, ModelInfo, bool) {
 		}
 	}
 	return nil, ModelInfo{}, false
+}
+
+// DebugRegisteredModelLines returns one human-readable line per registered model
+// (for GENPIC_DEV diagnostics when model resolution fails).
+func DebugRegisteredModelLines() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	var lines []string
+	for provName, p := range registry {
+		for _, m := range p.Models() {
+			lines = append(lines, fmt.Sprintf("provider=%s catalog_id=%s upstream=%s", provName, m.ID, m.UpstreamModel))
+		}
+	}
+	sort.Strings(lines)
+	return lines
 }

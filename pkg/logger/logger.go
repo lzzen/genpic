@@ -7,6 +7,18 @@ import (
 	"strings"
 )
 
+// DevMode is true when GENPIC_DEV is set to 1/true/yes/on (case-insensitive).
+// Used to print upstream request/response traces and routing diagnostics to stderr.
+func DevMode() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GENPIC_DEV")))
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 type contextKey struct{}
 
 // Init configures the default slog handler based on the LOG_FORMAT environment
@@ -26,6 +38,9 @@ func Init() {
 		h = slog.NewTextHandler(os.Stderr, opts)
 	}
 	slog.SetDefault(slog.New(h))
+	if DevMode() {
+		slog.Info("GENPIC_DEV is enabled: verbose upstream traces and model-routing diagnostics are on")
+	}
 }
 
 // WithTraceID returns a child context that carries the given trace ID. The
