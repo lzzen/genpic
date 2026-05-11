@@ -29,16 +29,11 @@ go run ./cmd/mvplite -config /etc/genpic/config.yaml
 
 ## Full platform
 
-Requires upstream provider credentials (held server-side — never exposed to callers).
+`go run ./cmd/genpic` 提供 **`POST /api/generate`**（与嵌入式主页一致）：请求 JSON 必须包含 **`base_url`**、**`api_key`**，由服务端转发到第三方；**无需**事先 `export GEMINI_*` 等环境变量即可在网页里生图。每次 `/api/generate` 会在运行服务的 **终端 stderr** 打印发往第三方的原始请求体与原始响应体。
+
+可选：若使用 **`POST /v1/images/generations`**，仍可通过进程环境变量配置默认上游地址与密钥（见 [docs/runbook.md](docs/runbook.md)）。
 
 ```bash
-export OPENAI_BASE_URL="https://your-aggregator.example.com"
-export OPENAI_API_KEY="sk-..."
-export GEMINI_BASE_URL="https://your-aggregator.example.com"
-export GEMINI_API_KEY="sk-..."
-export WAN_BASE_URL="https://dashscope.aliyuncs.com"
-export WAN_API_KEY="sk-..."
-
 go run ./cmd/genpic
 # Open http://localhost:8080
 ```

@@ -4,8 +4,9 @@
 // the v1 route surface defined in openapi.yaml, and serves the multi-model
 // frontend from the embedded web/ directory.
 //
-// Provider credentials are loaded from environment variables only — never
-// from the caller's request body. See config section below for variable names.
+// Provider credentials for POST /v1/images/generations may be loaded from
+// environment variables. POST /api/generate uses base_url + api_key from the
+// JSON body per request (printed to stderr for debugging).
 //
 // Milestone coverage:
 //   - M0: /v1/models, /v1/images/generations (sync), /v1/jobs (stub),
@@ -18,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	genpic "genpic"
@@ -84,40 +86,27 @@ func main() {
 	}
 }
 
-// registerProviders reads upstream credentials from environment variables and
-// registers each provider into the global registry. If a required variable is
-// missing the provider is silently skipped — this allows partial deployments
-// where only some providers are configured.
+// registerProviders wires all provider adapters. Environment variables supply
+// defaults for POST /v1/images/generations; POST /api/generate uses JSON
+// base_url + api_key per request instead (env may be empty).
 func registerProviders(log *slog.Logger) {
-	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-		provider.Register(openai.New(openai.Config{
-			BaseURL: baseURL,
-			APIKey:  os.Getenv("OPENAI_API_KEY"),
-		}))
-		log.Info("registered provider", "name", "openai", "base_url", baseURL)
-	} else {
-		log.Warn("OPENAI_BASE_URL not set; OpenAI provider disabled")
-	}
+	provider.Register(openai.New(openai.Config{
+		BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		APIKey:  strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+	}))
+	log.Info("registered provider", "name", "openai", "base_url_set", os.Getenv("OPENAI_BASE_URL") != "")
 
-	if baseURL := os.Getenv("GEMINI_BASE_URL"); baseURL != "" {
-		provider.Register(gemini.New(gemini.Config{
-			BaseURL: baseURL,
-			APIKey:  os.Getenv("GEMINI_API_KEY"),
-		}))
-		log.Info("registered provider", "name", "gemini", "base_url", baseURL)
-	} else {
-		log.Warn("GEMINI_BASE_URL not set; Gemini provider disabled")
-	}
+	provider.Register(gemini.New(gemini.Config{
+		BaseURL: strings.TrimSpace(os.Getenv("GEMINI_BASE_URL")),
+		APIKey:  strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
+	}))
+	log.Info("registered provider", "name", "gemini", "base_url_set", os.Getenv("GEMINI_BASE_URL") != "")
 
-	if baseURL := os.Getenv("WAN_BASE_URL"); baseURL != "" {
-		provider.Register(wan.New(wan.Config{
-			BaseURL: baseURL,
-			APIKey:  os.Getenv("WAN_API_KEY"),
-		}))
-		log.Info("registered provider", "name", "wan", "base_url", baseURL)
-	} else {
-		log.Warn("WAN_BASE_URL not set; Wan provider disabled")
-	}
+	provider.Register(wan.New(wan.Config{
+		BaseURL: strings.TrimSpace(os.Getenv("WAN_BASE_URL")),
+		APIKey:  strings.TrimSpace(os.Getenv("WAN_API_KEY")),
+	}))
+	log.Info("registered provider", "name", "wan", "base_url_set", os.Getenv("WAN_BASE_URL") != "")
 }
 
 type statusRecorder struct {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"genpic/pkg/compatctx"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/logger"
 	"genpic/pkg/provider"
@@ -75,8 +76,8 @@ func looksLikeGeminiImageModel(model string) bool {
 }
 
 // compatGenerateBody is the SPA body for POST /api/generate: same fields as
-// GenerateRequest plus optional base_url and api_key (used by MVP Lite proxy;
-// full platform ignores them and uses server-side env credentials).
+// GenerateRequest plus base_url and api_key (required) used for the upstream
+// HTTP call; each request carries its own credentials (no server env required).
 type compatGenerateBody struct {
 	GenerateRequest
 	BaseURL string `json:"base_url,omitempty"`
@@ -94,7 +95,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	if !ok {
 		msg := "model " + req.Model + " is not available"
 		if looksLikeGeminiImageModel(req.Model) {
-			msg += " — for Gemini image models set GEMINI_BASE_URL (scheme + host only, no path) and GEMINI_API_KEY"
+			msg += " — include base_url and api_key in the POST /api/generate JSON body (same as the web form)"
 		}
 		if logger.DevMode() {
 			log.Warn("model_not_found",
@@ -207,9 +208,10 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, out)
 }
 
-// HandleCompatGenerate serves POST /api/generate for the embedded SPA (same
-// JSON shape as MVP Lite). Upstream credentials come from environment
-// variables on the full platform; base_url and api_key in the body are ignored.
+// HandleCompatGenerate serves POST /api/generate for the embedded SPA.
+// base_url and api_key in the JSON body are required and are sent to the third-party
+// upstream as-is; the terminal running genpic prints the full upstream request
+// and raw response to stderr for each call.
 func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
@@ -219,7 +221,20 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := executeImageGeneration(r.Context(), body.GenerateRequest)
+	base := strings.TrimSpace(body.BaseURL)
+	key := strings.TrimSpace(body.APIKey)
+	if base == "" || key == "" {
+		Error(w, pkgerrors.BadRequest("missing_field", "base_url and api_key are required in POST /api/generate"))
+		return
+	}
+
+	ctx := compatctx.With(r.Context(), &compatctx.Override{
+		BaseURL:     base,
+		APIKey:      key,
+		LogToStderr: true,
+	})
+
+	out, err := executeImageGeneration(ctx, body.GenerateRequest)
 	if err != nil {
 		Error(w, err)
 		return

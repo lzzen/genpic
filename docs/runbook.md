@@ -32,6 +32,8 @@ Without `config.yaml`, the server still starts; the UI has no default Base URL u
 
 ### Full platform
 
+`GEMINI_BASE_URL` 为可选：仅当你使用 **`POST /v1/images/generations`** 且希望由服务端持有上游密钥时才需要。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的完整请求 JSON 与原始响应正文。
+
 `GEMINI_BASE_URL` 应为**仅含协议与主机**的地址（不要带 `/v1` 等路径）。Gemini 适配器会请求 `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent`（与 `model-fingers/gemini-image.md` 一致）。
 
 ```bash
@@ -67,8 +69,8 @@ curl http://localhost:8080/health
 | `GENPIC_DEV` | No | — | `1` / `true` / `yes` / `on`: log Gemini `generateContent` URL, redacted key, request/response JSON previews (large `inlineData` redacted), and on **model not found** dump registered catalog/upstream ids |
 | `OPENAI_BASE_URL` | No | — | OpenAI-compatible aggregator base URL |
 | `OPENAI_API_KEY` | No | — | Server-side key for OpenAI channel |
-| `GEMINI_BASE_URL` | No | — | **Scheme + host only** (no path). Used as `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent` |
-| `GEMINI_API_KEY` | No | — | Server-side key for Gemini channel |
+| `GEMINI_BASE_URL` | No | — | 可选；仅 `POST /v1/images/generations` 使用。`POST /api/generate` 用 JSON 里的 `base_url` |
+| `GEMINI_API_KEY` | No | — | 可选；仅 `POST /v1/images/generations`。`POST /api/generate` 用 JSON 里的 `api_key` |
 | `WAN_BASE_URL` | No | — | DashScope endpoint (CN or AP) |
 | `WAN_API_KEY` | No | — | Server-side DashScope key |
 
@@ -88,10 +90,10 @@ The `model` field in the request does not match any registered model ID.
 Run `GET /v1/models` to see what is currently registered, and compare against
 `contracts/providers.yaml`.
 
-For Gemini image models, this often means **`GEMINI_BASE_URL` was not set** at
-startup (the Gemini provider is skipped). Set `GEMINI_BASE_URL` and
-`GEMINI_API_KEY`, restart, or run with `GENPIC_DEV=1` to print which models are
-registered and the dispatch line for each request.
+For Gemini image models, this often means the **model string does not match**
+the built-in catalog (see `GET /v1/models`). When using **`POST /api/generate`**, ensure **`base_url` and `api_key`** are present in the JSON body.
+
+With **`GENPIC_DEV=1`**, startup logs list registered models when resolution fails.
 
 ### Provider not appearing in `/v1/models`
 

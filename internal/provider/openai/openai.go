@@ -11,15 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"genpic/pkg/compatctx"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/httpclient"
 	"genpic/pkg/logger"
 	"genpic/pkg/provider"
 )
 
-// Config holds the connection details for the OpenAI-compatible upstream.
-// In production these come from environment variables or a secrets manager,
-// never from the API caller's request body.
+// Config holds default upstream connection details (optional when using POST /api/generate with JSON base_url + api_key).
 type Config struct {
 	// BaseURL is the upstream origin, e.g. "https://api.openai.com".
 	// For NewAPI aggregator: your aggregator's base URL.
@@ -64,18 +63,33 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	log := logger.FromContext(ctx)
 	start := time.Now()
 
+	baseURL, apiKey, trace := compatctx.Resolve(ctx, p.cfg.BaseURL, p.cfg.APIKey)
+	if baseURL == "" || apiKey == "" {
+		return nil, pkgerrors.BadRequest("upstream_credentials", "set base_url and api_key in the POST /api/generate JSON body.")
+	}
+
 	body, err := buildRequest(req)
 	if err != nil {
 		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build upstream request", err)
 	}
 
-	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/v1/images/generations"
+	url := strings.TrimRight(baseURL, "/") + "/v1/images/generations"
 	headers := map[string]string{
 		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + p.cfg.APIKey,
+		"Authorization": "Bearer " + apiKey,
 	}
 
 	resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	if raw == nil {
+		raw = []byte{}
+	}
+	if trace {
+		compatctx.LogStderrRoundTrip("openai", http.MethodPost, url, headers, body, status, raw)
+	}
 	if err != nil {
 		return nil, err
 	}

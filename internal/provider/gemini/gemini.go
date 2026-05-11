@@ -18,13 +18,14 @@ import (
 	"strings"
 	"time"
 
+	"genpic/pkg/compatctx"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/httpclient"
 	"genpic/pkg/logger"
 	"genpic/pkg/provider"
 )
 
-// Config holds connection details for GEMINI_BASE_URL (scheme + host only, no path suffix).
+// Config holds default upstream connection details (optional when using POST /api/generate with JSON base_url + api_key).
 type Config struct {
 	BaseURL string
 	APIKey  string
@@ -83,6 +84,11 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	log := logger.FromContext(ctx)
 	start := time.Now()
 
+	baseURL, apiKey, trace := compatctx.Resolve(ctx, p.cfg.BaseURL, p.cfg.APIKey)
+	if baseURL == "" || apiKey == "" {
+		return nil, pkgerrors.BadRequest("upstream_credentials", "set base_url and api_key in the POST /api/generate JSON body (third-party scheme + host only, no path suffix).")
+	}
+
 	n := req.N
 	if n == 0 {
 		n = 1
@@ -103,31 +109,41 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build Gemini generateContent request", err)
 		}
 
-		url := generateContentURL(p.cfg.BaseURL, req.Model)
+		url := generateContentURL(baseURL, req.Model)
 		headers := map[string]string{
 			"Content-Type":  "application/json",
-			"Authorization": "Bearer " + p.cfg.APIKey,
+			"Authorization": "Bearer " + apiKey,
 		}
 
-		if logger.DevMode() {
+		if logger.DevMode() && !trace {
 			log.Info("gemini_generateContent_request",
 				"round", round,
 				"of", n,
 				"method", http.MethodPost,
 				"url", url,
-				"gemini_base_url", strings.TrimRight(strings.TrimSpace(p.cfg.BaseURL), "/"),
-				"api_key", logger.Redact(p.cfg.APIKey),
+				"gemini_base_url", strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+				"api_key", logger.Redact(apiKey),
 				"body_bytes", len(body),
 				"body_json", clipJSON(string(body), 900),
 			)
 		}
 
 		resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		if raw == nil {
+			raw = []byte{}
+		}
+		if trace {
+			compatctx.LogStderrRoundTrip("gemini", http.MethodPost, url, headers, body, status, raw)
+		}
 		if err != nil {
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			if logger.DevMode() {
+			if logger.DevMode() && !trace {
 				log.Warn("gemini_generateContent_non_ok",
 					"round", round,
 					"url", url,
@@ -139,7 +155,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			return nil, pkgerrors.UpstreamErr("upstream_http_error", extractGeminiAPIError(raw, resp.StatusCode), nil)
 		}
 
-		if logger.DevMode() {
+		if logger.DevMode() && !trace {
 			log.Info("gemini_generateContent_http_ok",
 				"round", round,
 				"url", url,
@@ -161,7 +177,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		if rid != "" {
 			reqID = rid
 		}
-		if logger.DevMode() {
+		if logger.DevMode() && !trace {
 			log.Info("gemini_generateContent_parsed",
 				"round", round,
 				"inline_images", len(batch),
