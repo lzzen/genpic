@@ -94,19 +94,19 @@ var mvpState struct {
 }
 
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port)")
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port for listen)")
 	flag.Parse()
 
-	filePort, defaultBase, found, err := mvpconfig.Read(*configPath)
+	cfg, err := mvpconfig.Read(*configPath)
 	if err != nil {
 		log.Fatalf("mvplite: config: %v", err)
 	}
-	if !found {
+	if !cfg.Found {
 		log.Printf("mvplite: config file %q not found; default Base URL empty until you add mvp_lite.default_base_url", *configPath)
 	}
-	mvpState.DefaultBaseURL = defaultBase
+	mvpState.DefaultBaseURL = cfg.DefaultBaseURL
 
-	port := strings.TrimSpace(filePort)
+	port := strings.TrimSpace(cfg.MvpLitePort)
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
 		port = p
 	}

@@ -7,10 +7,13 @@
 # ── MVP Lite (cmd/mvplite) ─────────────────────────────────────────────────
 # go run ./cmd/mvplite -config config.yaml
 # Browser can omit ?address= when default_base_url is set. Never put API keys here.
+# Listen: mvp_lite.port (overridden by PORT). cmd/genpic does not use this key for HTTP listen.
 mvp_lite:
   port: "8080"
   default_base_url: "https://your-openai-compatible-aggregator.example.com"
 
+# ── Full platform HTTP (cmd/genpic) ────────────────────────────────────────
+# Listen: server.port (overridden by PORT). mvplite does not use this for HTTP listen.
 server:
   port: "8080"
   # read_timeout and write_timeout apply to the HTTP server.

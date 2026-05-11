@@ -190,4 +190,4 @@ server {
 | [runbook.md](runbook.md) | 全平台环境变量与运维 |
 | 本文 | **正式服**：编译、systemd、Nginx、宝塔 |
 
-**Full Platform（`cmd/genpic`）**：同样可使用 **`config.yaml`** 中的 **`mvp_lite`**（**`GET /api/public-config`**、端口与 **`PORT`** 覆盖规则与上文 **MVP Lite** 一致）；`systemd` 的 `ExecStart` 改为 **`…/genpic -config …/config.yaml`** 即可。本文仍以 **MVP Lite** 二进制名为例。
+**Full Platform（`cmd/genpic`）**：**`mvp_lite.default_base_url`** 与 **`GET /api/public-config`** 同上；监听端口用 **`server.port`**（**`PORT`** 优先）。`systemd` 的 `ExecStart` 改为 **`…/genpic -config …/config.yaml`** 即可。本文仍以 **MVP Lite** 二进制名为例。

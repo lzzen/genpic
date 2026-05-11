@@ -17,7 +17,7 @@ go run ./cmd/mvplite
 go run ./cmd/mvplite -config /path/to/config.yaml
 ```
 
-Optional: `PORT=9090` overrides the listen port from `mvp_lite.port` / default.
+Optional: `PORT=9090` overrides the listen port from yaml (`mvp_lite.port` for MVP Lite, `server.port` for Full platform) / default.
 
 NewAPI-style deep link (query params are read once then stripped from the address bar):
 
@@ -32,7 +32,7 @@ Without `config.yaml`, the server still starts; the UI has no default Base URL u
 
 ### Full platform
 
-与 **MVP Lite** 一样，可在模块根放置 **`config.yaml`**（或 **`go run ./cmd/genpic -config /path/to/config.yaml`**）：**`mvp_lite.default_base_url`** 由 **`GET /api/public-config`** 暴露给嵌入式主页；**`mvp_lite.port`** 为默认监听端口，**`PORT`** 环境变量优先。无配置文件时进程照常启动，浏览器需自行填写 Base URL 或使用 **`?address=`**。
+与 **MVP Lite** 一样，可在模块根放置 **`config.yaml`**（或 **`go run ./cmd/genpic -config /path/to/config.yaml`**）：**`mvp_lite.default_base_url`** 由 **`GET /api/public-config`** 暴露给嵌入式主页；**`server.port`** 为全平台默认监听端口（**`mvp_lite.port`** 仅给 **MVP Lite** 用），**`PORT`** 环境变量优先。无配置文件时进程照常启动，浏览器需自行填写 Base URL 或使用 **`?address=`**。
 
 `GEMINI_BASE_URL` 为可选：仅当你使用 **`POST /v1/images/generations`** 且希望由服务端持有上游密钥时才需要。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的请求 JSON 与响应 JSON（其中超长 **base64**、**thoughtSignature** 会被替换为占位符，避免刷屏）。
 

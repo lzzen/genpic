@@ -9,8 +9,8 @@
 // JSON body per request (printed to stderr for debugging).
 //
 // Optional -config (default config.yaml): mvp_lite.default_base_url is exposed
-// as GET /api/public-config for the embedded web UI; mvp_lite.port is used
-// unless overridden by PORT (same as mvplite).
+// as GET /api/public-config; listen port comes from server.port unless
+// overridden by PORT (mvplite uses mvp_lite.port instead).
 //
 // Milestone coverage:
 //   - M0: /v1/models, /v1/images/generations (sync), /v1/jobs (stub),
@@ -41,17 +41,18 @@ func main() {
 	logger.Init()
 	log := slog.Default()
 
-	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port)")
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional server.port)")
 	flag.Parse()
 
-	filePort, defaultBaseURL, cfgFound, err := mvpconfig.Read(*configPath)
+	cfg, err := mvpconfig.Read(*configPath)
 	if err != nil {
 		slog.Error("genpic: config", "error", err)
 		os.Exit(1)
 	}
-	if !cfgFound {
+	if !cfg.Found {
 		slog.Info("genpic: config file not found; default Base URL empty until you add mvp_lite.default_base_url", "path", *configPath)
 	}
+	defaultBaseURL := cfg.DefaultBaseURL
 
 	registerProviders(log)
 
@@ -87,7 +88,7 @@ func main() {
 		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
 	}))
 
-	port := strings.TrimSpace(filePort)
+	port := strings.TrimSpace(cfg.ServerPort)
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
 		port = p
 	}
