@@ -85,8 +85,14 @@ idempotency:
 #   cdn_base_url: "https://cdn.example.com/works"
 
 # ── Database ─────────────────────────────────────────────────────────────────
-# Uncomment for Full Platform (M1+).
+# MySQL job store for persistent generation history (recommended for production).
+# Without this block the server falls back to an in-memory store (no persistence).
+# DSN can also be set via DB_DSN environment variable.
+#
+# Required DSN parameters: parseTime=true  (maps DATETIME columns to time.Time)
+# Recommended extras:      charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local
+#
 # database:
-#   dsn: "postgres://user:password@localhost:5432/genpic?sslmode=require"
-#   max_open_conns: 20
-#   max_idle_conns: 5
+#   dsn: "genpic:password@tcp(localhost:3306)/genpic?parseTime=true&charset=utf8mb4"
+#   max_open_conns: 10   # default: 10
+#   max_idle_conns: 5    # default: 5

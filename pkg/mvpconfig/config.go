@@ -40,15 +40,23 @@ type rateLimitYAML struct {
 	GlobalRPM int `yaml:"global_rpm"`
 }
 
+// databaseYAML is the database section of config.yaml.
+type databaseYAML struct {
+	DSN          string `yaml:"dsn"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
+}
+
 // rootYAML is the full config.yaml structure. Unknown keys are ignored.
 type rootYAML struct {
-	Server       serverYAML        `yaml:"server"`
-	MvpLite      mvpLiteYAML       `yaml:"mvp_lite"`
-	ModelIDMap   map[string]string `yaml:"model_id_map"`
-	OpenAI       providerYAML      `yaml:"openai"`
-	Gemini       providerYAML      `yaml:"gemini"`
-	Wan       providerYAML  `yaml:"wan"`
-	RateLimit rateLimitYAML `yaml:"rate_limit"`
+	Server     serverYAML        `yaml:"server"`
+	MvpLite    mvpLiteYAML       `yaml:"mvp_lite"`
+	ModelIDMap map[string]string `yaml:"model_id_map"`
+	OpenAI     providerYAML      `yaml:"openai"`
+	Gemini     providerYAML      `yaml:"gemini"`
+	Wan        providerYAML      `yaml:"wan"`
+	RateLimit  rateLimitYAML     `yaml:"rate_limit"`
+	Database   databaseYAML      `yaml:"database"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -58,6 +66,17 @@ type ProviderConfig struct {
 	APIKey     string
 	Timeout    time.Duration
 	MaxRetries int
+}
+
+// DatabaseConfig holds resolved database connection settings.
+type DatabaseConfig struct {
+	// DSN is the full MySQL data source name.
+	// Must include parseTime=true, e.g.:
+	//   user:pass@tcp(localhost:3306)/genpic?parseTime=true&charset=utf8mb4
+	// Can also be supplied via DB_DSN env var.
+	DSN          string
+	MaxOpenConns int
+	MaxIdleConns int
 }
 
 // Config holds all parsed settings from config.yaml.
@@ -72,10 +91,13 @@ type Config struct {
 	// Full-platform (cmd/genpic) provider credentials:
 	OpenAI ProviderConfig
 	Gemini ProviderConfig
-	Wan ProviderConfig
+	Wan    ProviderConfig
 
 	// Rate-limiting: global RPM cap for /v1/images/generations (0 = unlimited).
 	GlobalRPM int
+
+	// Database connection settings (cmd/genpic only). DSN="" means in-memory fallback.
+	Database DatabaseConfig
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -102,10 +124,28 @@ func Read(path string) (Config, error) {
 		OpenAI:         resolveProvider(root.OpenAI, "OPENAI"),
 		Gemini:         resolveProvider(root.Gemini, "GEMINI"),
 		Wan:            resolveProvider(root.Wan, "WAN"),
-		GlobalRPM: root.RateLimit.GlobalRPM,
+		GlobalRPM:      root.RateLimit.GlobalRPM,
+		Database:       resolveDatabase(root.Database),
 	}
 
 	return c, nil
+}
+
+// resolveDatabase merges config.yaml database settings with the DB_DSN env var fallback.
+func resolveDatabase(y databaseYAML) DatabaseConfig {
+	dsn := strings.TrimSpace(y.DSN)
+	if v := strings.TrimSpace(os.Getenv("DB_DSN")); v != "" {
+		dsn = v
+	}
+	maxOpen := y.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 10
+	}
+	maxIdle := y.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 5
+	}
+	return DatabaseConfig{DSN: dsn, MaxOpenConns: maxOpen, MaxIdleConns: maxIdle}
 }
 
 // resolveProvider fills base_url and api_key from env vars when not present

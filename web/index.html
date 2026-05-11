@@ -387,6 +387,29 @@
       .layout { flex-direction: column; }
       .config-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
     }
+
+    /* ── History panel ── */
+    .history-area { flex: 1; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg); }
+    .hist-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 8px; flex-shrink: 0; }
+    .hist-header h2 { font-size: .9rem; font-weight: 600; color: var(--text); margin: 0; }
+    .hist-clear-btn { font-size: .75rem; color: var(--muted); border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+    .hist-clear-btn:hover { color: var(--danger); border-color: var(--danger); }
+    .hist-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--muted); padding: 80px 20px; }
+    .hist-empty .icon { font-size: 2.5rem; }
+    .hist-empty p { font-size: .85rem; }
+    .hist-list { padding: 12px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .hist-entry { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .hist-entry-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .hist-ts { font-size: .72rem; color: var(--muted); flex: 1; min-width: 0; }
+    .hist-model { font-size: .72rem; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .hist-del { width: 24px; height: 24px; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: .9rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .hist-del:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+    .hist-prompt { padding: 8px 14px; font-size: .78rem; color: var(--muted); line-height: 1.45; border-bottom: 1px solid var(--border); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .hist-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+    .hist-img-item { display: flex; flex-direction: column; align-items: center; }
+    .hist-img-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; background: var(--surface2); }
+    .hist-img-item a { display: block; margin-top: 4px; font-size: .68rem; color: var(--accent); text-decoration: none; }
+    .hist-img-item a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -637,8 +660,8 @@
 
   </aside>
 
-  <!-- ── Gallery ── -->
-  <main class="gallery-area">
+  <!-- ── Gallery (generate tab) ── -->
+  <main class="gallery-area" id="generate-area">
     <div id="status-bar" class="status-bar"></div>
     <div class="gallery" id="gallery">
       <div class="empty" id="empty">
@@ -646,6 +669,19 @@
         <p>选择模型并输入提示词，点击「生成图片」开始</p>
       </div>
     </div>
+  </main>
+
+  <!-- ── History panel ── -->
+  <main class="history-area" id="history-area" style="display:none">
+    <div class="hist-header">
+      <h2>生成历史</h2>
+      <button class="hist-clear-btn" id="hist-clear-btn">清空</button>
+    </div>
+    <div id="hist-empty" class="hist-empty">
+      <div class="icon">🕑</div>
+      <p>还没有生成记录，先去生成一张图试试吧</p>
+    </div>
+    <div id="hist-list" class="hist-list" style="display:none"></div>
   </main>
 
 </div>
@@ -1343,6 +1379,7 @@ $('btn-gen').addEventListener('click', async () => {
 
     setStatus('success', `✓ 生成 ${images.length} 张图片（${effectiveModelId()}）`);
     addImages(images, effectiveModelId(), activeProvider);
+    saveToHistory(images, effectiveModelId(), activeProvider, prompt);
   } catch (err) {
     setStatus('error', '网络错误：' + err.message);
   } finally {
@@ -1354,6 +1391,178 @@ $('btn-gen').addEventListener('click', async () => {
 // Ctrl/Cmd+Enter to submit
 $('prompt').addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('btn-gen').click();
+});
+
+// ── History storage ─────────────────────────────────────
+const HIST_KEY = 'genpic:history-v1';
+const HIST_MAX = 20;
+
+function histLoad() {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
+}
+
+function histPush(entry) {
+  // Strip b64 above ~400 KB to protect localStorage quota.
+  const MAX_B64 = 400_000;
+  const safe = {
+    ...entry,
+    images: entry.images.map(img => ({
+      url: img.url || undefined,
+      mime_type: img.mime_type || undefined,
+      revised_prompt: img.revised_prompt || undefined,
+      b64_json: (img.b64_json && img.b64_json.length <= MAX_B64) ? img.b64_json : undefined,
+    })),
+  };
+  let arr = histLoad();
+  arr.unshift(safe);
+  if (arr.length > HIST_MAX) arr = arr.slice(0, HIST_MAX);
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(arr)); } catch {}
+}
+
+function histDelete(id) {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(histLoad().filter(e => e.id !== id))); } catch {}
+}
+
+function histClear() {
+  try { localStorage.removeItem(HIST_KEY); } catch {}
+}
+
+function saveToHistory(images, model, provider, prompt) {
+  if (!images || !images.length) return;
+  histPush({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    ts: Date.now(),
+    model, provider, prompt,
+    images: images.map(img => ({
+      url: img.url,
+      b64_json: img.b64_json,
+      mime_type: img.mime_type,
+      revised_prompt: img.revised_prompt,
+    })),
+  });
+}
+
+function fmtHistTime(ts) {
+  try { return new Date(ts).toLocaleString(); } catch { return ''; }
+}
+
+function renderHistoryPanel() {
+  const arr = histLoad();
+  const emptyEl = $('hist-empty');
+  const listEl  = $('hist-list');
+  if (!emptyEl || !listEl) return;
+  if (arr.length === 0) {
+    emptyEl.style.display = '';
+    listEl.style.display  = 'none';
+    listEl.innerHTML = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  listEl.style.display  = '';
+  listEl.innerHTML = '';
+
+  arr.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'hist-entry';
+
+    // header row
+    const hdr = document.createElement('div');
+    hdr.className = 'hist-entry-header';
+
+    const tsSpan = document.createElement('span');
+    tsSpan.className = 'hist-ts';
+    tsSpan.textContent = fmtHistTime(entry.ts);
+
+    const badge = document.createElement('span');
+    badge.className = 'provider-badge ' + (entry.provider || '');
+    badge.textContent = entry.provider || '';
+
+    const modelSpan = document.createElement('span');
+    modelSpan.className = 'hist-model';
+    modelSpan.textContent = entry.model || '';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'hist-del';
+    delBtn.title = '删除';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => { histDelete(entry.id); renderHistoryPanel(); });
+
+    hdr.appendChild(tsSpan);
+    hdr.appendChild(badge);
+    hdr.appendChild(modelSpan);
+    hdr.appendChild(delBtn);
+    card.appendChild(hdr);
+
+    // prompt preview
+    if (entry.prompt) {
+      const p = document.createElement('div');
+      p.className = 'hist-prompt';
+      p.textContent = entry.prompt;
+      card.appendChild(p);
+    }
+
+    // thumbnails
+    const imgsEl = document.createElement('div');
+    imgsEl.className = 'hist-images';
+    (entry.images || []).forEach(img => {
+      const item = document.createElement('div');
+      item.className = 'hist-img-item';
+
+      const el = document.createElement('img');
+      el.alt = '';
+      el.loading = 'lazy';
+      if (img.b64_json) {
+        el.src = 'data:' + (img.mime_type || 'image/png') + ';base64,' + img.b64_json;
+      } else if (img.url) {
+        el.src = img.url;
+      }
+      item.appendChild(el);
+
+      const a = document.createElement('a');
+      if (img.b64_json) {
+        a.href = el.src;
+        a.download = 'genpic-' + entry.ts + '.png';
+        a.textContent = '下载';
+      } else if (img.url) {
+        a.href = img.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = '原图 ↗';
+      }
+      if (a.href) item.appendChild(a);
+
+      imgsEl.appendChild(item);
+    });
+    card.appendChild(imgsEl);
+
+    listEl.appendChild(card);
+  });
+}
+
+// ── Tab switching ────────────────────────────────────────
+function setTab(tab) {
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  const sidebar  = $('sidebar');
+  const genArea  = $('generate-area');
+  const histArea = $('history-area');
+  const isGen = tab === 'generate';
+  if (sidebar)  sidebar.style.display  = isGen ? '' : 'none';
+  if (genArea)  genArea.style.display  = isGen ? '' : 'none';
+  if (histArea) histArea.style.display = isGen ? 'none' : '';
+  if (!isGen) renderHistoryPanel();
+}
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => setTab(btn.dataset.tab));
+});
+
+$('hist-clear-btn')?.addEventListener('click', () => {
+  if (confirm('确认清空全部生成历史？')) {
+    histClear();
+    renderHistoryPanel();
+  }
 });
 </script>
 </body>

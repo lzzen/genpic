@@ -62,13 +62,25 @@ func main() {
 	api.SetModelIDMap(cfg.ModelIDMap)
 	registerProviders(log, cfg)
 
-	// ── Job store (in-memory; async /v1 path) ───────────────────────────────
+	// ── Job store ────────────────────────────────────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	store := jobstore.NewMemory(ctx, 2*time.Hour)
+	var store jobstore.Store
+	if cfg.Database.DSN != "" {
+		ms, err := jobstore.NewMySQL(cfg.Database.DSN, cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns)
+		if err != nil {
+			slog.Error("job store: mysql init failed", "error", err)
+			os.Exit(1)
+		}
+		store = ms
+		log.Info("job store initialised", "type", "mysql")
+	} else {
+		store = jobstore.NewMemory(ctx, 2*time.Hour)
+		log.Info("job store initialised", "type", "in-memory", "ttl", "2h",
+			"note", "set database.dsn (or DB_DSN) to enable persistent MySQL storage")
+	}
 	api.SetJobStore(store)
-	log.Info("job store initialised", "type", "in-memory", "ttl", "2h")
 
 	// ── Rate limiter ──────────────────────────────────────────────────────
 	var globalLimiter ratelimit.Limiter = ratelimit.Unlimited{}

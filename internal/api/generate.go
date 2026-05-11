@@ -248,22 +248,25 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, out)
 }
 
-// handleImageGenerationAsync creates a job, launches a goroutine, and returns
-// 202 Accepted immediately. The caller polls GET /v1/jobs/{id} for results.
-func handleImageGenerationAsync(w http.ResponseWriter, r *http.Request, req GenerateRequest) {
-	// Resolve the model to the provider name for the job record.
+// jobFromGenerateRequest builds a queued job record (provider name resolved when known).
+func jobFromGenerateRequest(req GenerateRequest) *jobstore.Job {
 	normalised := normalizeModelID(req.Model)
 	providerName := ""
 	if prov, _, ok := provider.ProviderForModel(normalised); ok {
 		providerName = prov.Name()
 	}
-
-	job := &jobstore.Job{
+	return &jobstore.Job{
 		Model:    req.Model,
 		Provider: providerName,
 		Prompt:   req.Prompt,
 		Status:   jobstore.StatusQueued,
 	}
+}
+
+// handleImageGenerationAsync creates a job, launches a goroutine, and returns
+// 202 Accepted immediately. The caller polls GET /v1/jobs/{id} for results.
+func handleImageGenerationAsync(w http.ResponseWriter, r *http.Request, req GenerateRequest) {
+	job := jobFromGenerateRequest(req)
 
 	id, err := jobStoreInstance.Create(job)
 	if err != nil {
@@ -282,20 +285,12 @@ func handleImageGenerationAsync(w http.ResponseWriter, r *http.Request, req Gene
 	JSON(w, http.StatusAccepted, toJobResponse(j))
 }
 
-// runJob executes image generation for the given job in the background.
-func runJob(ctx context.Context, jobID string, req GenerateRequest) {
-	now := time.Now()
-	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
-		j.Status = jobstore.StatusRunning
-		j.StartedAt = now
-	})
-
-	out, err := executeImageGeneration(ctx, req)
+// finalizeJobResult updates the job to succeeded or failed after generation.
+func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 	finished := time.Now()
-
-	if err != nil {
+	if genErr != nil {
 		code := "generation_error"
-		msg := err.Error()
+		msg := genErr.Error()
 		jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
 			j.Status = jobstore.StatusFailed
 			j.ErrorCode = code
@@ -304,8 +299,6 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 		})
 		return
 	}
-
-	// Extract images from the raw map returned by executeImageGeneration.
 	var images []jobstore.Image
 	if data, ok := out["data"].([]imageData); ok {
 		for _, d := range data {
@@ -317,12 +310,23 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 			})
 		}
 	}
-
 	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
 		j.Status = jobstore.StatusSucceeded
 		j.Images = images
 		j.FinishedAt = finished
 	})
+}
+
+// runJob executes image generation for the given job in the background.
+func runJob(ctx context.Context, jobID string, req GenerateRequest) {
+	now := time.Now()
+	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
+		j.Status = jobstore.StatusRunning
+		j.StartedAt = now
+	})
+
+	out, err := executeImageGeneration(ctx, req)
+	finalizeJobResult(jobID, out, err)
 }
 
 // HandleCompatGenerate serves POST /api/generate for the embedded SPA.
@@ -351,6 +355,30 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 		APIKey:      key,
 		LogToStderr: true,
 	})
+
+	// Same persistence as /v1/images/generations: the SPA uses this path, so we
+	// record one job per request when a store is wired (MySQL or in-memory).
+	if jobStoreInstance != nil {
+		job := jobFromGenerateRequest(body.GenerateRequest)
+		id, err := jobStoreInstance.Create(job)
+		if err != nil {
+			Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))
+			return
+		}
+		now := time.Now()
+		jobStoreInstance.Update(id, func(j *jobstore.Job) {
+			j.Status = jobstore.StatusRunning
+			j.StartedAt = now
+		})
+		out, err := executeImageGeneration(ctx, body.GenerateRequest)
+		finalizeJobResult(id, out, err)
+		if err != nil {
+			Error(w, err)
+			return
+		}
+		JSON(w, http.StatusOK, out)
+		return
+	}
 
 	out, err := executeImageGeneration(ctx, body.GenerateRequest)
 	if err != nil {
