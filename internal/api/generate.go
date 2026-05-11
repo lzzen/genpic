@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"genpic/internal/jobstore"
 	"genpic/pkg/compatctx"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/logger"
@@ -15,6 +16,15 @@ import (
 	"genpic/pkg/provider"
 	"genpic/pkg/refimages"
 )
+
+// imageData is the per-image element in the generation response JSON and the
+// async job result. Promoted to package level so runJob can populate jobstore.Image.
+type imageData struct {
+	URL           string `json:"url,omitempty"`
+	B64JSON       string `json:"b64_json,omitempty"`
+	MimeType      string `json:"mime_type,omitempty"`
+	RevisedPrompt string `json:"revised_prompt,omitempty"`
+}
 
 const maxGenerateBodyBytes = 32 << 20 // base64 reference images in JSON
 
@@ -191,12 +201,6 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
 	}
 
-	type imageData struct {
-		URL           string `json:"url,omitempty"`
-		B64JSON       string `json:"b64_json,omitempty"`
-		MimeType      string `json:"mime_type,omitempty"`
-		RevisedPrompt string `json:"revised_prompt,omitempty"`
-	}
 	data := make([]imageData, 0, len(resp.Images))
 	for _, img := range resp.Images {
 		data = append(data, imageData{
@@ -215,9 +219,11 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 }
 
 // HandleImageGeneration serves POST /v1/images/generations.
-// In the current synchronous (MVP) mode it calls the upstream directly and
-// returns a 200 with the images. In Full Platform async mode it would enqueue
-// a job and return 202 (not yet wired; the async job queue is planned for M1).
+//
+// When a job store is wired (cmd/genpic M1+), the request is enqueued and a
+// 202 Accepted + job object is returned immediately; poll GET /v1/jobs/{id}
+// for status and results. When no job store is configured, falls back to the
+// synchronous 200 path (useful for testing with no job store).
 func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 
@@ -227,12 +233,96 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Async path (M1+) ──────────────────────────────────────────────────
+	if jobStoreInstance != nil {
+		handleImageGenerationAsync(w, r, req)
+		return
+	}
+
+	// ── Sync fallback (no job store configured) ───────────────────────────
 	out, err := executeImageGeneration(r.Context(), req)
 	if err != nil {
 		Error(w, err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
+}
+
+// handleImageGenerationAsync creates a job, launches a goroutine, and returns
+// 202 Accepted immediately. The caller polls GET /v1/jobs/{id} for results.
+func handleImageGenerationAsync(w http.ResponseWriter, r *http.Request, req GenerateRequest) {
+	// Resolve the model to the provider name for the job record.
+	normalised := normalizeModelID(req.Model)
+	providerName := ""
+	if prov, _, ok := provider.ProviderForModel(normalised); ok {
+		providerName = prov.Name()
+	}
+
+	job := &jobstore.Job{
+		Model:    req.Model,
+		Provider: providerName,
+		Prompt:   req.Prompt,
+		Status:   jobstore.StatusQueued,
+	}
+
+	id, err := jobStoreInstance.Create(job)
+	if err != nil {
+		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))
+		return
+	}
+
+	// Detach from the HTTP request context so the job is not cancelled when the
+	// connection closes; use a background context for the generation goroutine.
+	bgCtx := context.Background()
+
+	go runJob(bgCtx, id, req)
+
+	// Return 202 with the initial job record.
+	j, _ := jobStoreInstance.Get(id)
+	JSON(w, http.StatusAccepted, toJobResponse(j))
+}
+
+// runJob executes image generation for the given job in the background.
+func runJob(ctx context.Context, jobID string, req GenerateRequest) {
+	now := time.Now()
+	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
+		j.Status = jobstore.StatusRunning
+		j.StartedAt = now
+	})
+
+	out, err := executeImageGeneration(ctx, req)
+	finished := time.Now()
+
+	if err != nil {
+		code := "generation_error"
+		msg := err.Error()
+		jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
+			j.Status = jobstore.StatusFailed
+			j.ErrorCode = code
+			j.ErrorMsg = msg
+			j.FinishedAt = finished
+		})
+		return
+	}
+
+	// Extract images from the raw map returned by executeImageGeneration.
+	var images []jobstore.Image
+	if data, ok := out["data"].([]imageData); ok {
+		for _, d := range data {
+			images = append(images, jobstore.Image{
+				URL:           d.URL,
+				B64JSON:       d.B64JSON,
+				MIMEType:      d.MimeType,
+				RevisedPrompt: d.RevisedPrompt,
+			})
+		}
+	}
+
+	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
+		j.Status = jobstore.StatusSucceeded
+		j.Images = images
+		j.FinishedAt = finished
+	})
 }
 
 // HandleCompatGenerate serves POST /api/generate for the embedded SPA.

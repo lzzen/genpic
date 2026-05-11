@@ -63,11 +63,24 @@ wan:
   timeout: "180s"
   max_retries: 1
 
+# ── Platform API keys (cmd/genpic full platform) ────────────────────────────
+# These are the keys issued to callers of your platform's /v1/* endpoints.
+# They are DISTINCT from the upstream provider credentials above.
+# When this list is empty, /v1/* routes are open (dev mode; a warning is logged).
+# For production add at least one key. Store raw values in a secrets manager;
+# a DB-backed bcrypt validator is planned for a later milestone.
+#
+# platform_keys:
+#   - name: "alice-dashboard"
+#     key:  "genpic-sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#     # scopes: []  # omit or set to null for all models
+#     # rpm_limit: 30  # 0 = use default_key_rpm
+
 # ── Rate limiting ───────────────────────────────────────────────────────────
 rate_limit:
   # Global RPM cap across all keys (0 = unlimited)
   global_rpm: 0
-  # Per-API-key RPM cap (0 = use key's own limit from DB)
+  # Per-API-key RPM cap applied when key.rpm_limit is 0 (0 = unlimited)
   default_key_rpm: 60
 
 # ── Idempotency ─────────────────────────────────────────────────────────────

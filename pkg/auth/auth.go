@@ -1,7 +1,13 @@
+// Package auth handles bearer-token authentication for the Genpic platform API.
+//
+// Architecture (§2.1 Mode A): The platform issues its own API keys to callers.
+// These keys are validated here against a store (config file or DB). The upstream
+// provider credentials never appear in API responses or caller requests.
 package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -67,7 +73,7 @@ func BearerToken(r *http.Request) (string, bool) {
 }
 
 // Validator is the interface the HTTP middleware calls to verify a raw token.
-// Implementations query the DB and compare against the stored hash.
+// Implementations query the DB or config and compare against the stored value.
 type Validator interface {
 	// Validate returns the Identity for the given raw token, or an error if
 	// the token is invalid, revoked, or expired.
@@ -99,8 +105,61 @@ func writeUnauthorized(w http.ResponseWriter, msg string) {
 	_, _ = w.Write([]byte(`{"error":{"type":"authentication_error","message":"` + msg + `"}}`))
 }
 
-// NoopValidator is a test double that accepts any non-empty token. Never use
-// in production; wire a real DB-backed implementation instead.
+// ─── ConfigValidator ──────────────────────────────────────────────────────────
+
+// ConfigKey is a single key entry in the config-backed validator.
+type ConfigKey struct {
+	Name     string
+	RawKey   string
+	Scopes   []string
+	RPMLimit int
+}
+
+// ConfigValidator validates bearer tokens against a static list of keys loaded
+// from config.yaml. This is the initial M0 implementation; replace with a
+// DB-backed validator (e.g. bcrypt hash lookup) for production scale.
+//
+// Key comparison uses constant-time equality to resist timing attacks.
+type ConfigValidator struct {
+	keys []ConfigKey
+}
+
+// NewConfigValidator creates a validator from the given key list.
+// Entries with empty RawKey are silently skipped.
+func NewConfigValidator(keys []ConfigKey) *ConfigValidator {
+	valid := make([]ConfigKey, 0, len(keys))
+	for _, k := range keys {
+		if strings.TrimSpace(k.RawKey) != "" {
+			valid = append(valid, k)
+		}
+	}
+	return &ConfigValidator{keys: valid}
+}
+
+// Validate returns an Identity for the first key that matches rawToken using
+// constant-time comparison. Returns an error when no match is found.
+func (v *ConfigValidator) Validate(_ context.Context, rawToken string) (*Identity, error) {
+	for _, k := range v.keys {
+		// constant-time compare to prevent timing side-channels
+		if subtle.ConstantTimeCompare([]byte(rawToken), []byte(k.RawKey)) == 1 {
+			return &Identity{
+				KeyID:    "cfg:" + k.Name,
+				Scopes:   k.Scopes,
+				RPMLimit: k.RPMLimit,
+			}, nil
+		}
+	}
+	return nil, errInvalidToken
+}
+
+// Empty reports whether no keys are registered. When true, the server runs
+// without enforcing authentication (dev mode; a warning is logged at startup).
+func (v *ConfigValidator) Empty() bool { return len(v.keys) == 0 }
+
+// ─── NoopValidator ────────────────────────────────────────────────────────────
+
+// NoopValidator is a test double that accepts any non-empty token.
+// Never use in production; wire a real DB-backed or ConfigValidator instead.
 type NoopValidator struct{}
 
 func (NoopValidator) Validate(_ context.Context, token string) (*Identity, error) {
