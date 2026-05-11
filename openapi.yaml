@@ -327,7 +327,7 @@ components:
           description: |
             Gemini `imageConfig.imageSize` — model-specific:
             omit entire `imageConfig` for `gemini-2.5-flash-image` (upstream rejects it; use prompt `--aspect-ratio` hint for non-1:1);
-            `gemini-3.1-flash-image-preview`: e.g. `512`, `768`, `1024`, …;
+            `gemini-3.1-flash-image-preview`: only `512`, `1K`, `2K`, `4K`;
             `gemini-3-pro-image-preview`: only `1K`, `2K`, `4K`.
         thinking_budget:
           type: integer

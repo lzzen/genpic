@@ -86,6 +86,26 @@ func TestBuildGenerateContentBody_imageSizeByModel(t *testing.T) {
 		t.Errorf("3.1 expected imageSize 512: %s", b31)
 	}
 
+	b31bad, err := buildGenerateContentBody(provider.GenerateRequest{
+		Model: "gemini-3.1-flash-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "768",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b31bad), `"imageSize":"512"`) {
+		t.Errorf("3.1 invalid imageSize should fall back to 512: %s", b31bad)
+	}
+
+	b31k, err := buildGenerateContentBody(provider.GenerateRequest{
+		Model: "gemini-3.1-flash-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "1K",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b31k), `"imageSize":"1K"`) {
+		t.Errorf("3.1 expected imageSize 1K: %s", b31k)
+	}
+
 	b3p, err := buildGenerateContentBody(provider.GenerateRequest{
 		Model: "gemini-3-pro-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "2K",
 	})

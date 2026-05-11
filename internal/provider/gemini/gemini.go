@@ -220,7 +220,7 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	// - gemini-2.5-flash-image: do NOT send imageConfig at all (upstream errors if
 	//   imageConfig is present, even with only aspectRatio). Aspect hint via prompt.
 	// - gemini-3-pro-image-preview: imageConfig with aspectRatio + imageSize 1K|2K|4K only.
-	// - gemini-3.1-flash-image-preview (default): aspectRatio + imageSize (512, …).
+	// - gemini-3.1-flash-image-preview (default): aspectRatio + imageSize 512|1K|2K|4K only.
 	switch model {
 	case "gemini-2.5-flash-image":
 		if aspect != "" && aspect != "1:1" {
@@ -244,6 +244,11 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	default:
 		sz := strings.TrimSpace(req.ImageSize)
 		if sz == "" {
+			sz = "512"
+		}
+		switch sz {
+		case "512", "1K", "2K", "4K":
+		default:
 			sz = "512"
 		}
 		genCfg["imageConfig"] = map[string]any{

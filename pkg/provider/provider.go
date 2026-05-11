@@ -23,7 +23,7 @@ type GenerateRequest struct {
 	// Size is an opaque size string; interpretation is provider-specific.
 	// GPT Image: "1024x1024"; Wan: "1024*1024"; Gemini native: use ImageSize.
 	Size string
-	// ImageSize is Gemini generateContent imageConfig.imageSize (e.g. "512", "1024").
+	// ImageSize is Gemini imageConfig.imageSize (3.1: 512|1K|2K|4K; 3 Pro: 1K|2K|4K).
 	ImageSize string
 	// Quality is an optional quality hint: auto | low | medium | high.
 	Quality string

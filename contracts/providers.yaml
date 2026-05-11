@@ -133,7 +133,7 @@ providers:
         default: "1:1"
       image_size:
         type: enum
-        values: ["512", "768", "1024", "1536", "2048"]
+        values: ["512", "1K", "2K", "4K"]
         default: "512"
       n:
         type: integer

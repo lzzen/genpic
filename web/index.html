@@ -465,10 +465,10 @@
 
     <!-- ── Gemini params ── -->
     <div class="param-section" id="params-gemini">
-      <div class="section-title">Gemini 参数（generateContent · imageConfig）</div>
+      <div class="section-title">Gemini</div>
       <div class="row-2">
         <div class="field">
-          <label for="gem-aspect">aspectRatio</label>
+          <label for="gem-aspect">比例</label>
           <select id="gem-aspect">
             <option value="1:1">1:1</option>
             <option value="16:9">16:9</option>
@@ -486,7 +486,7 @@
       </div>
       <div class="row-2">
         <div class="field">
-          <label for="gem-n">生成次数 n</label>
+          <label for="gem-n">n</label>
           <select id="gem-n">
             <option value="1">1</option>
             <option value="2">2</option>
@@ -495,13 +495,13 @@
         </div>
       </div>
       <div class="field" id="gem-thinking-field" style="display:none">
-        <label>Thinking Budget: <span id="gem-thinking-val">0</span></label>
+        <label>Thinking <span id="gem-thinking-val">0</span></label>
         <div class="range-row">
           <input type="range" id="gem-thinking" min="0" max="8192" step="256" value="0" />
           <span class="range-val" id="gem-thinking-display">off</span>
         </div>
       </div>
-      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。<strong>2.5 Flash：</strong>请求里<strong>不含</strong> <code>imageConfig</code>（上游不接受）；非 1:1 比例通过 prompt 追加 <code>--aspect-ratio</code> 提示。<strong>3.1</strong> 可选 512 等；<strong>3 Pro</strong> 仅 <code>1K</code> / <code>2K</code> / <code>4K</code>。见 <code>model-fingers/gemini-image.md</code>。</div>
+      <div class="note">🔒 SynthID 由 Google 强制。2.5 无 <code>imageConfig</code>；3.1 分辨率 <code>512</code>/<code>1K</code>/<code>2K</code>/<code>4K</code>；3 Pro 仅 <code>1K</code>/<code>2K</code>/<code>4K</code>。</div>
     </div>
 
     <!-- ── Wan params ── -->
@@ -789,21 +789,19 @@ function syncGemImageSizeUI(modelId) {
 
   if (modelId === 'gemini/gemini-2.5-flash-image') {
     wrap.style.display = 'none';
-    if (label) label.textContent = 'imageSize';
     return;
   }
 
   wrap.style.display = '';
+  if (label) label.textContent = 'imageSize';
   let rows;
   let defVal;
   if (modelId === 'gemini/gemini-3-pro-image-preview') {
     rows = [['1K', '1K'], ['2K', '2K'], ['4K', '4K']];
     defVal = '1K';
-    if (label) label.textContent = 'imageSize（3 Pro：仅 1K / 2K / 4K）';
   } else {
-    rows = [['512', '512'], ['768', '768'], ['1024', '1024'], ['1536', '1536'], ['2048', '2048']];
+    rows = [['512', '512'], ['1K', '1K'], ['2K', '2K'], ['4K', '4K']];
     defVal = '512';
-    if (label) label.textContent = 'imageSize（3.1：含 512 等）';
   }
   rows.forEach(([v, t]) => {
     const o = document.createElement('option');
