@@ -28,6 +28,14 @@ log:
   # level: debug | info | warn | error
   level: "info"
 
+# ── Upstream model id remap (cmd/genpic + cmd/mvplite) ───────────────────────
+# Map catalog id (e.g. openai/gpt-image-2) or wire id (e.g. gpt-image-2) to the
+# model string sent to the upstream OpenAI-compatible images API or provider.
+# Lookup tries catalog id first, then normalized request id, then built-in upstream id.
+# model_id_map:
+#   "openai/gpt-image-2": "gpt-image-2-all"
+#   "gpt-image-2": "gpt-image-2-all"
+
 # ── Upstream provider credentials ──────────────────────────────────────────
 # These are SERVER-SIDE keys for calling the upstream aggregator / providers.
 # They are NEVER returned to API callers.

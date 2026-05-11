@@ -43,6 +43,7 @@ func New(cfg Config) *Provider {
 	caps := func(extra ...provider.Capability) []provider.Capability {
 		base := []provider.Capability{
 			provider.CapTextToImage,
+			provider.CapImageToImage,
 			provider.CapResponseFormatB64,
 			provider.CapSynthIDWatermark,
 		}
@@ -212,6 +213,25 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	model := strings.TrimSpace(req.Model)
 	userText := req.Prompt
 
+	parts := make([]any, 0, 1+len(req.ReferenceImages))
+	for i, ref := range req.ReferenceImages {
+		b64 := strings.TrimSpace(ref.B64)
+		if b64 == "" {
+			return nil, fmt.Errorf("reference_images[%d]: empty b64_json", i)
+		}
+		mt := strings.TrimSpace(ref.MIMEType)
+		if mt == "" {
+			mt = "image/png"
+		}
+		parts = append(parts, map[string]any{
+			"inlineData": map[string]any{
+				"mimeType": mt,
+				"data":     b64,
+			},
+		})
+	}
+	parts = append(parts, map[string]any{"text": userText})
+
 	genCfg := map[string]any{
 		"responseModalities": []string{"IMAGE"},
 	}
@@ -266,9 +286,7 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	body := map[string]any{
 		"contents": []any{
 			map[string]any{
-				"parts": []any{
-					map[string]any{"text": userText},
-				},
+				"parts": parts,
 			},
 		},
 		"generationConfig": genCfg,

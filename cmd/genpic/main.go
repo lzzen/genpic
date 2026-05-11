@@ -10,7 +10,8 @@
 //
 // Optional -config (default config.yaml): mvp_lite.default_base_url is exposed
 // as GET /api/public-config; listen port comes from server.port unless
-// overridden by PORT (mvplite uses mvp_lite.port instead).
+// overridden by PORT (mvplite uses mvp_lite.port instead). Optional
+// model_id_map remaps catalog/wire model ids to upstream wire ids.
 //
 // Milestone coverage:
 //   - M0: /v1/models, /v1/images/generations (sync), /v1/jobs (stub),
@@ -41,7 +42,7 @@ func main() {
 	logger.Init()
 	log := slog.Default()
 
-	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional server.port)")
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.*, server.port, optional model_id_map)")
 	flag.Parse()
 
 	cfg, err := mvpconfig.Read(*configPath)
@@ -53,6 +54,7 @@ func main() {
 		slog.Info("genpic: config file not found; default Base URL empty until you add mvp_lite.default_base_url", "path", *configPath)
 	}
 	defaultBaseURL := cfg.DefaultBaseURL
+	api.SetModelIDMap(cfg.ModelIDMap)
 
 	registerProviders(log)
 

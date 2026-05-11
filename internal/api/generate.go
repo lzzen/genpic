@@ -11,8 +11,12 @@ import (
 	"genpic/pkg/compatctx"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/logger"
+	"genpic/pkg/modelmap"
 	"genpic/pkg/provider"
+	"genpic/pkg/refimages"
 )
+
+const maxGenerateBodyBytes = 32 << 20 // base64 reference images in JSON
 
 // GenerateRequest is the JSON body for POST /v1/images/generations.
 // It is kept OpenAI-compatible while carrying provider-specific extensions
@@ -35,6 +39,9 @@ type GenerateRequest struct {
 	Watermark    *bool `json:"watermark,omitempty"`
 	ThinkingMode bool  `json:"thinking_mode,omitempty"`
 
+	// Reference images (图生图 / 参考); max 6; each ≤ 4 MiB decoded.
+	ReferenceImages []refimages.Input `json:"reference_images,omitempty"`
+
 	// Idempotency
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
@@ -53,6 +60,18 @@ func (r *GenerateRequest) validate() error {
 		return pkgerrors.BadRequest("invalid_n", "n must be between 1 and 4")
 	}
 	return nil
+}
+
+func providerRefs(in []refimages.Input) ([]provider.ReferenceImage, error) {
+	items, err := refimages.Parse(in)
+	if err != nil {
+		return nil, pkgerrors.BadRequest("invalid_reference", err.Error())
+	}
+	out := make([]provider.ReferenceImage, 0, len(items))
+	for _, it := range items {
+		out = append(out, provider.ReferenceImage{MIMEType: it.MIMEType, B64: it.B64})
+	}
+	return out, nil
 }
 
 // normalizeModelID removes a leading catalog prefix (gemini/, openai/, wan/) so
@@ -90,6 +109,10 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
+	refs, err := providerRefs(req.ReferenceImages)
+	if err != nil {
+		return nil, err
+	}
 
 	prov, modelInfo, ok := provider.ProviderForModel(req.Model)
 	if !ok {
@@ -105,11 +128,14 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		return nil, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "model_not_found", msg)
 	}
 
+	upstreamWire := modelmap.Apply(getModelIDMap(), []string{modelInfo.ID, req.Model, modelInfo.UpstreamModel}, modelInfo.UpstreamModel)
+
 	if logger.DevMode() {
 		log.Info("generate_dispatch",
 			"request_model", req.Model,
 			"provider", prov.Name(),
 			"upstream_model", modelInfo.UpstreamModel,
+			"upstream_wire", upstreamWire,
 			"n", req.N,
 			"aspect_ratio", req.AspectRatio,
 			"image_size", req.ImageSize,
@@ -128,7 +154,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	}
 
 	provReq := provider.GenerateRequest{
-		Model:          modelInfo.UpstreamModel,
+		Model:          upstreamWire,
 		Prompt:         req.Prompt,
 		N:              n,
 		Size:           req.Size,
@@ -137,8 +163,9 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		Style:          req.Style,
 		AspectRatio:    req.AspectRatio,
 		ImageSize:      req.ImageSize,
-		ThinkingBudget: req.ThinkingBudget,
-		ThinkingMode:   req.ThinkingMode,
+		ThinkingBudget:  req.ThinkingBudget,
+		ThinkingMode:    req.ThinkingMode,
+		ReferenceImages: refs,
 	}
 
 	timeout := time.Duration(modelInfo.TimeoutSeconds) * time.Second
@@ -192,7 +219,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 // returns a 200 with the images. In Full Platform async mode it would enqueue
 // a job and return 202 (not yet wired; the async job queue is planned for M1).
 func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 
 	var req GenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -214,7 +241,7 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 // and response JSON to stderr for each call (large base64 and thoughtSignature
 // strings are replaced with placeholders).
 func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 
 	var body compatGenerateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

@@ -7,6 +7,7 @@
 //   - One binary: static assets embedded via the root genpic package.
 //   - Upstream base_url and api_key are supplied per-request from the browser form;
 //     default base URL may come from config.yaml (GET /api/public-config).
+//   - Optional model_id_map in config.yaml remaps model ids for the upstream proxy body.
 //   - The "/ fallback" routing pattern is used instead of "GET /" because
 //     Go 1.22 ServeMux does not route GET / to a handler registered as "GET /"
 //     when method-qualified patterns are mixed with catch-all patterns.
@@ -15,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,11 +27,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	genpic "genpic"
+	"genpic/pkg/modelmap"
 	"genpic/pkg/mvpconfig"
+	"genpic/pkg/openaiimg"
+	"genpic/pkg/refimages"
 )
 
 // GenerateRequest is the JSON body posted by the browser to /api/generate.
@@ -45,6 +51,8 @@ type GenerateRequest struct {
 	Quality        string `json:"quality,omitempty"`
 	ResponseFormat string `json:"response_format,omitempty"` // "url" or "b64_json"
 	Style          string `json:"style,omitempty"`
+	// Reference images (OpenAI → POST /v1/images/edits multipart).
+	ReferenceImages []refimages.Input `json:"reference_images,omitempty"`
 }
 
 // GenerateResponse is the JSON body returned to the browser.
@@ -93,8 +101,11 @@ var mvpState struct {
 	DefaultBaseURL string
 }
 
+// fileModelIDMap is loaded from config.yaml model_id_map (optional).
+var fileModelIDMap map[string]string
+
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.default_base_url, optional mvp_lite.port for listen)")
+	configPath := flag.String("config", "config.yaml", "path to config.yaml (mvp_lite.*, optional model_id_map)")
 	flag.Parse()
 
 	cfg, err := mvpconfig.Read(*configPath)
@@ -105,6 +116,7 @@ func main() {
 		log.Printf("mvplite: config file %q not found; default Base URL empty until you add mvp_lite.default_base_url", *configPath)
 	}
 	mvpState.DefaultBaseURL = cfg.DefaultBaseURL
+	fileModelIDMap = cfg.ModelIDMap
 
 	port := strings.TrimSpace(cfg.MvpLitePort)
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
@@ -159,7 +171,7 @@ func handlePublicConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB request cap
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
 
 	var req GenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -171,19 +183,89 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstreamURL, err := buildGenerationsURL(req.BaseURL)
+	refItems, err := refimages.Parse(req.ReferenceImages)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_base_url", err.Error())
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
 	}
 
-	upstreamBody, err := buildUpstreamBody(&req)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+	wire := wireModelForReq(&req)
+
+	var upstreamURL string
+	var upstreamBody []byte
+	var contentType string
+
+	if len(refItems) > 0 {
+		upstreamURL, err = buildEditsURL(req.BaseURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_base_url", err.Error())
+			return
+		}
+		parts := make([]openaiimg.ImagePart, 0, len(refItems))
+		for i, it := range refItems {
+			raw, err := base64.StdEncoding.DecodeString(it.B64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", "reference decode: "+err.Error())
+				return
+			}
+			mt := it.MIMEType
+			if mt == "" {
+				mt = "image/png"
+			}
+			ext := "png"
+			switch strings.ToLower(mt) {
+			case "image/jpeg":
+				ext = "jpg"
+			case "image/webp":
+				ext = "webp"
+			case "image/gif":
+				ext = "gif"
+			}
+			parts = append(parts, openaiimg.ImagePart{
+				Filename: fmt.Sprintf("ref%d.%s", i, ext),
+				MIMEType: mt,
+				Data:     raw,
+			})
+		}
+		extra := map[string]string{}
+		if req.N > 0 {
+			extra["n"] = strconv.Itoa(req.N)
+		}
+		if req.Size != "" {
+			extra["size"] = req.Size
+		}
+		if req.Quality != "" {
+			extra["quality"] = req.Quality
+		}
+		format := req.ResponseFormat
+		if format == "" {
+			format = "url"
+		}
+		extra["response_format"] = format
+		upstreamBody, contentType, err = openaiimg.BuildEditsMultipart(wire, req.Prompt, parts, extra)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	} else {
+		upstreamURL, err = buildGenerationsURL(req.BaseURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_base_url", err.Error())
+			return
+		}
+		upstreamBody, err = buildUpstreamBody(&req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		contentType = "application/json"
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	timeout := 120 * time.Second
+	if len(refItems) > 0 {
+		timeout = 300 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
@@ -191,7 +273,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", contentType)
 	httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
 
 	resp, err := http.DefaultClient.Do(httpReq)
@@ -246,6 +328,25 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(GenerateResponse{Images: results})
 }
 
+func buildEditsURL(baseURL string) (string, error) {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if baseURL == "" {
+		return "", fmt.Errorf("base_url is required")
+	}
+	u, err := url.ParseRequestURI(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("base_url is not a valid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("base_url must use http or https scheme")
+	}
+	if !strings.HasSuffix(u.Path, "/v1") {
+		u.Path = strings.TrimRight(u.Path, "/") + "/v1"
+	}
+	u.Path += "/images/edits"
+	return u.String(), nil
+}
+
 // buildGenerationsURL constructs the OpenAI-compatible generations endpoint
 // from the caller-supplied base URL. It tolerates trailing slashes and an
 // already-present /v1 suffix.
@@ -268,6 +369,11 @@ func buildGenerationsURL(baseURL string) (string, error) {
 	return u.String(), nil
 }
 
+func wireModelForReq(req *GenerateRequest) string {
+	wire := upstreamModelForOpenAIImages(req.Model)
+	return modelmap.Apply(fileModelIDMap, []string{strings.TrimSpace(req.Model), wire}, wire)
+}
+
 // upstreamModelForOpenAIImages strips the internal catalog prefix (openai/,
 // gemini/, wan/) from model IDs sent by the web UI so the value matches what
 // POST /v1/images/generations expects (e.g. gpt-image-2, not openai/gpt-image-2).
@@ -284,8 +390,9 @@ func upstreamModelForOpenAIImages(model string) string {
 // buildUpstreamBody serialises the generation parameters into the OpenAI
 // images/generations request body, omitting zero-value optional fields.
 func buildUpstreamBody(req *GenerateRequest) ([]byte, error) {
+	wire := wireModelForReq(req)
 	body := map[string]any{
-		"model":  upstreamModelForOpenAIImages(req.Model),
+		"model":  wire,
 		"prompt": req.Prompt,
 	}
 	if req.N > 0 {

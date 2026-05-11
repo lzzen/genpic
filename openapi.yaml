@@ -339,6 +339,22 @@ components:
         thinking_mode:
           type: boolean
           description: "Wan Pro only — slower but higher quality"
+        reference_images:
+          type: array
+          maxItems: 6
+          description: |
+            Optional reference images (图生图 / 风格参考). OpenAI → upstream `POST /v1/images/edits`;
+            Gemini → `inlineData` parts; Wan → `content[].image` as data URLs.
+          items:
+            type: object
+            required: [b64_json]
+            properties:
+              mime_type:
+                type: string
+                description: "image/png | image/jpeg | image/webp | image/gif"
+              b64_json:
+                type: string
+                description: Raw base64 without `data:` prefix; each image ≤ 4 MiB decoded
         # Idempotency
         idempotency_key:
           type: string

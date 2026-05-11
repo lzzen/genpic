@@ -19,6 +19,8 @@ go run ./cmd/mvplite -config /path/to/config.yaml
 
 Optional: `PORT=9090` overrides the listen port from yaml (`mvp_lite.port` for MVP Lite, `server.port` for Full platform) / default.
 
+**`model_id_map`** (optional, same `config.yaml`): remap catalog or wire model ids to the upstream model string (e.g. `openai/gpt-image-2` → `gpt-image-2-all`). Used by **mvplite** when proxying `/api/generate` and by **genpic** for `/v1/images/generations` and `/api/generate`. See `config.example.yaml`.
+
 NewAPI-style deep link (query params are read once then stripped from the address bar):
 
 `http://localhost:8080/?address=https%3A%2F%2Fapi.example.com&key=sk-...`

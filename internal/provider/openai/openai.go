@@ -6,8 +6,11 @@ package openai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/httpclient"
 	"genpic/pkg/logger"
+	"genpic/pkg/openaiimg"
 	"genpic/pkg/provider"
 )
 
@@ -48,6 +52,7 @@ func New(cfg Config) *Provider {
 				TimeoutSeconds: 120,
 				Capabilities: []provider.Capability{
 					provider.CapTextToImage,
+					provider.CapImageToImage,
 					provider.CapResponseFormatURL,
 					provider.CapResponseFormatB64,
 				},
@@ -68,15 +73,53 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		return nil, pkgerrors.BadRequest("upstream_credentials", "set base_url and api_key in the POST /api/generate JSON body.")
 	}
 
-	body, err := buildRequest(req)
-	if err != nil {
-		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build upstream request", err)
-	}
+	var (
+		url     string
+		headers map[string]string
+		body    []byte
+		err     error
+	)
 
-	url := strings.TrimRight(baseURL, "/") + "/v1/images/generations"
-	headers := map[string]string{
-		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + apiKey,
+	if len(req.ReferenceImages) > 0 {
+		url = strings.TrimRight(baseURL, "/") + "/v1/images/edits"
+		parts, err := referencePartsOpenAI(req.ReferenceImages)
+		if err != nil {
+			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "reference_images", "invalid reference_images", err)
+		}
+		extra := map[string]string{}
+		if req.N > 0 {
+			extra["n"] = strconv.Itoa(req.N)
+		}
+		if req.Size != "" {
+			extra["size"] = req.Size
+		}
+		if req.Quality != "" {
+			extra["quality"] = req.Quality
+		}
+		format := req.ResponseFormat
+		if format == "" {
+			format = "url"
+		}
+		extra["response_format"] = format
+		var ct string
+		body, ct, err = openaiimg.BuildEditsMultipart(req.Model, req.Prompt, parts, extra)
+		if err != nil {
+			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_edits", "could not build multipart edits request", err)
+		}
+		headers = map[string]string{
+			"Content-Type":  ct,
+			"Authorization": "Bearer " + apiKey,
+		}
+	} else {
+		url = strings.TrimRight(baseURL, "/") + "/v1/images/generations"
+		body, err = buildRequest(req)
+		if err != nil {
+			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build upstream request", err)
+		}
+		headers = map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer " + apiKey,
+		}
 	}
 
 	resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
@@ -88,7 +131,11 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		raw = []byte{}
 	}
 	if trace {
-		compatctx.LogStderrRoundTrip("openai", http.MethodPost, url, headers, body, status, raw)
+		reqLog := body
+		if len(req.ReferenceImages) > 0 {
+			reqLog = []byte(`"(multipart/form-data; image bytes omitted from log)"`)
+		}
+		compatctx.LogStderrRoundTrip("openai", http.MethodPost, url, headers, reqLog, status, raw)
 	}
 	if err != nil {
 		return nil, err
@@ -99,6 +146,63 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		return nil, pkgerrors.UpstreamErr("upstream_http_error", msg, nil)
 	}
 
+	images, err := parseOpenAIImagesResponse(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	latency := time.Since(start)
+	log.Info("openai generate ok", "model", req.Model, "n", len(images), "latency_ms", latency.Milliseconds())
+
+	return &provider.GenerateResponse{
+		Images:  images,
+		Latency: latency,
+	}, nil
+}
+
+func referencePartsOpenAI(refs []provider.ReferenceImage) ([]openaiimg.ImagePart, error) {
+	out := make([]openaiimg.ImagePart, 0, len(refs))
+	for i, ref := range refs {
+		b64 := strings.TrimSpace(ref.B64)
+		if b64 == "" {
+			return nil, fmt.Errorf("reference %d: empty b64_json", i)
+		}
+		data, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return nil, fmt.Errorf("reference %d: %w", i, err)
+		}
+		if len(data) == 0 {
+			return nil, fmt.Errorf("reference %d: decoded empty", i)
+		}
+		if len(data) > 4<<20 {
+			return nil, fmt.Errorf("reference %d: image exceeds 4 MiB", i)
+		}
+		mt := strings.TrimSpace(ref.MIMEType)
+		if mt == "" {
+			mt = "image/png"
+		}
+		ext := "png"
+		switch strings.ToLower(mt) {
+		case "image/jpeg":
+			ext = "jpg"
+		case "image/webp":
+			ext = "webp"
+		case "image/gif":
+			ext = "gif"
+		case "image/png":
+		default:
+			return nil, fmt.Errorf("reference %d: unsupported mime_type %q", i, mt)
+		}
+		out = append(out, openaiimg.ImagePart{
+			Filename: fmt.Sprintf("ref%d.%s", i, ext),
+			MIMEType: mt,
+			Data:     data,
+		})
+	}
+	return out, nil
+}
+
+func parseOpenAIImagesResponse(raw []byte) ([]provider.Image, error) {
 	var out struct {
 		Data []struct {
 			URL           string `json:"url"`
@@ -116,7 +220,6 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	if out.Error != nil {
 		return nil, pkgerrors.UpstreamErr(out.Error.Type, out.Error.Message, nil)
 	}
-
 	images := make([]provider.Image, 0, len(out.Data))
 	for _, d := range out.Data {
 		images = append(images, provider.Image{
@@ -128,14 +231,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	if len(images) == 0 {
 		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
 	}
-
-	latency := time.Since(start)
-	log.Info("openai generate ok", "model", req.Model, "n", len(images), "latency_ms", latency.Milliseconds())
-
-	return &provider.GenerateResponse{
-		Images:  images,
-		Latency: latency,
-	}, nil
+	return images, nil
 }
 
 func buildRequest(req provider.GenerateRequest) ([]byte, error) {
@@ -173,7 +269,6 @@ func extractError(body []byte, statusCode int) string {
 	if env.Error != nil && env.Error.Message != "" {
 		return env.Error.Message
 	}
-	// Avoid returning raw upstream bodies that might contain sensitive details.
 	var buf bytes.Buffer
 	_ = json.Compact(&buf, body)
 	if buf.Len() > 200 {

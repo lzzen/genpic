@@ -53,6 +53,7 @@ func New(cfg Config) *Provider {
 				TimeoutSeconds: 120,
 				Capabilities: []provider.Capability{
 					provider.CapTextToImage,
+					provider.CapImageToImage,
 					provider.CapWatermark,
 				},
 			},
@@ -138,9 +139,21 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 // buildDashScopeRequest constructs the DashScope multimodal-generation body.
 // Reference: https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
 func buildDashScopeRequest(req provider.GenerateRequest) ([]byte, error) {
-	content := []map[string]any{
-		{"text": req.Prompt},
+	content := make([]map[string]any, 0, 1+len(req.ReferenceImages))
+	for _, ref := range req.ReferenceImages {
+		b64 := strings.TrimSpace(ref.B64)
+		if b64 == "" {
+			return nil, fmt.Errorf("reference image: empty b64_json")
+		}
+		mt := strings.TrimSpace(ref.MIMEType)
+		if mt == "" {
+			mt = "image/png"
+		}
+		content = append(content, map[string]any{
+			"image": "data:" + mt + ";base64," + b64,
+		})
 	}
+	content = append(content, map[string]any{"text": req.Prompt})
 
 	params := map[string]any{
 		// Watermark is always true per Aliyun TOS; we set it explicitly

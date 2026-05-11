@@ -41,6 +41,14 @@ type GenerateRequest struct {
 	// RawParams carries any provider-specific parameters not captured above.
 	// The adapter reads what it understands and ignores the rest.
 	RawParams map[string]any
+	// ReferenceImages optional inputs for image-to-image / style reference flows.
+	ReferenceImages []ReferenceImage
+}
+
+// ReferenceImage is one client-supplied reference image (raw base64, no data: prefix).
+type ReferenceImage struct {
+	MIMEType string
+	B64      string
 }
 
 // Image is a single generated image in the normalised response.

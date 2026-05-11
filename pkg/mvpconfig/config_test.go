@@ -11,7 +11,7 @@ func TestReadMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Found || cfg.MvpLitePort != "" || cfg.ServerPort != "" || cfg.DefaultBaseURL != "" {
+	if cfg.Found || cfg.MvpLitePort != "" || cfg.ServerPort != "" || cfg.DefaultBaseURL != "" || cfg.ModelIDMap != nil {
 		t.Fatalf("want missing empty, got %#v", cfg)
 	}
 }
@@ -25,6 +25,9 @@ mvp_lite:
   default_base_url: "https://agg.example.com"
 server:
   port: "7070"
+model_id_map:
+  "openai/gpt-image-2": "gpt-image-2-all"
+  gpt-image-2: "gpt-image-2-all"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -38,5 +41,8 @@ server:
 	}
 	if cfg.ServerPort != "7070" {
 		t.Fatalf("server.port: got %q", cfg.ServerPort)
+	}
+	if len(cfg.ModelIDMap) != 2 || cfg.ModelIDMap["gpt-image-2"] != "gpt-image-2-all" {
+		t.Fatalf("model_id_map: %#v", cfg.ModelIDMap)
 	}
 }
