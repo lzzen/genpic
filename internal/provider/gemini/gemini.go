@@ -208,14 +208,36 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	if aspect == "" {
 		aspect = "1:1"
 	}
-	imgSize := strings.TrimSpace(req.ImageSize)
-	if imgSize == "" {
-		imgSize = "512"
-	}
 
+	model := strings.TrimSpace(req.Model)
 	imageConfig := map[string]any{
 		"aspectRatio": aspect,
-		"imageSize":   imgSize,
+	}
+	// imageSize rules by model (see product constraints):
+	// - gemini-2.5-flash-image: do not send imageSize (API does not support it).
+	// - gemini-3-pro-image-preview: only 1K, 2K, 4K.
+	// - gemini-3.1-flash-image-preview: supports 512 among other sizes.
+	switch model {
+	case "gemini-2.5-flash-image":
+		// omit imageSize
+	case "gemini-3-pro-image-preview":
+		sz := strings.TrimSpace(req.ImageSize)
+		if sz == "" {
+			sz = "1K"
+		}
+		switch sz {
+		case "1K", "2K", "4K":
+			imageConfig["imageSize"] = sz
+		default:
+			imageConfig["imageSize"] = "1K"
+		}
+	default:
+		// 3.1 preview and any other gemini-*-image wire ids
+		sz := strings.TrimSpace(req.ImageSize)
+		if sz == "" {
+			sz = "512"
+		}
+		imageConfig["imageSize"] = sz
 	}
 
 	genCfg := map[string]any{

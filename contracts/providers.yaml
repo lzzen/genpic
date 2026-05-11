@@ -102,10 +102,6 @@ providers:
         type: enum
         values: ["1:1", "3:4", "4:3", "9:16", "16:9"]
         default: "1:1"
-      image_size:
-        type: enum
-        values: ["512", "768", "1024", "1536", "2048"]
-        default: "512"
       n:
         type: integer
         min: 1
@@ -176,8 +172,8 @@ providers:
         default: "1:1"
       image_size:
         type: enum
-        values: ["512", "768", "1024", "1536", "2048"]
-        default: "512"
+        values: ["1K", "2K", "4K"]
+        default: "1K"
       n:
         type: integer
         min: 1

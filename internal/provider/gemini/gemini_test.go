@@ -1,6 +1,11 @@
 package gemini
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"genpic/pkg/provider"
+)
 
 func TestParseGenerateContentResponse(t *testing.T) {
 	const sample = `{
@@ -52,5 +57,39 @@ func TestGenerateContentURL(t *testing.T) {
 	want := "https://api.example.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent"
 	if u != want {
 		t.Errorf("got %q want %q", u, want)
+	}
+}
+
+func TestBuildGenerateContentBody_imageSizeByModel(t *testing.T) {
+	reqBase := provider.GenerateRequest{Prompt: "hi", AspectRatio: "1:1"}
+
+	b25, err := buildGenerateContentBody(provider.GenerateRequest{
+		Model: "gemini-2.5-flash-image", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b25), `"imageSize"`) {
+		t.Errorf("gemini-2.5 must not include imageSize: %s", b25)
+	}
+
+	b31, err := buildGenerateContentBody(provider.GenerateRequest{
+		Model: "gemini-3.1-flash-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "512",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b31), `"imageSize":"512"`) {
+		t.Errorf("3.1 expected imageSize 512: %s", b31)
+	}
+
+	b3p, err := buildGenerateContentBody(provider.GenerateRequest{
+		Model: "gemini-3-pro-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "2K",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b3p), `"imageSize":"2K"`) {
+		t.Errorf("3 pro expected imageSize 2K: %s", b3p)
 	}
 }

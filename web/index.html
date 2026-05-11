@@ -479,15 +479,9 @@
             <option value="2:3">2:3</option>
           </select>
         </div>
-        <div class="field">
-          <label for="gem-image-size">imageSize</label>
-          <select id="gem-image-size">
-            <option value="512">512</option>
-            <option value="768">768</option>
-            <option value="1024">1024</option>
-            <option value="1536">1536</option>
-            <option value="2048">2048</option>
-          </select>
+        <div class="field" id="gem-image-size-wrap">
+          <label for="gem-image-size" id="gem-image-size-label">imageSize</label>
+          <select id="gem-image-size"></select>
         </div>
       </div>
       <div class="row-2">
@@ -507,7 +501,7 @@
           <span class="range-val" id="gem-thinking-display">off</span>
         </div>
       </div>
-      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。服务端使用 <code>POST …/v1beta/models/&lt;model&gt;:generateContent</code>（<code>responseModalities: IMAGE</code>），见 <code>model-fingers/gemini-image.md</code>。</div>
+      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。<strong>imageSize：</strong>2.5 Flash 不支持（请求体不传）；3.1 可选 512 / 768 / …；3 Pro 仅 <code>1K</code> / <code>2K</code> / <code>4K</code>。接口见 <code>model-fingers/gemini-image.md</code>。</div>
     </div>
 
     <!-- ── Wan params ── -->
@@ -779,6 +773,46 @@ function setActiveModel(modelId, provider) {
 
   save('active-model', modelId);
   save('active-provider', provider);
+
+  if (provider === 'gemini') syncGemImageSizeUI(modelId);
+}
+
+/** Gemini imageSize options depend on catalog model (see model constraints). */
+function syncGemImageSizeUI(modelId) {
+  const wrap = $('gem-image-size-wrap');
+  const sel = $('gem-image-size');
+  const label = $('gem-image-size-label');
+  if (!wrap || !sel) return;
+
+  const prev = sel.value;
+  sel.innerHTML = '';
+
+  if (modelId === 'gemini/gemini-2.5-flash-image') {
+    wrap.style.display = 'none';
+    if (label) label.textContent = 'imageSize';
+    return;
+  }
+
+  wrap.style.display = '';
+  let rows;
+  let defVal;
+  if (modelId === 'gemini/gemini-3-pro-image-preview') {
+    rows = [['1K', '1K'], ['2K', '2K'], ['4K', '4K']];
+    defVal = '1K';
+    if (label) label.textContent = 'imageSize（3 Pro：仅 1K / 2K / 4K）';
+  } else {
+    rows = [['512', '512'], ['768', '768'], ['1024', '1024'], ['1536', '1536'], ['2048', '2048']];
+    defVal = '512';
+    if (label) label.textContent = 'imageSize（3.1：含 512 等）';
+  }
+  rows.forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = t;
+    sel.appendChild(o);
+  });
+  const allowed = rows.map((r) => r[0]);
+  sel.value = allowed.includes(prev) ? prev : defVal;
 }
 
 // ── Persist helpers ─────────────────────────────────────
@@ -789,7 +823,7 @@ function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def;
 const persistFields = [
   'prompt',
   'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
-  'gem-aspect', 'gem-image-size', 'gem-n', 'wan-size', 'wan-n'
+  'gem-aspect', 'gem-n', 'wan-size', 'wan-n'
 ];
 persistFields.forEach(id => {
   const el = $(id);
@@ -805,6 +839,13 @@ persistFields.forEach(id => {
 const savedModel = load('active-model', 'openai/gpt-image-2');
 const savedProvider = load('active-provider', 'openai');
 setActiveModel(savedModel, savedProvider);
+
+const gisz = $('gem-image-size');
+if (gisz && gisz.options.length) {
+  const v = load('gem-image-size', null);
+  if (v !== null && [...gisz.options].some((o) => o.value === v)) gisz.value = v;
+  gisz.addEventListener('change', () => save('gem-image-size', gisz.value));
+}
 
 bootstrapCredentials().catch(e => console.warn('bootstrapCredentials', e));
 
@@ -909,9 +950,14 @@ function buildBody() {
     base.response_format = $('gpt-format').value || 'url';
   } else if (activeProvider === 'gemini') {
     base.aspect_ratio = $('gem-aspect').value || '1:1';
-    base.image_size = $('gem-image-size')?.value || '512';
     base.n = parseInt($('gem-n').value) || 1;
     base.response_format = 'b64_json';
+    if (activeModel !== 'gemini/gemini-2.5-flash-image') {
+      const g = $('gem-image-size');
+      if (g) {
+        base.image_size = g.value || (activeModel === 'gemini/gemini-3-pro-image-preview' ? '1K' : '512');
+      }
+    }
     const budget = parseInt($('gem-thinking')?.value ?? 0);
     if (budget > 0) base.thinking_budget = budget;
   } else if (activeProvider === 'wan') {

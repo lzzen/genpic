@@ -324,7 +324,11 @@ components:
           description: "Gemini only — maps to `generationConfig.imageConfig.aspectRatio` (e.g. `16:9`, `1:1`)"
         image_size:
           type: string
-          description: "Gemini only — maps to `generationConfig.imageConfig.imageSize` (e.g. `512`, `1024`)"
+          description: |
+            Gemini `imageConfig.imageSize` — model-specific:
+            omit for `gemini-2.5-flash-image` (not supported);
+            `gemini-3.1-flash-image-preview`: e.g. `512`, `768`, `1024`, …;
+            `gemini-3-pro-image-preview`: only `1K`, `2K`, `4K`.
         thinking_budget:
           type: integer
           description: "Gemini thinking-capable models only; passed as `generationConfig.thinkingConfig.thinkingBudget`; 0 = disabled"
