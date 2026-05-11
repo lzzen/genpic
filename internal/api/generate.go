@@ -211,7 +211,8 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 // HandleCompatGenerate serves POST /api/generate for the embedded SPA.
 // base_url and api_key in the JSON body are required and are sent to the third-party
 // upstream as-is; the terminal running genpic prints the full upstream request
-// and raw response to stderr for each call.
+// and response JSON to stderr for each call (large base64 and thoughtSignature
+// strings are replaced with placeholders).
 func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 

@@ -184,16 +184,16 @@
     .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── CRT / 电子管屏风格生成中占位 ───────────────────── */
+    /* ── CRT / 电子管屏风格生成中占位（单格与 .img-card 同宽、左对齐） ───────────────────── */
     .crt-loading-wrap {
-      grid-column: 1 / -1;
-      display: flex;
-      justify-content: center;
-      padding: 4px 0 24px;
+      min-width: 0;
+      width: 100%;
+      display: block;
+      padding: 0;
     }
     .crt-bezel {
       width: 100%;
-      max-width: 440px;
+      max-width: none;
       border-radius: 14px;
       padding: 12px 14px 14px;
       background: linear-gradient(155deg, #2c3040 0%, #181a24 55%, #12141c 100%);

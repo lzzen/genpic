@@ -29,7 +29,7 @@ go run ./cmd/mvplite -config /etc/genpic/config.yaml
 
 ## Full platform
 
-`go run ./cmd/genpic` 提供 **`POST /api/generate`**（与嵌入式主页一致）：请求 JSON 必须包含 **`base_url`**、**`api_key`**，由服务端转发到第三方；**无需**事先 `export GEMINI_*` 等环境变量即可在网页里生图。每次 `/api/generate` 会在运行服务的 **终端 stderr** 打印发往第三方的原始请求体与原始响应体。
+`go run ./cmd/genpic` 提供 **`POST /api/generate`**（与嵌入式主页一致）：请求 JSON 必须包含 **`base_url`**、**`api_key`**，由服务端转发到第三方；**无需**事先 `export GEMINI_*` 等环境变量即可在网页里生图。每次 `/api/generate` 会在运行服务的 **终端 stderr** 打印请求与响应 JSON（超长 **base64**、**thoughtSignature** 会脱敏为占位符）。
 
 可选：若使用 **`POST /v1/images/generations`**，仍可通过进程环境变量配置默认上游地址与密钥（见 [docs/runbook.md](docs/runbook.md)）。
 

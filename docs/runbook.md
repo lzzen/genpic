@@ -32,7 +32,7 @@ Without `config.yaml`, the server still starts; the UI has no default Base URL u
 
 ### Full platform
 
-`GEMINI_BASE_URL` 为可选：仅当你使用 **`POST /v1/images/generations`** 且希望由服务端持有上游密钥时才需要。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的完整请求 JSON 与原始响应正文。
+`GEMINI_BASE_URL` 为可选：仅当你使用 **`POST /v1/images/generations`** 且希望由服务端持有上游密钥时才需要。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的请求 JSON 与响应 JSON（其中超长 **base64**、**thoughtSignature** 会被替换为占位符，避免刷屏）。
 
 `GEMINI_BASE_URL` 应为**仅含协议与主机**的地址（不要带 `/v1` 等路径）。Gemini 适配器会请求 `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent`（与 `model-fingers/gemini-image.md` 一致）。
 

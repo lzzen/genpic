@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -17,8 +18,9 @@ type ctxKey struct{}
 type Override struct {
 	BaseURL string
 	APIKey  string
-	// LogToStderr dumps the full upstream HTTP exchange to os.Stderr (the terminal
-	// running genpic), including request JSON and raw response bytes.
+	// LogToStderr dumps the upstream HTTP exchange to os.Stderr (the terminal
+	// running genpic). Large base64 and thoughtSignature strings in JSON are
+	// replaced with placeholders before printing.
 	LogToStderr bool
 }
 
@@ -67,8 +69,28 @@ func RedactAuthHeader(v string) string {
 	return "***"
 }
 
+var (
+	// Gemini / OpenAI JSON may embed huge base64 in "data" fields.
+	reLargeInlineDataString = regexp.MustCompile(`"data"\s*:\s*"[^"]{120,}"`)
+	// Gemini image responses may include a very long thoughtSignature string.
+	reLongThoughtSignature = regexp.MustCompile(`"thoughtSignature"\s*:\s*"[^"]{64,}"`)
+)
+
+// SanitizeForStderrLogJSON replaces oversized base64 payloads and thoughtSignature
+// blobs so terminal traces stay readable.
+func SanitizeForStderrLogJSON(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	s := string(raw)
+	s = reLargeInlineDataString.ReplaceAllString(s, `"data":"[omitted large base64]"`)
+	s = reLongThoughtSignature.ReplaceAllString(s, `"thoughtSignature":"[omitted long thoughtSignature]"`)
+	return s
+}
+
 // LogStderrRoundTrip writes method, URL, sorted headers (Authorization redacted),
-// full request body, HTTP status, and full raw response body to os.Stderr.
+// request body, HTTP status, and response body to os.Stderr. Large inline
+// base64 and thoughtSignature fields in JSON are replaced with placeholders.
 func LogStderrRoundTrip(providerName, method, url string, headers map[string]string, reqBody []byte, status int, respBody []byte) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n========== genpic POST /api/generate → %s upstream ==========\n", providerName)
@@ -85,9 +107,9 @@ func LogStderrRoundTrip(providerName, method, url string, headers map[string]str
 		}
 		fmt.Fprintf(&b, "%s: %s\n", k, v)
 	}
-	fmt.Fprintf(&b, "\n-- request body (raw JSON) --\n%s\n", string(reqBody))
+	fmt.Fprintf(&b, "\n-- request body (raw JSON, large inline fields filtered) --\n%s\n", SanitizeForStderrLogJSON(reqBody))
 	fmt.Fprintf(&b, "\n-- response HTTP status --\n%d\n", status)
-	fmt.Fprintf(&b, "\n-- response body (raw) --\n%s\n", string(respBody))
+	fmt.Fprintf(&b, "\n-- response body (raw JSON, large inline fields filtered) --\n%s\n", SanitizeForStderrLogJSON(respBody))
 	fmt.Fprintf(&b, "========== end upstream trace ==========\n\n")
 	_, _ = os.Stderr.WriteString(b.String())
 }
