@@ -52,29 +52,29 @@ See `docs/runbook.md` for all environment variables and troubleshooting.
 |---|---|
 | `GET  /v1/models` | List available models |
 | `POST /v1/images/generations` | Generate images |
-| `GET  /v1/jobs/{id}` | Job status (async, M1+) |
+| `GET  /v1/jobs/{id}` | Job status (async; in-memory in `cmd/genpic`) |
 | `GET  /health` | Liveness check |
 
 Full spec: [`openapi.yaml`](openapi.yaml) — render with [Scalar](https://scalar.com/) or Redoc.
 
 ## NewAPI integration
 
-In NewAPI "chat application integration", set:
+In NewAPI "chat application integration", set **Address** (`{address}`) to your
+platform's public origin, e.g. `https://imgapi.example.com` (the service's `/v1`
+is OpenAI-compatible and is not authenticated by this repo — protect it at the
+network or gateway if needed).
 
-- **Address** (`{address}`): your platform's public origin, e.g. `https://imgapi.example.com`
-- **Key** (`{key}`): a platform-issued API key
-
-The platform's upstream credentials are held server-side and never exposed.
+The web UI still uses **`?address=`** and **`?key=`** for the **upstream**
+aggregator URL and key (stored in the browser); that is separate from `/v1`.
 
 ## Repository layout
 
 ```
 cmd/mvplite/      MVP Lite binary
 cmd/genpic/       Full platform binary
-daily/            Integration smoke tests (tag: integration); see daily/README.md
 internal/         Business logic (not importable externally)
 pkg/              Reusable packages with stable interfaces
-web/              Static frontend (embedded at build time); web/daily/ — manual test pages
+web/              Static frontend (embedded at build time)
 contracts/        providers.yaml — model contract table
 openapi.yaml      API contract
 docs/             Architecture, runbook, ADRs
@@ -96,7 +96,7 @@ See `.github/workflows/ci.yaml` for the full CI pipeline.
 |---|---|
 | MVP Lite | ✅ Done |
 | M0 — multi-provider skeleton, OpenAPI, pkg/ | ✅ Done |
-| M1 — async jobs, DB, object storage | 🔲 Planned |
+| M1 — async `/v1` jobs (in-memory); DB + object storage | Partial (async only) |
 | M2 — Gemini chat completions path | 🔲 Planned |
 | M3 — Wan editing + multi-image | 🔲 Planned |
 | M4 — credit accounts, admin UI | 🔲 Planned |

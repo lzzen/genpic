@@ -53,7 +53,7 @@ type Job struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 
-	// KeyID is the platform API key that submitted the job (for ACL).
+	// KeyID reserved for future per-caller ACL (currently unset).
 	KeyID string
 }
 

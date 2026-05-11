@@ -6,9 +6,10 @@ info:
   description: |
     OpenAI-compatible image generation API for the Genpic platform.
 
-    **Authentication**: All endpoints require `Authorization: Bearer <platform_api_key>`.
-    The API key is issued by the platform; the upstream provider keys are held
-    server-side and are never exposed to callers.
+    **Authentication**: `/v1/*` is currently **unauthenticated** in this codebase.
+    Put the service behind your own gateway or network controls for production.
+    Upstream provider keys used by the server are held in config / environment
+    variables and are never returned to API callers.
 
     **Base URL**: `{address}/v1` where `{address}` is the official platform origin
     (e.g. `https://imgapi.example.com`). Third-party clients using NewAPI
@@ -23,9 +24,6 @@ servers:
     description: Production (replace with your actual domain)
   - url: http://localhost:8080/v1
     description: Local development
-
-security:
-  - bearerAuth: []
 
 tags:
   - name: models
@@ -65,7 +63,7 @@ paths:
       tags: [models]
       summary: List available image-generation models
       description: |
-        Returns the subset of models available to the authenticated API key.
+        Returns the models this deployment exposes.
         Response shape mirrors OpenAI `/v1/models` for compatibility with
         OpenAI-compatible clients.
       responses:
@@ -75,8 +73,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelList"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
 
   # ── Images ─────────────────────────────────────
 
@@ -98,8 +94,8 @@ paths:
         for OpenAI-compatible clients even when routing to non-OpenAI providers.
 
         **Async vs sync**: In MVP Lite all calls are synchronous (wait for result).
-        In Full Platform, calls are dispatched to a job queue and the response
-        contains a `job_id`; poll `GET /jobs/{id}` for the result.
+        In `cmd/genpic`, requests are accepted into an in-memory job queue and the
+        response is **202** with a `job_id`; poll `GET /jobs/{id}` for the result.
       requestBody:
         required: true
         content:
@@ -149,8 +145,6 @@ paths:
                 $ref: "#/components/schemas/JobAcceptedResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
@@ -184,8 +178,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobRecord"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -193,7 +185,7 @@ paths:
     get:
       operationId: listJobs
       tags: [jobs]
-      summary: List recent generation jobs for the authenticated key
+      summary: List recent generation jobs (newest first)
       parameters:
         - name: limit
           in: query
@@ -218,16 +210,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobList"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
 
 components:
-
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      description: Platform-issued API key (never the upstream provider key)
 
   schemas:
 
@@ -486,12 +470,6 @@ components:
   responses:
     BadRequest:
       description: Malformed request (missing fields, invalid JSON)
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/APIError"
-    Unauthorized:
-      description: Missing or invalid API key
       content:
         application/json:
           schema:

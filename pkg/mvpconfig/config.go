@@ -35,19 +35,9 @@ type providerYAML struct {
 	MaxRetries int    `yaml:"max_retries"`
 }
 
-// platformKeyYAML is one entry in the platform_keys list.
-// These are the credentials that callers present to /v1/* endpoints.
-type platformKeyYAML struct {
-	Name     string   `yaml:"name"`
-	Key      string   `yaml:"key"`
-	Scopes   []string `yaml:"scopes"`   // nil = all models allowed
-	RPMLimit int      `yaml:"rpm_limit"` // 0 = use global default
-}
-
 // rateLimitYAML configures the in-process rate limiter.
 type rateLimitYAML struct {
-	GlobalRPM     int `yaml:"global_rpm"`
-	DefaultKeyRPM int `yaml:"default_key_rpm"`
+	GlobalRPM int `yaml:"global_rpm"`
 }
 
 // rootYAML is the full config.yaml structure. Unknown keys are ignored.
@@ -57,9 +47,8 @@ type rootYAML struct {
 	ModelIDMap   map[string]string `yaml:"model_id_map"`
 	OpenAI       providerYAML      `yaml:"openai"`
 	Gemini       providerYAML      `yaml:"gemini"`
-	Wan          providerYAML      `yaml:"wan"`
-	PlatformKeys []platformKeyYAML `yaml:"platform_keys"`
-	RateLimit    rateLimitYAML     `yaml:"rate_limit"`
+	Wan       providerYAML  `yaml:"wan"`
+	RateLimit rateLimitYAML `yaml:"rate_limit"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -69,16 +58,6 @@ type ProviderConfig struct {
 	APIKey     string
 	Timeout    time.Duration
 	MaxRetries int
-}
-
-// PlatformKey is a single caller credential for authenticating against /v1/*.
-// These are the keys the platform issues to its own users / integrations.
-// They are distinct from the upstream provider credentials (ProviderConfig).
-type PlatformKey struct {
-	Name     string
-	Key      string
-	Scopes   []string // nil = all models permitted
-	RPMLimit int      // 0 = use global default
 }
 
 // Config holds all parsed settings from config.yaml.
@@ -93,14 +72,10 @@ type Config struct {
 	// Full-platform (cmd/genpic) provider credentials:
 	OpenAI ProviderConfig
 	Gemini ProviderConfig
-	Wan    ProviderConfig
+	Wan ProviderConfig
 
-	// Platform-issued API keys for authenticating /v1/* callers:
-	PlatformKeys []PlatformKey
-
-	// Rate-limiting caps (0 = unlimited / use per-key value):
-	GlobalRPM     int
-	DefaultKeyRPM int
+	// Rate-limiting: global RPM cap for /v1/images/generations (0 = unlimited).
+	GlobalRPM int
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -127,23 +102,9 @@ func Read(path string) (Config, error) {
 		OpenAI:         resolveProvider(root.OpenAI, "OPENAI"),
 		Gemini:         resolveProvider(root.Gemini, "GEMINI"),
 		Wan:            resolveProvider(root.Wan, "WAN"),
-		GlobalRPM:      root.RateLimit.GlobalRPM,
-		DefaultKeyRPM:  root.RateLimit.DefaultKeyRPM,
+		GlobalRPM: root.RateLimit.GlobalRPM,
 	}
 
-	for _, k := range root.PlatformKeys {
-		name := strings.TrimSpace(k.Name)
-		key := strings.TrimSpace(k.Key)
-		if key == "" {
-			continue
-		}
-		c.PlatformKeys = append(c.PlatformKeys, PlatformKey{
-			Name:     name,
-			Key:      key,
-			Scopes:   k.Scopes,
-			RPMLimit: k.RPMLimit,
-		})
-	}
 	return c, nil
 }
 

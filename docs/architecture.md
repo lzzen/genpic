@@ -22,7 +22,6 @@ Clients
                               │  GET  /health         │
                               │  GET  /  (static UI)  │
                               │                       │
-                              │  pkg/auth   (bearer)  │
                               │  pkg/ratelimit        │
                               │  pkg/billing          │
                               │  pkg/httpclient       │
@@ -47,11 +46,8 @@ genpic/
 │   │   ├── openai/   # GPT Image adapter
 │   │   ├── gemini/   # Gemini Banana adapter
 │   │   └── wan/      # Wan2.7 DashScope adapter
-│   ├── auth/         # (M1) DB-backed API key validation
-│   ├── billing/      # (M1) Job billing wiring
-│   └── storage/      # (M1) Object storage upload helpers
+│   └── jobstore/     # In-memory async job records (swap for DB later)
 ├── pkg/
-│   ├── auth/         # API key interface + bearer middleware
 │   ├── billing/      # Ledger interface + pricing table
 │   ├── errors/       # OpenAI-compatible error types
 │   ├── httpclient/   # Retry + logging HTTP client
@@ -77,12 +73,18 @@ genpic/
         └── ADR-003-token-storage-community.md
 ```
 
-## Authentication model (Mode A)
+## Authentication and secrets
 
-Callers authenticate with a **platform-issued API key** (`Authorization: Bearer sk-...`).
-The platform's server holds the upstream provider keys; callers never see them.
+`cmd/genpic` does **not** implement platform-issued Bearer keys in-tree: `/v1/*`
+is open at the application layer; use your edge or private network for access
+control. Upstream provider credentials for `/v1/images/generations` are read
+from server config / environment variables only.
 
-See design §2.1 and `pkg/auth/auth.go` for the implementation contract.
+The embedded SPA (`POST /api/generate`) sends **per-request** `base_url` and
+`api_key` for the upstream aggregator (same pattern as MVP Lite).
+
+Product design §2.1 (Mode A) still describes the long-term “platform key at the
+gateway” model; wire that at a reverse proxy or in a future release.
 
 ## Provider routing
 
@@ -101,8 +103,8 @@ All providers implement `pkg/provider.Provider` and are registered in `cmd/genpi
 | Milestone | Scope |
 |---|---|
 | **MVP Lite** | `cmd/mvplite` — single binary, no DB, no auth, direct proxy |
-| **M0**       | `cmd/genpic` — all three providers, static auth (env key), in-memory rate limit |
-| **M1**       | Async job queue (Redis), DB-backed jobs + billing, object storage |
+| **M0**       | `cmd/genpic` — all three providers, in-memory rate limit |
+| **M1**       | **Current:** in-memory async jobs for `/v1` (`202` + poll). **Planned:** Redis/DB, billing, object storage |
 | **M2**       | Gemini native generateContent path (`model-fingers/gemini-image.md`) |
 | **M3**       | Wan sub-pages (image editing, multi-image) |
 | **M4**       | Credit account management, admin UI, NewAPI integration wizard |
