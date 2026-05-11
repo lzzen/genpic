@@ -190,10 +190,11 @@
 
     .cred-warn {
       display: none;
-      font-size: .72rem; color: #fdba74; line-height: 1.45;
+      font-size: .72rem; color: #9a3412; line-height: 1.45;
       padding: 8px 10px; margin-top: 8px;
-      background: rgba(249,115,22,.12); border-radius: 7px;
-      border: 1px solid rgba(249,115,22,.38);
+      background: #fff7ed;
+      border-radius: 7px;
+      border: 1px solid #fed7aa;
     }
     .cred-warn.show { display: block; }
 
@@ -227,10 +228,14 @@
     .img-card .provider-badge.wan { border-color: var(--accent3); color: var(--accent3); }
     .img-card .revised { padding: 0 13px 8px; font-size: .73rem; color: var(--muted); font-style: italic; line-height: 1.4; }
 
-    .spinner { width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+    .spinner { width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
+    .btn-gen .spinner {
+      border-color: rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── CRT / 电子管屏风格生成中占位（单格与 .img-card 同宽、左对齐） ───────────────────── */
+    /* ── 生成中占位（浅色简洁，与主界面一致） ───────────────────── */
     .crt-loading-wrap {
       min-width: 0;
       width: 100%;
@@ -242,80 +247,61 @@
       max-width: none;
       border-radius: 14px;
       padding: 12px 14px 14px;
-      background: linear-gradient(155deg, #2c3040 0%, #181a24 55%, #12141c 100%);
-      border: 1px solid #3e4458;
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,.07),
-        0 16px 48px rgba(0,0,0,.5);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px rgba(28, 35, 51, 0.06);
     }
     .crt-label {
       font: 600 .62rem ui-monospace, SFMono-Regular, Menlo, monospace;
-      letter-spacing: 0.35em;
-      color: #6b7289;
+      letter-spacing: 0.12em;
+      color: var(--muted);
       margin-bottom: 8px;
     }
     .crt-screen {
       position: relative;
-      border-radius: 6px;
+      border-radius: 10px;
       min-height: 200px;
       max-height: 280px;
-      background: radial-gradient(ellipse 120% 80% at 50% 20%, #0d1a12 0%, #040806 55%, #020403 100%);
+      background: linear-gradient(165deg, #e8f4fc 0%, #f4f8ff 45%, #eef2fb 100%);
       overflow: hidden;
-      box-shadow: inset 0 0 50px rgba(0, 40, 20, .85);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(216, 224, 236, 0.9);
     }
     .crt-static-flicker {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      opacity: 0.04;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      animation: crt-static 0.12s steps(2) infinite;
-      z-index: 1;
-    }
-    @keyframes crt-static {
-      0% { opacity: 0.03; transform: translate(0, 0); }
-      50% { opacity: 0.07; transform: translate(-1%, 1%); }
-      100% { opacity: 0.03; transform: translate(1%, -1%); }
+      display: none;
     }
     .crt-scanbar {
       position: absolute;
       left: -2%;
       right: -2%;
-      height: 22%;
-      top: -22%;
+      height: 18%;
+      top: -18%;
       pointer-events: none;
       background: linear-gradient(
         180deg,
         transparent 0%,
-        rgba(80, 255, 160, 0.04) 25%,
-        rgba(120, 255, 200, 0.55) 48%,
-        rgba(60, 220, 140, 0.35) 52%,
-        rgba(80, 255, 160, 0.06) 75%,
+        rgba(10, 140, 196, 0.06) 35%,
+        rgba(10, 140, 196, 0.22) 50%,
+        rgba(10, 140, 196, 0.06) 65%,
         transparent 100%
       );
-      box-shadow:
-        0 0 24px rgba(100, 255, 180, 0.35),
-        0 0 60px rgba(80, 255, 160, 0.12);
-      animation: crt-sweep 2.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      animation: crt-sweep 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
       z-index: 2;
-      filter: blur(0.6px);
     }
     .crt-scanbar--trail {
-      animation-delay: 0.14s;
-      opacity: 0.55;
-      filter: blur(4px);
-      height: 28%;
+      animation-delay: 0.12s;
+      opacity: 0.45;
+      height: 22%;
       background: linear-gradient(
         180deg,
         transparent 0%,
-        rgba(100, 255, 200, 0.15) 40%,
-        rgba(120, 255, 220, 0.25) 50%,
+        rgba(92, 77, 219, 0.08) 42%,
+        rgba(92, 77, 219, 0.14) 50%,
         transparent 100%
       );
-      box-shadow: 0 0 40px rgba(100, 255, 200, 0.2);
     }
     @keyframes crt-sweep {
-      0% { top: -22%; }
+      0% { top: -18%; }
       100% { top: 100%; }
     }
     .crt-scanlines {
@@ -325,45 +311,42 @@
       z-index: 3;
       background: repeating-linear-gradient(
         0deg,
-        rgba(0, 0, 0, 0) 0px,
-        rgba(0, 0, 0, 0) 2px,
-        rgba(0, 0, 0, 0.18) 3px
+        transparent 0px,
+        transparent 3px,
+        rgba(28, 35, 51, 0.025) 4px
       );
-      mix-blend-mode: multiply;
+      opacity: 0.7;
     }
     .crt-content {
       position: relative;
       z-index: 4;
       padding: 22px 18px 18px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: #8fffc4;
-      text-shadow:
-        0 0 6px rgba(100, 255, 180, 0.45),
-        0 0 16px rgba(60, 200, 120, 0.25);
-      animation: crt-phosphor-pulse 3.2s ease-in-out infinite;
+      font-family: var(--font);
+      color: var(--text);
+      animation: crt-fade-pulse 2.8s ease-in-out infinite;
     }
-    @keyframes crt-phosphor-pulse {
-      0%, 100% { opacity: 0.88; filter: brightness(0.95); }
-      50% { opacity: 1; filter: brightness(1.05); }
+    @keyframes crt-fade-pulse {
+      0%, 100% { opacity: 0.94; }
+      50% { opacity: 1; }
     }
     .crt-title {
       font-size: .72rem;
-      letter-spacing: 0.2em;
-      color: #5ecf98;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--accent2);
       margin-bottom: 10px;
-      opacity: 0.9;
     }
     .crt-model {
       font-size: .8rem;
-      color: #b4ffd9;
+      color: var(--text);
       word-break: break-all;
       margin-bottom: 8px;
       line-height: 1.5;
     }
     .crt-prompt-preview {
-      font-size: .65rem;
+      font-size: .72rem;
       line-height: 1.45;
-      color: rgba(140, 240, 190, 0.55);
+      color: var(--muted);
       margin-bottom: 12px;
       max-height: 4.6em;
       overflow: hidden;
@@ -374,32 +357,31 @@
       align-items: center;
       gap: 10px;
       font-size: .78rem;
-      color: #7dffc0;
+      color: var(--accent2);
     }
     .crt-dots { display: inline-flex; gap: 2px; letter-spacing: 0; }
     .crt-dots span {
       display: inline-block;
       animation: crt-dot-blink 1.2s ease-in-out infinite;
-      opacity: 0.35;
+      opacity: 0.45;
     }
     .crt-dots span:nth-child(2) { animation-delay: 0.2s; }
     .crt-dots span:nth-child(3) { animation-delay: 0.4s; }
     @keyframes crt-dot-blink {
-      0%, 100% { opacity: 0.25; transform: translateY(0); }
+      0%, 100% { opacity: 0.35; transform: translateY(0); }
       40% { opacity: 1; transform: translateY(-1px); }
     }
 
     @media (prefers-reduced-motion: reduce) {
       .crt-scanbar,
       .crt-scanbar--trail,
-      .crt-static-flicker,
       .crt-content,
       .crt-dots span {
         animation: none !important;
       }
       .crt-scanbar,
       .crt-scanbar--trail { display: none; }
-      .crt-content { filter: none; opacity: 1; }
+      .crt-content { opacity: 1; }
     }
 
     @media (max-width: 900px) {
