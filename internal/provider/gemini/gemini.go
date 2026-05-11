@@ -210,16 +210,23 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 	}
 
 	model := strings.TrimSpace(req.Model)
-	imageConfig := map[string]any{
-		"aspectRatio": aspect,
+	userText := req.Prompt
+
+	genCfg := map[string]any{
+		"responseModalities": []string{"IMAGE"},
 	}
-	// imageSize rules by model (see product constraints):
-	// - gemini-2.5-flash-image: do not send imageSize (API does not support it).
-	// - gemini-3-pro-image-preview: only 1K, 2K, 4K.
-	// - gemini-3.1-flash-image-preview: supports 512 among other sizes.
+
+	// imageConfig / imageSize rules:
+	// - gemini-2.5-flash-image: do NOT send imageConfig at all (upstream errors if
+	//   imageConfig is present, even with only aspectRatio). Aspect hint via prompt.
+	// - gemini-3-pro-image-preview: imageConfig with aspectRatio + imageSize 1K|2K|4K only.
+	// - gemini-3.1-flash-image-preview (default): aspectRatio + imageSize (512, …).
 	switch model {
 	case "gemini-2.5-flash-image":
-		// omit imageSize
+		if aspect != "" && aspect != "1:1" {
+			userText = userText + " --aspect-ratio " + aspect
+		}
+		// no imageConfig key on genCfg
 	case "gemini-3-pro-image-preview":
 		sz := strings.TrimSpace(req.ImageSize)
 		if sz == "" {
@@ -227,23 +234,24 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 		}
 		switch sz {
 		case "1K", "2K", "4K":
-			imageConfig["imageSize"] = sz
 		default:
-			imageConfig["imageSize"] = "1K"
+			sz = "1K"
+		}
+		genCfg["imageConfig"] = map[string]any{
+			"aspectRatio": aspect,
+			"imageSize":   sz,
 		}
 	default:
-		// 3.1 preview and any other gemini-*-image wire ids
 		sz := strings.TrimSpace(req.ImageSize)
 		if sz == "" {
 			sz = "512"
 		}
-		imageConfig["imageSize"] = sz
+		genCfg["imageConfig"] = map[string]any{
+			"aspectRatio": aspect,
+			"imageSize":   sz,
+		}
 	}
 
-	genCfg := map[string]any{
-		"responseModalities": []string{"IMAGE"},
-		"imageConfig":        imageConfig,
-	}
 	if req.ThinkingBudget > 0 {
 		genCfg["thinkingConfig"] = map[string]any{
 			"thinkingBudget": req.ThinkingBudget,
@@ -254,7 +262,7 @@ func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
 		"contents": []any{
 			map[string]any{
 				"parts": []any{
-					map[string]any{"text": req.Prompt},
+					map[string]any{"text": userText},
 				},
 			},
 		},

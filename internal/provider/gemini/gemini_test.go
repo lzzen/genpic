@@ -72,6 +72,9 @@ func TestBuildGenerateContentBody_imageSizeByModel(t *testing.T) {
 	if strings.Contains(string(b25), `"imageSize"`) {
 		t.Errorf("gemini-2.5 must not include imageSize: %s", b25)
 	}
+	if strings.Contains(string(b25), `"imageConfig"`) {
+		t.Errorf("gemini-2.5 must not include imageConfig: %s", b25)
+	}
 
 	b31, err := buildGenerateContentBody(provider.GenerateRequest{
 		Model: "gemini-3.1-flash-image-preview", Prompt: reqBase.Prompt, AspectRatio: reqBase.AspectRatio, ImageSize: "512",

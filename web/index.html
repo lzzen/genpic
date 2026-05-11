@@ -501,7 +501,7 @@
           <span class="range-val" id="gem-thinking-display">off</span>
         </div>
       </div>
-      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。<strong>imageSize：</strong>2.5 Flash 不支持（请求体不传）；3.1 可选 512 / 768 / …；3 Pro 仅 <code>1K</code> / <code>2K</code> / <code>4K</code>。接口见 <code>model-fingers/gemini-image.md</code>。</div>
+      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。<strong>2.5 Flash：</strong>请求里<strong>不含</strong> <code>imageConfig</code>（上游不接受）；非 1:1 比例通过 prompt 追加 <code>--aspect-ratio</code> 提示。<strong>3.1</strong> 可选 512 等；<strong>3 Pro</strong> 仅 <code>1K</code> / <code>2K</code> / <code>4K</code>。见 <code>model-fingers/gemini-image.md</code>。</div>
     </div>
 
     <!-- ── Wan params ── -->
