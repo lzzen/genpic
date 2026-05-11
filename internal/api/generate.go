@@ -53,29 +53,24 @@ func (r *GenerateRequest) validate() error {
 	return nil
 }
 
-// HandleImageGeneration serves POST /v1/images/generations.
-// In the current synchronous (MVP) mode it calls the upstream directly and
-// returns a 200 with the images. In Full Platform async mode it would enqueue
-// a job and return 202 (not yet wired; the async job queue is planned for M1).
-func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
-	log := logger.FromContext(r.Context())
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+// compatGenerateBody is the SPA body for POST /api/generate: same fields as
+// GenerateRequest plus optional base_url and api_key (used by MVP Lite proxy;
+// full platform ignores them and uses server-side env credentials).
+type compatGenerateBody struct {
+	GenerateRequest
+	BaseURL string `json:"base_url,omitempty"`
+	APIKey  string `json:"api_key,omitempty"`
+}
 
-	var req GenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		Error(w, pkgerrors.BadRequest("parse_error", "could not parse request body: "+err.Error()))
-		return
-	}
+func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[string]any, error) {
+	log := logger.FromContext(ctx)
 	if err := req.validate(); err != nil {
-		Error(w, err)
-		return
+		return nil, err
 	}
 
-	// Resolve the provider for the requested model.
 	prov, modelInfo, ok := provider.ProviderForModel(req.Model)
 	if !ok {
-		Error(w, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "model_not_found", "model "+req.Model+" is not available"))
-		return
+		return nil, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "model_not_found", "model "+req.Model+" is not available")
 	}
 
 	log.Info("generating image", "model", req.Model, "provider", prov.Name(), "n", req.N)
@@ -106,23 +101,20 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 	if timeout == 0 {
 		timeout = 120 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	resp, err := prov.Generate(ctx, provReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			Error(w, pkgerrors.UpstreamTimeout())
-			return
+			return nil, pkgerrors.UpstreamTimeout()
 		}
 		log.Error("generation failed", "model", req.Model, "error", err)
-		Error(w, err)
-		return
+		return nil, err
 	}
 
 	if len(resp.Images) == 0 {
-		Error(w, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil))
-		return
+		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
 	}
 
 	type imageData struct {
@@ -139,9 +131,50 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	JSON(w, http.StatusOK, map[string]any{
+	return map[string]any{
 		"created":    time.Now().Unix(),
 		"data":       data,
 		"x_provider": prov.Name(),
-	})
+	}, nil
+}
+
+// HandleImageGeneration serves POST /v1/images/generations.
+// In the current synchronous (MVP) mode it calls the upstream directly and
+// returns a 200 with the images. In Full Platform async mode it would enqueue
+// a job and return 202 (not yet wired; the async job queue is planned for M1).
+func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var req GenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Error(w, pkgerrors.BadRequest("parse_error", "could not parse request body: "+err.Error()))
+		return
+	}
+
+	out, err := executeImageGeneration(r.Context(), req)
+	if err != nil {
+		Error(w, err)
+		return
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+// HandleCompatGenerate serves POST /api/generate for the embedded SPA (same
+// JSON shape as MVP Lite). Upstream credentials come from environment
+// variables on the full platform; base_url and api_key in the body are ignored.
+func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var body compatGenerateBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		Error(w, pkgerrors.BadRequest("parse_error", "could not parse request body: "+err.Error()))
+		return
+	}
+
+	out, err := executeImageGeneration(r.Context(), body.GenerateRequest)
+	if err != nil {
+		Error(w, err)
+		return
+	}
+	JSON(w, http.StatusOK, out)
 }

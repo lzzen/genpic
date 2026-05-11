@@ -46,6 +46,9 @@ func main() {
 	// v1 API surface (matches openapi.yaml)
 	mux.HandleFunc("GET /v1/models", api.HandleListModels)
 	mux.HandleFunc("POST /v1/images/generations", api.HandleImageGeneration)
+	// Same generation pipeline as /v1/images/generations; body may include
+	// base_url/api_key for SPA compatibility (ignored here; keys are env-only).
+	mux.HandleFunc("POST /api/generate", api.HandleCompatGenerate)
 	mux.HandleFunc("GET /v1/jobs/{job_id}", api.HandleGetJob)
 	mux.HandleFunc("GET /v1/jobs", api.HandleListJobs)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {

@@ -992,7 +992,16 @@ $('btn-gen').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    const raw = await res.text();
+    let data = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        setStatus('error', '失败：HTTP ' + res.status + ' — ' + raw.trim().slice(0, 200));
+        return;
+      }
+    }
 
     if (!res.ok) {
       setStatus('error', '失败：' + (data?.error?.message ?? `HTTP ${res.status}`));
