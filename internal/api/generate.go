@@ -25,8 +25,9 @@ type GenerateRequest struct {
 	ResponseFormat string `json:"response_format,omitempty"`
 	Style          string `json:"style,omitempty"`
 
-	// Gemini-specific
+	// Gemini-specific (native generateContent / imageConfig)
 	AspectRatio    string `json:"aspect_ratio,omitempty"`
+	ImageSize      string `json:"image_size,omitempty"`
 	ThinkingBudget int    `json:"thinking_budget,omitempty"`
 
 	// Wan-specific
@@ -93,6 +94,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		ResponseFormat: format,
 		Style:          req.Style,
 		AspectRatio:    req.AspectRatio,
+		ImageSize:      req.ImageSize,
 		ThinkingBudget: req.ThinkingBudget,
 		ThinkingMode:   req.ThinkingMode,
 	}
@@ -100,6 +102,9 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	timeout := time.Duration(modelInfo.TimeoutSeconds) * time.Second
 	if timeout == 0 {
 		timeout = 120 * time.Second
+	}
+	if n > 1 {
+		timeout *= time.Duration(n)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -120,6 +125,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	type imageData struct {
 		URL           string `json:"url,omitempty"`
 		B64JSON       string `json:"b64_json,omitempty"`
+		MimeType      string `json:"mime_type,omitempty"`
 		RevisedPrompt string `json:"revised_prompt,omitempty"`
 	}
 	data := make([]imageData, 0, len(resp.Images))
@@ -127,6 +133,7 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		data = append(data, imageData{
 			URL:           img.URL,
 			B64JSON:       img.B64JSON,
+			MimeType:      img.MIMEType,
 			RevisedPrompt: img.RevisedPrompt,
 		})
 	}

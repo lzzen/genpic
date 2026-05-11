@@ -1,17 +1,18 @@
-// Package gemini implements provider.Provider for Google Gemini "Banana" series
-// image-generation models, routed through the aggregator's OpenAI-compatible
-// chat/completions endpoint (single-turn user message with image instruction).
+// Package gemini implements provider.Provider for Google Gemini image models
+// ("Banana" / gemini-*-image), using the native Gemini REST shape:
+// POST {base}/v1beta/models/{model}:generateContent
 //
-// The aggregator translates the chat completion into a Gemini generateContent
-// call; this adapter only needs to construct the correct chat shape.
+// Request/response follow Google's generateContent wire format (contents.parts,
+// generationConfig.responseModalities IMAGE, imageConfig, inlineData in candidates).
+// See model-fingers/gemini-image.md for the finger document used by this adapter.
 //
 // SynthID watermarking is always applied by Google and cannot be disabled.
-// This must be disclosed to end users in the UI (see design §7.2).
 package gemini
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ import (
 	"genpic/pkg/provider"
 )
 
-// Config holds the aggregator connection details for Gemini routing.
+// Config holds connection details for GEMINI_BASE_URL (scheme + host only, no path suffix).
 type Config struct {
 	BaseURL string
 	APIKey  string
@@ -35,7 +36,7 @@ type Provider struct {
 	models []provider.ModelInfo
 }
 
-// New creates a Gemini provider. All three "Banana" tier models are registered.
+// New creates a Gemini provider. All three image tier models are registered.
 func New(cfg Config) *Provider {
 	caps := func(extra ...provider.Capability) []provider.Capability {
 		base := []provider.Capability{
@@ -81,142 +82,153 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	log := logger.FromContext(ctx)
 	start := time.Now()
 
-	body, err := buildChatRequest(req)
-	if err != nil {
-		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build Gemini chat request", err)
+	n := req.N
+	if n == 0 {
+		n = 1
 	}
-
-	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/v1/chat/completions"
-	headers := map[string]string{
-		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + p.cfg.APIKey,
-	}
-
-	resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, pkgerrors.UpstreamErr("upstream_http_error", extractChatError(raw, resp.StatusCode), nil)
-	}
-
-	images, tokensUsed, err := parseChatResponse(raw)
-	if err != nil {
-		return nil, err
-	}
-	if len(images) == 0 {
-		return nil, pkgerrors.UpstreamErr("empty_response", "Gemini returned no images in chat response", nil)
-	}
-
-	latency := time.Since(start)
-	log.Info("gemini generate ok", "model", req.Model, "n", len(images), "tokens", tokensUsed, "latency_ms", latency.Milliseconds())
-
-	return &provider.GenerateResponse{
-		Images:     images,
-		TokensUsed: tokensUsed,
-		Latency:    latency,
-	}, nil
-}
-
-// buildChatRequest constructs an OpenAI chat/completions body that instructs
-// the model to generate an image. The aggregator translates this to Gemini's
-// generateContent wire format.
-func buildChatRequest(req provider.GenerateRequest) ([]byte, error) {
-	userContent := req.Prompt
-	if req.AspectRatio != "" {
-		// Hint the aggregator / model about the desired aspect ratio.
-		// The exact instruction format may vary by aggregator; this is a
-		// best-effort hint and must be validated against the live aggregator.
-		userContent += " --aspect-ratio " + req.AspectRatio
-	}
-
-	msg := map[string]any{
-		"role":    "user",
-		"content": userContent,
-	}
-
-	body := map[string]any{
-		"model":    req.Model,
-		"messages": []any{msg},
-		// n is passed as a top-level field; aggregators that support it will
-		// generate multiple images in one call.
-		"n": req.N,
-	}
-
-	if req.ThinkingBudget > 0 {
-		// Thinking budget is passed as a model-specific extension. The exact
-		// field name must be confirmed against the aggregator's documentation.
-		// TODO(@pyq, #15): Validate thinking_budget field name against live aggregator.
-		body["thinking_budget"] = req.ThinkingBudget
-	}
-
-	return json.Marshal(body)
-}
-
-// parseChatResponse extracts images from the chat/completions response.
-// Gemini returns images as base64-encoded content within the assistant message.
-func parseChatResponse(raw []byte) ([]provider.Image, int, error) {
-	var resp struct {
-		Choices []struct {
-			Message struct {
-				Content any `json:"content"` // may be string or array of parts
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			TotalTokens int `json:"total_tokens"`
-		} `json:"usage"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, 0, pkgerrors.UpstreamErr("parse_error", "could not parse Gemini chat response", err)
-	}
-	if resp.Error != nil {
-		return nil, 0, pkgerrors.UpstreamErr("upstream_error", resp.Error.Message, nil)
+	if n < 1 || n > 4 {
+		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "invalid_n", "n must be between 1 and 4", nil)
 	}
 
 	var images []provider.Image
-	for _, choice := range resp.Choices {
-		// Content can be a string (text) or an array of parts (multimodal).
-		// When it is an array, look for parts with type "image_url" or "image".
-		switch v := choice.Message.Content.(type) {
-		case string:
-			// Text-only response — no image
-		case []any:
-			for _, part := range v {
-				m, ok := part.(map[string]any)
-				if !ok {
-					continue
+	var totalTokens int
+	var reqID string
+
+	for range n {
+		body, err := buildGenerateContentBody(req)
+		if err != nil {
+			return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build Gemini generateContent request", err)
+		}
+
+		url := generateContentURL(p.cfg.BaseURL, req.Model)
+		headers := map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer " + p.cfg.APIKey,
+		}
+
+		resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, pkgerrors.UpstreamErr("upstream_http_error", extractGeminiAPIError(raw, resp.StatusCode), nil)
+		}
+
+		batch, tokens, rid, err := parseGenerateContentResponse(raw)
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			return nil, pkgerrors.UpstreamErr("empty_response", "Gemini returned no images in generateContent response", nil)
+		}
+		images = append(images, batch...)
+		totalTokens += tokens
+		if rid != "" {
+			reqID = rid
+		}
+	}
+
+	latency := time.Since(start)
+	log.Info("gemini generate ok", "model", req.Model, "n", len(images), "tokens", totalTokens, "latency_ms", latency.Milliseconds())
+
+	return &provider.GenerateResponse{
+		Images:            images,
+		TokensUsed:        totalTokens,
+		Latency:           latency,
+		UpstreamRequestID: reqID,
+	}, nil
+}
+
+func generateContentURL(baseURL, model string) string {
+	b := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	return fmt.Sprintf("%s/v1beta/models/%s:generateContent", b, model)
+}
+
+func buildGenerateContentBody(req provider.GenerateRequest) ([]byte, error) {
+	aspect := strings.TrimSpace(req.AspectRatio)
+	if aspect == "" {
+		aspect = "1:1"
+	}
+	imgSize := strings.TrimSpace(req.ImageSize)
+	if imgSize == "" {
+		imgSize = "512"
+	}
+
+	imageConfig := map[string]any{
+		"aspectRatio": aspect,
+		"imageSize":   imgSize,
+	}
+
+	genCfg := map[string]any{
+		"responseModalities": []string{"IMAGE"},
+		"imageConfig":        imageConfig,
+	}
+	if req.ThinkingBudget > 0 {
+		genCfg["thinkingConfig"] = map[string]any{
+			"thinkingBudget": req.ThinkingBudget,
+		}
+	}
+
+	body := map[string]any{
+		"contents": []any{
+			map[string]any{
+				"parts": []any{
+					map[string]any{"text": req.Prompt},
+				},
+			},
+		},
+		"generationConfig": genCfg,
+	}
+	return json.Marshal(body)
+}
+
+func parseGenerateContentResponse(raw []byte) (images []provider.Image, totalTokens int, responseID string, err error) {
+	var resp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					InlineData *struct {
+						MIMEType string `json:"mimeType"`
+						Data     string `json:"data"`
+					} `json:"inlineData"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		UsageMetadata struct {
+			TotalTokenCount int `json:"totalTokenCount"`
+		} `json:"usageMetadata"`
+		ResponseID string `json:"responseId"`
+		Error      *struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, 0, "", pkgerrors.UpstreamErr("parse_error", "could not parse Gemini generateContent response", err)
+	}
+	if resp.Error != nil && resp.Error.Message != "" {
+		return nil, 0, "", pkgerrors.UpstreamErr("upstream_error", resp.Error.Message, nil)
+	}
+
+	for _, cand := range resp.Candidates {
+		for _, part := range cand.Content.Parts {
+			if part.InlineData != nil && part.InlineData.Data != "" {
+				mime := part.InlineData.MIMEType
+				if mime == "" {
+					mime = "image/png"
 				}
-				switch m["type"] {
-				case "image_url":
-					if iu, ok := m["image_url"].(map[string]any); ok {
-						if url, ok := iu["url"].(string); ok {
-							if strings.HasPrefix(url, "data:") {
-								// data URI — extract base64 payload
-								if idx := strings.Index(url, ","); idx >= 0 {
-									images = append(images, provider.Image{B64JSON: url[idx+1:]})
-								}
-							} else {
-								images = append(images, provider.Image{URL: url})
-							}
-						}
-					}
-				case "image":
-					// Some aggregators use a direct "image" type with base64.
-					if b64, ok := m["data"].(string); ok {
-						images = append(images, provider.Image{B64JSON: b64})
-					}
-				}
+				images = append(images, provider.Image{
+					B64JSON:  part.InlineData.Data,
+					MIMEType: mime,
+				})
 			}
 		}
 	}
 
-	return images, resp.Usage.TotalTokens, nil
+	return images, resp.UsageMetadata.TotalTokenCount, resp.ResponseID, nil
 }
 
-func extractChatError(body []byte, statusCode int) string {
+func extractGeminiAPIError(body []byte, statusCode int) string {
 	var env struct {
 		Error *struct {
 			Message string `json:"message"`

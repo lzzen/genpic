@@ -32,6 +32,8 @@ Without `config.yaml`, the server still starts; the UI has no default Base URL u
 
 ### Full platform
 
+`GEMINI_BASE_URL` 应为**仅含协议与主机**的地址（不要带 `/v1` 等路径）。Gemini 适配器会请求 `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent`（与 `model-fingers/gemini-image.md` 一致）。
+
 ```bash
 export OPENAI_BASE_URL="https://your-aggregator.example.com"
 export OPENAI_API_KEY="sk-..."

@@ -26,4 +26,4 @@ go test ./daily -tags=integration -count=1 -timeout 5m
 
 成功标准：HTTP 200 且响应中含至少一张图（`b64_json` 或 `url`）。
 
-浏览器手工页：`/daily/gemini-3-1-preview.html`（需先启动 `mvplite`）。
+浏览器手工页：`/daily/gemini-3-1-preview.html`（需先启动 **`go run ./cmd/genpic`** 或 MVP Lite，且配置 Gemini 上游）。

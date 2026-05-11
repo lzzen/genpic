@@ -465,10 +465,10 @@
 
     <!-- ── Gemini params ── -->
     <div class="param-section" id="params-gemini">
-      <div class="section-title">Gemini 参数</div>
+      <div class="section-title">Gemini 参数（generateContent · imageConfig）</div>
       <div class="row-2">
         <div class="field">
-          <label for="gem-aspect">Aspect Ratio</label>
+          <label for="gem-aspect">aspectRatio</label>
           <select id="gem-aspect">
             <option value="1:1">1:1</option>
             <option value="16:9">16:9</option>
@@ -480,7 +480,19 @@
           </select>
         </div>
         <div class="field">
-          <label for="gem-n">数量</label>
+          <label for="gem-image-size">imageSize</label>
+          <select id="gem-image-size">
+            <option value="512">512</option>
+            <option value="768">768</option>
+            <option value="1024">1024</option>
+            <option value="1536">1536</option>
+            <option value="2048">2048</option>
+          </select>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="gem-n">生成次数 n</label>
           <select id="gem-n">
             <option value="1">1</option>
             <option value="2">2</option>
@@ -495,7 +507,7 @@
           <span class="range-val" id="gem-thinking-display">off</span>
         </div>
       </div>
-      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。</div>
+      <div class="note">🔒 SynthID 水印由 Google 强制应用，无法禁用。服务端使用 <code>POST …/v1beta/models/&lt;model&gt;:generateContent</code>（<code>responseModalities: IMAGE</code>），见 <code>model-fingers/gemini-image.md</code>。</div>
     </div>
 
     <!-- ── Wan params ── -->
@@ -777,7 +789,7 @@ function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def;
 const persistFields = [
   'prompt',
   'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
-  'gem-aspect', 'gem-n', 'wan-size', 'wan-n'
+  'gem-aspect', 'gem-image-size', 'gem-n', 'wan-size', 'wan-n'
 ];
 persistFields.forEach(id => {
   const el = $(id);
@@ -897,6 +909,7 @@ function buildBody() {
     base.response_format = $('gpt-format').value || 'url';
   } else if (activeProvider === 'gemini') {
     base.aspect_ratio = $('gem-aspect').value || '1:1';
+    base.image_size = $('gem-image-size')?.value || '512';
     base.n = parseInt($('gem-n').value) || 1;
     base.response_format = 'b64_json';
     const budget = parseInt($('gem-thinking')?.value ?? 0);
@@ -922,7 +935,10 @@ function addImages(images, model, provider) {
 
     const image = document.createElement('img');
     if (img.url) { image.src = img.url; }
-    else if (img.b64_json) { image.src = 'data:image/png;base64,' + img.b64_json; }
+    else if (img.b64_json) {
+      const mt = img.mime_type || 'image/png';
+      image.src = 'data:' + mt + ';base64,' + img.b64_json;
+    }
     image.alt = model;
     image.loading = 'lazy';
     card.appendChild(image);

@@ -90,7 +90,7 @@ paths:
 
         **Model routing**:
         - `gpt-image-2` → OpenAI Images API shape
-        - `gemini-*` → single-turn chat/completions shape (image in assistant message)
+        - `gemini-*` → native Gemini `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent` (`contents`, `generationConfig.responseModalities`, `imageConfig`)
         - `wan2.7-*` → native DashScope shape (translated server-side)
 
         The response is always normalized to the `ImageGenerationResponse` shape
@@ -117,11 +117,13 @@ paths:
                   quality: high
                   response_format: url
               gemini_flash:
-                summary: Gemini 2.5 Flash — portrait
+                summary: Gemini 2.5 Flash — portrait (native generateContent)
                 value:
                   model: gemini-2.5-flash-image
                   prompt: "Studio portrait of a fox wearing a graduation cap"
                   n: 1
+                  aspect_ratio: "1:1"
+                  image_size: "512"
                   response_format: b64_json
               wan_landscape:
                 summary: Wan 2.7 — Chinese ink painting
@@ -316,13 +318,16 @@ components:
           type: string
           enum: [vivid, natural]
           description: "GPT Image only"
-        # Extended params for Gemini
+        # Extended params for Gemini (native generateContent / imageConfig)
         aspect_ratio:
           type: string
-          description: "Gemini only — e.g. `16:9`, `1:1`"
+          description: "Gemini only — maps to `generationConfig.imageConfig.aspectRatio` (e.g. `16:9`, `1:1`)"
+        image_size:
+          type: string
+          description: "Gemini only — maps to `generationConfig.imageConfig.imageSize` (e.g. `512`, `1024`)"
         thinking_budget:
           type: integer
-          description: "Gemini thinking-capable models only; 0 = disabled"
+          description: "Gemini thinking-capable models only; passed as `generationConfig.thinkingConfig.thinkingBudget`; 0 = disabled"
         # Extended params for Wan
         watermark:
           type: boolean

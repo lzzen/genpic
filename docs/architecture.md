@@ -91,7 +91,7 @@ See design §2.1 and `pkg/auth/auth.go` for the implementation contract.
 | Model prefix | Provider | Upstream shape |
 |---|---|---|
 | `openai/*`  | OpenAI adapter | `POST {base}/v1/images/generations` (OpenAI Images API) |
-| `gemini/*`  | Gemini adapter | `POST {base}/v1/chat/completions` (single-turn, image in assistant) |
+| `gemini/*`  | Gemini adapter | `POST {base}/v1beta/models/{model}:generateContent` (IMAGE modality, `inlineData` in candidates) |
 | `wan/*`     | Wan adapter    | `POST {base}/api/v1/services/aigc/multimodal-generation/generation` |
 
 All providers implement `pkg/provider.Provider` and are registered in `cmd/genpic/main.go`.
@@ -103,7 +103,7 @@ All providers implement `pkg/provider.Provider` and are registered in `cmd/genpi
 | **MVP Lite** | `cmd/mvplite` — single binary, no DB, no auth, direct proxy |
 | **M0**       | `cmd/genpic` — all three providers, static auth (env key), in-memory rate limit |
 | **M1**       | Async job queue (Redis), DB-backed jobs + billing, object storage |
-| **M2**       | Gemini full integration, `/v1/chat/completions` |
+| **M2**       | Gemini native generateContent path (`model-fingers/gemini-image.md`) |
 | **M3**       | Wan sub-pages (image editing, multi-image) |
 | **M4**       | Credit account management, admin UI, NewAPI integration wizard |
 | **M5**       | Community feed, artwork visibility, paid SKUs |

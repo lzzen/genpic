@@ -41,8 +41,8 @@ func joinV1ImagesGenerations(baseURL string) (string, error) {
 	return u.String(), nil
 }
 
-// TestGemini31FlashImagePreview calls either MVP Lite /api/generate (when
-// GENPIC_DAILY_MVPLITE_URL is set) or the aggregator POST /v1/images/generations.
+// TestGemini31FlashImagePreview calls either POST /api/generate on GENPIC_DAILY_MVPLITE_URL
+// (e.g. genpic or MVP Lite) or the aggregator POST /v1/images/generations.
 func TestGemini31FlashImagePreview(t *testing.T) {
 	upstreamBase := strings.TrimSpace(os.Getenv("GENPIC_DAILY_UPSTREAM_BASE_URL"))
 	key := strings.TrimSpace(os.Getenv("GENPIC_DAILY_UPSTREAM_API_KEY"))
@@ -68,6 +68,8 @@ func TestGemini31FlashImagePreview(t *testing.T) {
 			"model":           modelFullID,
 			"prompt":          smokePrompt,
 			"n":               1,
+			"aspect_ratio":    "1:1",
+			"image_size":      "512",
 			"response_format": "b64_json",
 		})
 		if err != nil {
@@ -82,6 +84,8 @@ func TestGemini31FlashImagePreview(t *testing.T) {
 			"model":           modelUpstream,
 			"prompt":          smokePrompt,
 			"n":               1,
+			"aspect_ratio":    "1:1",
+			"image_size":      "512",
 			"response_format": "b64_json",
 		})
 		if err != nil {
@@ -117,6 +121,10 @@ func TestGemini31FlashImagePreview(t *testing.T) {
 				B64JSON string `json:"b64_json"`
 				URL     string `json:"url"`
 			} `json:"images"`
+			Data []struct {
+				B64JSON string `json:"b64_json"`
+				URL     string `json:"url"`
+			} `json:"data"`
 			Error *struct {
 				Message string `json:"message"`
 			} `json:"error"`
@@ -125,12 +133,16 @@ func TestGemini31FlashImagePreview(t *testing.T) {
 			t.Fatal(err)
 		}
 		if env.Error != nil && env.Error.Message != "" {
-			t.Fatal("mvplite error: ", env.Error.Message)
+			t.Fatal("compat error: ", env.Error.Message)
 		}
-		if len(env.Images) == 0 {
-			t.Fatal("no images in mvplite response")
+		slots := env.Images
+		if len(slots) == 0 {
+			slots = env.Data
 		}
-		img := env.Images[0]
+		if len(slots) == 0 {
+			t.Fatal("no images in /api/generate response (expected images[] or data[])")
+		}
+		img := slots[0]
 		if img.B64JSON == "" && img.URL == "" {
 			t.Fatal("first image has neither b64_json nor url")
 		}

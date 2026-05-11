@@ -20,8 +20,10 @@ type GenerateRequest struct {
 	// N is the number of images to generate (1–4).
 	N int
 	// Size is an opaque size string; interpretation is provider-specific.
-	// GPT Image: "1024x1024"; Wan: "1024*1024"; Gemini: ignored (use AspectRatio).
+	// GPT Image: "1024x1024"; Wan: "1024*1024"; Gemini native: use ImageSize.
 	Size string
+	// ImageSize is Gemini generateContent imageConfig.imageSize (e.g. "512", "1024").
+	ImageSize string
 	// Quality is an optional quality hint: auto | low | medium | high.
 	Quality string
 	// ResponseFormat controls whether the provider should return URLs or b64_json.

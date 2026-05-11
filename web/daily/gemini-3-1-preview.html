@@ -46,7 +46,7 @@
     <a class="back" href="/">← 返回主界面</a>
   </header>
 
-  <p class="meta">模型固定为 <code>gemini/gemini-3.1-flash-image-preview</code>，请求同源 <code>POST /api/generate</code>（需先启动 <code>mvplite</code>）。</p>
+  <p class="meta">模型固定为 <code>gemini/gemini-3.1-flash-image-preview</code>。请求同源 <code>POST /api/generate</code>；需启动 <code>go run ./cmd/genpic</code>，且设置 <code>GEMINI_BASE_URL</code> / <code>GEMINI_API_KEY</code>。参数与 <code>model-fingers/gemini-image.md</code> 一致（<code>aspect_ratio</code>、<code>image_size</code> → <code>imageConfig</code>）。</p>
 
   <div class="field">
     <label for="base-url">Base URL（聚合站）</label>
@@ -105,6 +105,8 @@
           model: MODEL,
           prompt,
           n: 1,
+          aspect_ratio: '1:1',
+          image_size: '512',
           response_format: 'b64_json',
         };
         const res = await fetch('/api/generate', {
@@ -112,7 +114,17 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        const raw = await res.text();
+        let data = {};
+        if (raw) {
+          try {
+            data = JSON.parse(raw);
+          } catch {
+            status.className = 'err';
+            status.textContent = '失败：HTTP ' + res.status + ' — ' + raw.trim().slice(0, 200);
+            return;
+          }
+        }
 
         if (!res.ok) {
           status.className = 'err';
@@ -120,7 +132,7 @@
           return;
         }
 
-        const images = data.images ?? [];
+        const images = data.images ?? data.data ?? [];
         if (!images.length) {
           status.className = 'err';
           status.textContent = '未返回图片：' + JSON.stringify(data).slice(0, 500);
@@ -136,7 +148,8 @@
             imgEl.src = img.url;
             imgEl.alt = 'result ' + i;
           } else if (img.b64_json) {
-            imgEl.src = 'data:image/png;base64,' + img.b64_json;
+            const mt = img.mime_type || 'image/png';
+            imgEl.src = 'data:' + mt + ';base64,' + img.b64_json;
             imgEl.alt = 'result ' + i;
           }
           wrap.appendChild(imgEl);
