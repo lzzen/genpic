@@ -10,7 +10,8 @@ import (
 )
 
 // mysqlDDL is applied on startup (CREATE TABLE IF NOT EXISTS).
-// MEDIUMTEXT is used for images to accommodate base64-encoded data (up to 16 MiB).
+// The images column holds JSON for []jobstore.Image: URLs and small metadata only;
+// large b64_json is cleared before persist (see jobstore.SanitizeImageForStorage).
 // parseTime=true must be present in the DSN for DATETIME columns to scan into time.Time.
 const mysqlDDL = `
 CREATE TABLE IF NOT EXISTS generation_jobs (

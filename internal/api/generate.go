@@ -302,16 +302,17 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 	var images []jobstore.Image
 	if data, ok := out["data"].([]imageData); ok {
 		for _, d := range data {
-			images = append(images, jobstore.Image{
+			images = append(images, jobstore.SanitizeImageForStorage(jobstore.Image{
 				URL:           d.URL,
 				B64JSON:       d.B64JSON,
 				MIMEType:      d.MimeType,
 				RevisedPrompt: d.RevisedPrompt,
-			})
+			}))
 		}
 	}
 	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
 		j.Status = jobstore.StatusSucceeded
+		j.Prompt = jobstore.StripThoughtSignatureFromJSON(j.Prompt)
 		j.Images = images
 		j.FinishedAt = finished
 	})
@@ -326,6 +327,11 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 	})
 
 	out, err := executeImageGeneration(ctx, req)
+	if err == nil {
+		if e := materializeJobImages(jobID, out); e != nil {
+			err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
+		}
+	}
 	finalizeJobResult(jobID, out, err)
 }
 
@@ -371,6 +377,11 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 			j.StartedAt = now
 		})
 		out, err := executeImageGeneration(ctx, body.GenerateRequest)
+		if err == nil {
+			if e := materializeJobImages(id, out); e != nil {
+				err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
+			}
+		}
 		finalizeJobResult(id, out, err)
 		if err != nil {
 			Error(w, err)

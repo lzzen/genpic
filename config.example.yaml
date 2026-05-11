@@ -16,6 +16,10 @@ mvp_lite:
 # Listen: server.port (overridden by PORT). mvplite does not use this for HTTP listen.
 server:
   port: "8080"
+  # Directory for generated images (b64_json → files, served at GET /api/artifacts/...).
+  # Default when omitted: data/genpic-artifacts. Set to "-" to disable file writes.
+  # Override with env GENPIC_ARTIFACTS_DIR.
+  # artifacts_dir: "/var/lib/genpic/artifacts"
   # read_timeout and write_timeout apply to the HTTP server.
   # write_timeout must be larger than the slowest upstream timeout.
   read_timeout: "15s"

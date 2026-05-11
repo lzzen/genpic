@@ -15,10 +15,11 @@ import (
 
 // serverYAML is the server section (full platform listen port).
 type serverYAML struct {
-	Port         string `yaml:"port"`
-	ReadTimeout  string `yaml:"read_timeout"`
-	WriteTimeout string `yaml:"write_timeout"`
-	IdleTimeout  string `yaml:"idle_timeout"`
+	Port          string `yaml:"port"`
+	ReadTimeout   string `yaml:"read_timeout"`
+	WriteTimeout  string `yaml:"write_timeout"`
+	IdleTimeout   string `yaml:"idle_timeout"`
+	ArtifactsDir  string `yaml:"artifacts_dir"`
 }
 
 // mvpLiteYAML is the mvp_lite section of config.yaml.
@@ -98,6 +99,10 @@ type Config struct {
 
 	// Database connection settings (cmd/genpic only). DSN="" means in-memory fallback.
 	Database DatabaseConfig
+
+	// ArtifactsDir is the directory where generated images are written for GET /api/artifacts/...
+	// Resolved in cmd/genpic with GENPIC_ARTIFACTS_DIR override; "-" means disabled.
+	ArtifactsDir string
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -126,6 +131,7 @@ func Read(path string) (Config, error) {
 		Wan:            resolveProvider(root.Wan, "WAN"),
 		GlobalRPM:      root.RateLimit.GlobalRPM,
 		Database:       resolveDatabase(root.Database),
+		ArtifactsDir:   strings.TrimSpace(root.Server.ArtifactsDir),
 	}
 
 	return c, nil

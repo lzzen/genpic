@@ -8,17 +8,17 @@
 //   - POST /v1/images/generations   — enqueue generation job (202 Accepted + job)
 //   - GET  /v1/jobs/{job_id}        — poll job status and images
 //   - GET  /v1/jobs                 — list jobs (newest first, cursor pagination)
+//   - GET  /api/artifacts/{job_id}/{name} — generated image file (PNG/JPEG/WebP/GIF)
 //   - GET  /health                  — liveness check
 //   - GET  /api/public-config       — non-secret defaults for the SPA
 //   - POST /api/generate            — SPA compat: sync generation with per-request credentials
 //
 // Rate limiting:
-//   An optional global RPM cap (rate_limit.global_rpm) applies to POST /v1/images/generations.
 //
-// Jobs (current “M1” slice):
-//   POST /v1/images/generations creates an in-memory job; generation runs in a goroutine.
-//   Results live in process memory until TTL eviction (no DB or object storage yet).
-//   Replace the Memory store with a DB-backed jobstore.Store for production persistence.
+//	An optional global RPM cap (rate_limit.global_rpm) applies to POST /v1/images/generations.
+//
+// Jobs: MySQL or in-memory store; successful b64 responses are written under
+// server.artifacts_dir (default data/genpic-artifacts) and exposed as /api/artifacts/....
 package main
 
 import (
@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,6 +83,23 @@ func main() {
 	}
 	api.SetJobStore(store)
 
+	// ── Artifact files (b64 → disk, GET /api/artifacts/...) ─────────────────
+	artifactsDir := resolveGenpicArtifactsDir(cfg)
+	api.SetArtifactsRoot(artifactsDir)
+	if artifactsDir != "" {
+		if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
+			slog.Error("artifacts: mkdir", "error", err, "dir", artifactsDir)
+			os.Exit(1)
+		}
+		if abs, err := filepath.Abs(artifactsDir); err == nil {
+			log.Info("artifacts enabled", "dir", abs)
+		} else {
+			log.Info("artifacts enabled", "dir", artifactsDir)
+		}
+	} else {
+		log.Info("artifacts disabled", "reason", "server.artifacts_dir or GENPIC_ARTIFACTS_DIR set to \"-\"")
+	}
+
 	// ── Rate limiter ──────────────────────────────────────────────────────
 	var globalLimiter ratelimit.Limiter = ratelimit.Unlimited{}
 	if cfg.GlobalRPM > 0 {
@@ -107,6 +125,7 @@ func main() {
 	mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, _ *http.Request) {
 		api.JSON(w, http.StatusOK, map[string]string{"default_base_url": defaultBaseURL})
 	})
+	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
 	mux.HandleFunc("POST /api/generate", api.HandleCompatGenerate)
 
 	v1Mux := http.NewServeMux()
@@ -218,3 +237,20 @@ func withLogging(next http.Handler) http.Handler {
 }
 
 var _ = logger.FromContext // ensure logger package side-effects are applied
+
+// resolveGenpicArtifactsDir picks the on-disk directory for materialized images.
+// GENPIC_ARTIFACTS_DIR overrides server.artifacts_dir from YAML. "-" disables writes.
+// When unset, defaults to data/genpic-artifacts.
+func resolveGenpicArtifactsDir(cfg mvpconfig.Config) string {
+	d := strings.TrimSpace(cfg.ArtifactsDir)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_ARTIFACTS_DIR")); v != "" {
+		d = v
+	}
+	if d == "-" {
+		return ""
+	}
+	if d == "" {
+		return "data/genpic-artifacts"
+	}
+	return d
+}
