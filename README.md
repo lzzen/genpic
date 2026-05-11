@@ -68,11 +68,12 @@ The platform's upstream credentials are held server-side and never exposed.
 ## Repository layout
 
 ```
-cmd/mvplite/      MVP Lite binary (stdlib only)
+cmd/mvplite/      MVP Lite binary
 cmd/genpic/       Full platform binary
+daily/            Integration smoke tests (tag: integration); see daily/README.md
 internal/         Business logic (not importable externally)
 pkg/              Reusable packages with stable interfaces
-web/              Static frontend (embedded at build time)
+web/              Static frontend (embedded at build time); web/daily/ — manual test pages
 contracts/        providers.yaml — model contract table
 openapi.yaml      API contract
 docs/             Architecture, runbook, ADRs
