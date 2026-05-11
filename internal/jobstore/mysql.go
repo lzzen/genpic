@@ -56,7 +56,10 @@ func NewMySQL(dsn string, maxOpen, maxIdle int) (*MySQL, error) {
 	if maxIdle > 0 {
 		db.SetMaxIdleConns(maxIdle)
 	}
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Recycle connections so we do not reuse TCP conns that MySQL or the
+	// WSL↔Windows bridge has already half-closed (avoids driver "broken pipe" writes).
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(50 * time.Second)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("jobstore/mysql: ping: %w", err)
