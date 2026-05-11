@@ -88,6 +88,8 @@
     .model-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(92, 77, 219, 0.1); }
     .model-tab[data-provider="gemini"].active { border-color: var(--accent2); color: var(--accent2); background: rgba(10, 140, 196, 0.1); }
     .model-tab[data-provider="wan"].active { border-color: var(--accent3); color: var(--accent3); background: rgba(232, 93, 4, 0.1); }
+    /* 万相入口暂隐藏；恢复时删掉下一行 */
+    .model-tab[data-provider="wan"] { display: none !important; }
 
     /* ── Form sections ── */
     .section-title { font-size: .72rem; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); margin-bottom: 8px; }
@@ -922,7 +924,11 @@ persistFields.forEach(id => {
 
 const savedModel = load('active-model', 'openai/gpt-image-2');
 const savedProvider = load('active-provider', 'openai');
-setActiveModel(savedModel, savedProvider);
+const wanHidden = savedProvider === 'wan' || (typeof savedModel === 'string' && savedModel.startsWith('wan/'));
+setActiveModel(
+  wanHidden ? 'openai/gpt-image-2' : savedModel,
+  wanHidden ? 'openai' : savedProvider
+);
 
 const gisz = $('gem-image-size');
 if (gisz && gisz.options.length) {
