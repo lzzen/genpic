@@ -412,6 +412,13 @@
     .hist-img-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; background: var(--surface2); }
     .hist-img-item a { display: block; margin-top: 4px; font-size: .68rem; color: var(--accent); text-decoration: none; }
     .hist-img-item a:hover { text-decoration: underline; }
+    .hist-load-more-wrap { padding: 0 20px 20px; flex-shrink: 0; }
+    .hist-load-more-btn {
+      width: 100%; padding: 10px 14px; font-size: .82rem; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer;
+    }
+    .hist-load-more-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .hist-load-more-btn:disabled { opacity: 0.55; cursor: default; }
   </style>
 </head>
 <body>
@@ -684,6 +691,9 @@
       <p>还没有生成记录，先去生成一张图试试吧</p>
     </div>
     <div id="hist-list" class="hist-list" style="display:none"></div>
+    <div id="hist-load-more-wrap" class="hist-load-more-wrap" style="display:none">
+      <button type="button" id="hist-load-more-btn" class="hist-load-more-btn">加载更多</button>
+    </div>
   </main>
 
 </div>
@@ -996,7 +1006,7 @@ wireRefAndGpt();
 getOrCreateGenpicSessionId();
 
 bootstrapCredentials()
-  .then(() => mergeAndPersistHistory())
+  .then(() => mergeAndPersistHistory({ reset: true }))
   .then(() => renderHistoryPanel())
   .catch(e => console.warn('bootstrapCredentials', e));
 
@@ -1479,8 +1489,14 @@ $('prompt').addEventListener('keydown', e => {
 // localStorage `genpic:browser-session` → header `X-Genpic-Session` → DB `session_id`.
 const HIST_KEY = 'genpic:history-v1';
 const HIST_MAX = 20;
+const HIST_PAGE_SIZE = 20;
 const HIST_CLEAR_TS_KEY = 'genpic:hist-clear-ts';
 const HIST_HIDDEN_IDS_KEY = 'genpic:hist-hidden-job-ids';
+
+/** Merged rows for history UI (page 1 + 加载更多); null before first merge this page load. */
+let histViewEntries = null;
+let histNextCursor = null;
+let histLoadMoreBusy = false;
 
 function histClearTsLoad() {
   const t = parseInt(localStorage.getItem(HIST_CLEAR_TS_KEY) || '0', 10);
@@ -1536,11 +1552,13 @@ function histClear() {
   try { localStorage.removeItem(HIST_HIDDEN_IDS_KEY); } catch {}
 }
 
-/** GET /jobs — same session header as generate (see getOrCreateGenpicSessionId). */
-async function fetchServerJobList() {
+/** GET /jobs?page — same session header as generate (see getOrCreateGenpicSessionId). */
+async function fetchServerJobPage(cursor) {
   const sess = getOrCreateGenpicSessionId();
+  const params = new URLSearchParams({ limit: String(HIST_PAGE_SIZE) });
+  if (cursor) params.set('cursor', cursor);
   try {
-    const r = await fetch('/jobs?limit=50', { headers: { 'X-Genpic-Session': sess } });
+    const r = await fetch('/jobs?' + params.toString(), { headers: { 'X-Genpic-Session': sess } });
     if (!r.ok) return null;
     const text = await r.text();
     let j;
@@ -1550,7 +1568,11 @@ async function fetchServerJobList() {
       return null;
     }
     if (!j || !Array.isArray(j.data)) return null;
-    return j.data;
+    const rawNext = j.next_cursor;
+    const nextCursor = (rawNext === undefined || rawNext === null || rawNext === '')
+      ? null
+      : String(rawNext);
+    return { jobs: j.data, nextCursor };
   } catch {
     return null;
   }
@@ -1580,8 +1602,14 @@ function jobRecordToHistEntry(job) {
   };
 }
 
-/** Merge DB job list (priority) with local cache; persist for thumbnails/offline. */
-async function mergeAndPersistHistory() {
+/** Merge first page of DB jobs with local cache; set histViewEntries + histNextCursor. */
+async function mergeAndPersistHistory(opts) {
+  const reset = opts == null || opts.reset !== false;
+  if (reset) {
+    histNextCursor = null;
+    histLoadMoreBusy = false;
+  }
+
   const clearTs = histClearTsLoad();
   const hidden = histHiddenIdsLoad();
   let local = [];
@@ -1595,9 +1623,10 @@ async function mergeAndPersistHistory() {
     byId.set(e.id, { ...e, source: e.source || 'local' });
   }
 
-  const serverJobs = await fetchServerJobList();
-  if (serverJobs) {
-    for (const job of serverJobs) {
+  const page = await fetchServerJobPage(null);
+  if (page && page.jobs) {
+    histNextCursor = page.nextCursor;
+    for (const job of page.jobs) {
       if (!job || !job.id) continue;
       if (hidden.has(job.id)) continue;
       const cts = (typeof job.created_at === 'number' ? job.created_at : 0) * 1000;
@@ -1605,10 +1634,67 @@ async function mergeAndPersistHistory() {
       const row = jobRecordToHistEntry(job);
       if (row) byId.set(job.id, row);
     }
+  } else {
+    histNextCursor = null;
   }
 
-  const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, HIST_MAX);
-  try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch {}
+  const mergedFull = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  histViewEntries = mergedFull;
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(mergedFull.slice(0, HIST_MAX))); } catch {}
+}
+
+async function appendHistoryPage() {
+  if (!histNextCursor || histLoadMoreBusy) return;
+  histLoadMoreBusy = true;
+  updateHistLoadMoreUI();
+  const clearTs = histClearTsLoad();
+  const hidden = histHiddenIdsLoad();
+  const page = await fetchServerJobPage(histNextCursor);
+  histLoadMoreBusy = false;
+  if (!page) {
+    updateHistLoadMoreUI();
+    renderHistoryPanel();
+    return;
+  }
+  if (!page.jobs || !page.jobs.length) {
+    histNextCursor = null;
+    updateHistLoadMoreUI();
+    renderHistoryPanel();
+    return;
+  }
+  histNextCursor = page.nextCursor;
+
+  const byId = new Map();
+  for (const e of (histViewEntries || [])) {
+    if (e && e.id) byId.set(e.id, e);
+  }
+  for (const job of page.jobs) {
+    if (!job || !job.id) continue;
+    if (hidden.has(job.id)) continue;
+    const cts = (typeof job.created_at === 'number' ? job.created_at : 0) * 1000;
+    if (clearTs > 0 && cts <= clearTs) continue;
+    const row = jobRecordToHistEntry(job);
+    if (row) byId.set(job.id, row);
+  }
+  histViewEntries = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  updateHistLoadMoreUI();
+  renderHistoryPanel();
+}
+
+function updateHistLoadMoreUI() {
+  const wrap = $('hist-load-more-wrap');
+  const btn = $('hist-load-more-btn');
+  if (!wrap || !btn) return;
+  const n = (histViewEntries !== null) ? histViewEntries.length : histLoad().length;
+  if (n === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+  const show = Boolean(histNextCursor && histViewEntries !== null);
+  wrap.style.display = show ? '' : 'none';
+  if (!show) return;
+  btn.disabled = histLoadMoreBusy;
+  btn.textContent = histLoadMoreBusy ? '加载中…' : '加载更多';
 }
 
 function saveToHistory(images, model, provider, prompt, serverJobId) {
@@ -1630,7 +1716,7 @@ function saveToHistory(images, model, provider, prompt, serverJobId) {
       revised_prompt: img.revised_prompt,
     })),
   });
-  void mergeAndPersistHistory().catch(() => {});
+  void mergeAndPersistHistory({ reset: true }).catch(() => {});
 }
 
 function fmtHistTime(ts) {
@@ -1638,7 +1724,7 @@ function fmtHistTime(ts) {
 }
 
 function renderHistoryPanel() {
-  const arr = histLoad();
+  const arr = histViewEntries !== null ? histViewEntries : histLoad();
   const emptyEl = $('hist-empty');
   const listEl  = $('hist-list');
   if (!emptyEl || !listEl) return;
@@ -1646,6 +1732,7 @@ function renderHistoryPanel() {
     emptyEl.style.display = '';
     listEl.style.display  = 'none';
     listEl.innerHTML = '';
+    updateHistLoadMoreUI();
     return;
   }
   emptyEl.style.display = 'none';
@@ -1677,7 +1764,7 @@ function renderHistoryPanel() {
     delBtn.textContent = '×';
     delBtn.addEventListener('click', () => {
       histDelete(entry.id);
-      mergeAndPersistHistory()
+      mergeAndPersistHistory({ reset: true })
         .then(() => renderHistoryPanel())
         .catch(() => renderHistoryPanel());
     });
@@ -1741,6 +1828,7 @@ function renderHistoryPanel() {
 
     listEl.appendChild(card);
   });
+  updateHistLoadMoreUI();
 }
 
 // ── Tab switching ────────────────────────────────────────
@@ -1756,7 +1844,7 @@ function setTab(tab) {
   if (genArea)  genArea.style.display  = isGen ? '' : 'none';
   if (histArea) histArea.style.display = isGen ? 'none' : '';
   if (!isGen) {
-    mergeAndPersistHistory()
+    mergeAndPersistHistory({ reset: true })
       .then(() => renderHistoryPanel())
       .catch(() => renderHistoryPanel());
   }
@@ -1769,10 +1857,14 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 $('hist-clear-btn')?.addEventListener('click', () => {
   if (confirm('确认清空全部生成历史？')) {
     histClear();
-    mergeAndPersistHistory()
+    mergeAndPersistHistory({ reset: true })
       .then(() => renderHistoryPanel())
       .catch(() => renderHistoryPanel());
   }
+});
+
+$('hist-load-more-btn')?.addEventListener('click', () => {
+  void appendHistoryPage();
 });
 </script>
 </body>
