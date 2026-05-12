@@ -452,6 +452,9 @@ components:
         provider:
           type: string
           description: Adapter name (e.g. openai, gemini, wan)
+        prompt:
+          type: string
+          description: Original generation prompt (from job record)
         status:
           $ref: "#/components/schemas/JobStatus"
         created_at:

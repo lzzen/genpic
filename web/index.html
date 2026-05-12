@@ -405,6 +405,8 @@
     .hist-del { width: 24px; height: 24px; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: .9rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .hist-del:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
     .hist-prompt { padding: 8px 14px; font-size: .78rem; color: var(--muted); line-height: 1.45; border-bottom: 1px solid var(--border); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .hist-status { padding: 8px 14px; font-size: .78rem; color: var(--muted); border-bottom: 1px solid var(--border); line-height: 1.4; }
+    .hist-status.hist-status-fail { color: var(--danger); }
     .hist-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
     .hist-img-item { display: flex; flex-direction: column; align-items: center; }
     .hist-img-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; background: var(--surface2); }
@@ -989,7 +991,14 @@ const dm0 = load('gpt-discount-model', null);
 if (dm0 !== null && $('gpt-discount-model')) $('gpt-discount-model').value = dm0;
 wireRefAndGpt();
 
-bootstrapCredentials().catch(e => console.warn('bootstrapCredentials', e));
+// Ensure anonymous session exists before any /jobs or /api/generate calls
+// (localStorage `genpic:browser-session` === header `X-Genpic-Session` === DB `session_id`).
+getOrCreateGenpicSessionId();
+
+bootstrapCredentials()
+  .then(() => mergeAndPersistHistory())
+  .then(() => renderHistoryPanel())
+  .catch(e => console.warn('bootstrapCredentials', e));
 
 // ── Event handlers ──────────────────────────────────────
 document.querySelectorAll('.model-tab').forEach(tab => {
@@ -1439,7 +1448,7 @@ $('btn-gen').addEventListener('click', async () => {
       }
       setStatus('success', `✓ 生成 ${images.length} 张图片（${effectiveModelId()}）`);
       addImages(images, effectiveModelId(), activeProvider);
-      saveToHistory(images, effectiveModelId(), activeProvider, prompt);
+      saveToHistory(images, effectiveModelId(), activeProvider, prompt, jobId);
       return;
     }
 
@@ -1466,19 +1475,44 @@ $('prompt').addEventListener('keydown', e => {
 });
 
 // ── History storage ─────────────────────────────────────
+// Server-backed rows use job `id` (same as DB primary key). Anonymous scope is
+// localStorage `genpic:browser-session` → header `X-Genpic-Session` → DB `session_id`.
 const HIST_KEY = 'genpic:history-v1';
 const HIST_MAX = 20;
+const HIST_CLEAR_TS_KEY = 'genpic:hist-clear-ts';
+const HIST_HIDDEN_IDS_KEY = 'genpic:hist-hidden-job-ids';
+
+function histClearTsLoad() {
+  const t = parseInt(localStorage.getItem(HIST_CLEAR_TS_KEY) || '0', 10);
+  return Number.isFinite(t) && t > 0 ? t : 0;
+}
+
+function histHiddenIdsLoad() {
+  try {
+    const a = JSON.parse(localStorage.getItem(HIST_HIDDEN_IDS_KEY) || '[]');
+    return new Set(Array.isArray(a) ? a : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function histHiddenIdsAdd(id) {
+  if (!id) return;
+  const s = histHiddenIdsLoad();
+  s.add(id);
+  try { localStorage.setItem(HIST_HIDDEN_IDS_KEY, JSON.stringify([...s])); } catch {}
+}
 
 function histLoad() {
   try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
 }
 
 function histPush(entry) {
-  // Strip b64 above ~400 KB to protect localStorage quota.
   const MAX_B64 = 400_000;
   const safe = {
     ...entry,
-    images: entry.images.map(img => ({
+    source: entry.source || 'local',
+    images: (entry.images || []).map(img => ({
       url: img.url || undefined,
       mime_type: img.mime_type || undefined,
       revised_prompt: img.revised_prompt || undefined,
@@ -1493,18 +1527,102 @@ function histPush(entry) {
 
 function histDelete(id) {
   try { localStorage.setItem(HIST_KEY, JSON.stringify(histLoad().filter(e => e.id !== id))); } catch {}
+  if (/^[0-9a-f]{32}$/i.test(id)) histHiddenIdsAdd(id);
 }
 
 function histClear() {
   try { localStorage.removeItem(HIST_KEY); } catch {}
+  try { localStorage.setItem(HIST_CLEAR_TS_KEY, String(Date.now())); } catch {}
+  try { localStorage.removeItem(HIST_HIDDEN_IDS_KEY); } catch {}
 }
 
-function saveToHistory(images, model, provider, prompt) {
+/** GET /jobs — same session header as generate (see getOrCreateGenpicSessionId). */
+async function fetchServerJobList() {
+  const sess = getOrCreateGenpicSessionId();
+  try {
+    const r = await fetch('/jobs?limit=50', { headers: { 'X-Genpic-Session': sess } });
+    if (!r.ok) return null;
+    const text = await r.text();
+    let j;
+    try {
+      j = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!j || !Array.isArray(j.data)) return null;
+    return j.data;
+  } catch {
+    return null;
+  }
+}
+
+function jobRecordToHistEntry(job) {
+  if (!job || !job.id) return null;
+  const images = (job.data || []).map(img => ({
+    url: img.url,
+    b64_json: img.b64_json,
+    mime_type: img.mime_type,
+    revised_prompt: img.revised_prompt,
+  }));
+  const ts = (typeof job.created_at === 'number' ? job.created_at : 0) * 1000;
+  let errorMessage = '';
+  if (job.error && job.error.message) errorMessage = job.error.message;
+  return {
+    id: job.id,
+    ts: ts || Date.now(),
+    model: job.model || '',
+    provider: job.provider || '',
+    prompt: job.prompt || '',
+    status: job.status || '',
+    errorMessage,
+    images,
+    source: 'server',
+  };
+}
+
+/** Merge DB job list (priority) with local cache; persist for thumbnails/offline. */
+async function mergeAndPersistHistory() {
+  const clearTs = histClearTsLoad();
+  const hidden = histHiddenIdsLoad();
+  let local = [];
+  try { local = histLoad(); } catch { local = []; }
+  const byId = new Map();
+
+  for (const e of local) {
+    if (!e || !e.id) continue;
+    if (hidden.has(e.id)) continue;
+    if (clearTs > 0 && (e.ts || 0) <= clearTs) continue;
+    byId.set(e.id, { ...e, source: e.source || 'local' });
+  }
+
+  const serverJobs = await fetchServerJobList();
+  if (serverJobs) {
+    for (const job of serverJobs) {
+      if (!job || !job.id) continue;
+      if (hidden.has(job.id)) continue;
+      const cts = (typeof job.created_at === 'number' ? job.created_at : 0) * 1000;
+      if (clearTs > 0 && cts <= clearTs) continue;
+      const row = jobRecordToHistEntry(job);
+      if (row) byId.set(job.id, row);
+    }
+  }
+
+  const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, HIST_MAX);
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch {}
+}
+
+function saveToHistory(images, model, provider, prompt, serverJobId) {
   if (!images || !images.length) return;
+  const id = (serverJobId && String(serverJobId).trim())
+    ? String(serverJobId).trim()
+    : (Date.now() + '-' + Math.random().toString(36).slice(2, 7));
   histPush({
-    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    id,
     ts: Date.now(),
-    model, provider, prompt,
+    model,
+    provider,
+    prompt,
+    source: serverJobId ? 'server' : 'local',
     images: images.map(img => ({
       url: img.url,
       b64_json: img.b64_json,
@@ -1512,6 +1630,7 @@ function saveToHistory(images, model, provider, prompt) {
       revised_prompt: img.revised_prompt,
     })),
   });
+  void mergeAndPersistHistory().catch(() => {});
 }
 
 function fmtHistTime(ts) {
@@ -1537,7 +1656,6 @@ function renderHistoryPanel() {
     const card = document.createElement('div');
     card.className = 'hist-entry';
 
-    // header row
     const hdr = document.createElement('div');
     hdr.className = 'hist-entry-header';
 
@@ -1555,9 +1673,14 @@ function renderHistoryPanel() {
 
     const delBtn = document.createElement('button');
     delBtn.className = 'hist-del';
-    delBtn.title = '删除';
+    delBtn.title = '从列表移除';
     delBtn.textContent = '×';
-    delBtn.addEventListener('click', () => { histDelete(entry.id); renderHistoryPanel(); });
+    delBtn.addEventListener('click', () => {
+      histDelete(entry.id);
+      mergeAndPersistHistory()
+        .then(() => renderHistoryPanel())
+        .catch(() => renderHistoryPanel());
+    });
 
     hdr.appendChild(tsSpan);
     hdr.appendChild(badge);
@@ -1565,7 +1688,6 @@ function renderHistoryPanel() {
     hdr.appendChild(delBtn);
     card.appendChild(hdr);
 
-    // prompt preview
     if (entry.prompt) {
       const p = document.createElement('div');
       p.className = 'hist-prompt';
@@ -1573,7 +1695,17 @@ function renderHistoryPanel() {
       card.appendChild(p);
     }
 
-    // thumbnails
+    if (entry.status && entry.status !== 'succeeded') {
+      const st = document.createElement('div');
+      st.className = 'hist-status' + (entry.status === 'failed' ? ' hist-status-fail' : '');
+      if (entry.status === 'failed') {
+        st.textContent = '失败：' + (entry.errorMessage || '未知错误');
+      } else {
+        st.textContent = '状态：' + entry.status;
+      }
+      card.appendChild(st);
+    }
+
     const imgsEl = document.createElement('div');
     imgsEl.className = 'hist-images';
     (entry.images || []).forEach(img => {
@@ -1623,7 +1755,11 @@ function setTab(tab) {
   if (sidebar)  sidebar.style.display  = isGen ? '' : 'none';
   if (genArea)  genArea.style.display  = isGen ? '' : 'none';
   if (histArea) histArea.style.display = isGen ? 'none' : '';
-  if (!isGen) renderHistoryPanel();
+  if (!isGen) {
+    mergeAndPersistHistory()
+      .then(() => renderHistoryPanel())
+      .catch(() => renderHistoryPanel());
+  }
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -1633,7 +1769,9 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 $('hist-clear-btn')?.addEventListener('click', () => {
   if (confirm('确认清空全部生成历史？')) {
     histClear();
-    renderHistoryPanel();
+    mergeAndPersistHistory()
+      .then(() => renderHistoryPanel())
+      .catch(() => renderHistoryPanel());
   }
 });
 </script>

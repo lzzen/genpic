@@ -21,6 +21,7 @@ type jobResponse struct {
 	Object     string         `json:"object"`
 	Model      string         `json:"model"`
 	Provider   string         `json:"provider,omitempty"`
+	Prompt     string         `json:"prompt,omitempty"`
 	Status     string         `json:"status"`
 	CreatedAt  int64          `json:"created_at"`
 	StartedAt  *int64         `json:"started_at,omitempty"`
@@ -47,6 +48,7 @@ func toJobResponse(j *jobstore.Job) jobResponse {
 		Object:    "generation.job",
 		Model:     j.Model,
 		Provider:  j.Provider,
+		Prompt:    j.Prompt,
 		Status:    string(j.Status),
 		CreatedAt: j.CreatedAt.Unix(),
 	}
