@@ -6,6 +6,8 @@
   <title>视觉工厂 — Genpic</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ensure the HTML hidden attribute always hides elements even when CSS sets display */
+    [hidden] { display: none !important; }
 
     :root {
       --bg:        #eef1f7;
@@ -28,11 +30,13 @@
 
     /* ── Header ── */
     header {
-      display: flex; align-items: center; gap: 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
       padding: 14px 24px; border-bottom: 1px solid var(--border);
       flex-shrink: 0;
       background: var(--surface);
     }
+    .header-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .logo { font-size: 1.2rem; font-weight: 700; letter-spacing: -.5px; }
     .logo span { color: var(--accent); }
     .logo-sub { font-size: .72rem; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; letter-spacing: .3px; }
@@ -67,13 +71,19 @@
       background: var(--surface);
     }
 
-    .more-settings { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface2); padding: 0 10px 10px; margin-bottom: 4px; }
-    .more-settings > summary {
-      cursor: pointer; font-size: .8rem; font-weight: 600; color: var(--muted);
-      list-style: none; padding: 10px 4px; user-select: none;
+    .more-settings { margin-bottom: 4px; }
+    .more-settings-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; border: none; background: none; padding: 6px 0;
+      font-size: .85rem; font-weight: 700; color: var(--text);
+      cursor: pointer; user-select: none; text-align: left;
     }
-    .more-settings > summary::-webkit-details-marker { display: none; }
-    .more-settings-body { display: flex; flex-direction: column; gap: 2px; }
+    .more-settings-toggle:hover { color: var(--accent); }
+    .more-settings-chevron {
+      font-size: .72rem; color: var(--muted); transition: transform .2s; display: inline-block;
+    }
+    .more-settings-toggle[aria-expanded="true"] .more-settings-chevron { transform: rotate(180deg); }
+    .more-settings-body { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
 
     /* ── Form sections ── */
     .section-title { font-size: .72rem; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); margin-bottom: 8px; }
@@ -187,12 +197,8 @@
     /* ── Gallery area ── */
     .gallery-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
 
-    .gallery-head {
-      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-      padding: 8px 14px 0 18px; flex-shrink: 0; flex-wrap: wrap;
-    }
-    .gallery-head .status-bar { flex: 1; min-width: 140px; margin: 0; padding: 8px 0; }
-    .gallery-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .gallery-area > .status-bar { margin: 0 18px; padding-left: 0; padding-right: 0; }
+
     .toolbar-btn {
       width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
       background: var(--surface); color: var(--muted); cursor: pointer; font-size: 1.05rem;
@@ -200,17 +206,22 @@
     }
     .toolbar-btn:hover { color: var(--accent); border-color: var(--accent); }
 
-    .cred-dialog { border: none; border-radius: 14px; padding: 0; max-width: min(440px, 94vw); box-shadow: 0 16px 48px rgba(28,35,51,.18); }
-    .cred-dialog::backdrop { background: rgba(28, 35, 51, 0.35); }
-    .cred-dialog-inner { padding: 20px 22px 16px; }
-    .cred-dialog-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
-    .cred-dialog-hint { font-size: .75rem; color: var(--muted); line-height: 1.45; margin-bottom: 14px; }
-    .cred-dialog-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
-    .cred-dialog-actions button {
-      padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; font-size: .85rem;
+    /* ── API 配置面板（右上角 popover，不遮住 header）── */
+    .cred-panel {
+      position: fixed; top: 58px; right: 12px; z-index: 300;
+      width: min(340px, calc(100vw - 24px));
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; box-shadow: 0 8px 32px rgba(28,35,51,.16);
     }
-    .cred-dialog-actions button:hover { background: var(--accent-h); }
+    .cred-panel-inner { padding: 18px 20px 14px; }
+    .cred-panel-title { font-size: .95rem; font-weight: 700; margin-bottom: 6px; }
+    .cred-panel-hint { font-size: .73rem; color: var(--muted); line-height: 1.45; margin-bottom: 14px; }
+    .cred-panel-actions { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }
+    .cred-panel-actions button {
+      padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; font-size: .83rem;
+    }
+    .cred-panel-actions button:hover { background: var(--accent-h); }
 
     .hist-drawer-backdrop {
       position: fixed; inset: 0; background: rgba(28, 35, 51, 0.25); z-index: 200;
@@ -462,8 +473,14 @@
 <body>
 
 <header>
-  <div class="logo">Gen<span>pic</span></div>
-  <div class="logo-sub">视觉工厂</div>
+  <div class="header-left">
+    <div class="logo">Gen<span>pic</span></div>
+    <div class="logo-sub">视觉工厂</div>
+  </div>
+  <div class="header-actions">
+    <button type="button" class="toolbar-btn" id="btn-hist-drawer" title="生成历史">🕑</button>
+    <button type="button" class="toolbar-btn" id="btn-cred-dialog" title="API 配置">⚙️</button>
+  </div>
 </header>
 
 <div class="layout" id="app">
@@ -475,6 +492,18 @@
     <div class="field">
       <div class="section-title">模型</div>
       <select id="model-select" aria-label="选择模型"></select>
+    </div>
+
+    <div class="field">
+      <label>参考图片（可选）</label>
+      <div class="ref-zone" id="ref-zone" tabindex="0" role="button" aria-label="上传参考图">
+        <div class="ref-plus">+</div>
+        <div style="font-size:.84rem;margin-top:4px">上传或拖入参考图</div>
+        <p>最多 6 张 · 单张 ≤ 4MB · 文生图 / 改图</p>
+        <button type="button" id="ref-pick" style="margin-top:8px;padding:6px 14px;font-size:.78rem;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">选择图片</button>
+      </div>
+      <input type="file" id="ref-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" />
+      <div class="ref-previews" id="ref-previews"></div>
     </div>
 
     <div class="field">
@@ -500,51 +529,40 @@
       </div>
     </div>
 
-    <!-- ── Gemini: 主区仅比例 ── -->
+    <!-- ── Gemini: 主区比例（与 GPT 统一样式）── -->
     <div class="param-section" id="params-gemini">
       <div class="section-title">图片比例</div>
       <div class="field">
-        <label for="gem-aspect">比例</label>
-        <select id="gem-aspect">
-          <option value="1:1">1:1</option>
-          <option value="16:9">16:9</option>
-          <option value="9:16">9:16</option>
-          <option value="4:3">4:3</option>
-          <option value="3:4">3:4</option>
-          <option value="3:2">3:2</option>
-          <option value="2:3">2:3</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- ── Wan: 主区尺寸（视作比例/画幅） ── -->
-    <div class="param-section" id="params-wan">
-      <div class="section-title">画幅尺寸</div>
-      <div class="field">
-        <label for="wan-size">尺寸</label>
-        <select id="wan-size">
-          <option value="1024*1024">1024×1024</option>
-          <option value="720*1280">720×1280</option>
-          <option value="1280*720">1280×720</option>
-          <option value="1280*1280">1280×1280</option>
-        </select>
-      </div>
-    </div>
-
-    <details class="more-settings" id="more-settings">
-      <summary>其他设置</summary>
-      <div class="more-settings-body">
-        <div class="field">
-          <label>参考图片（可选）</label>
-          <div class="ref-zone" id="ref-zone" tabindex="0" role="button" aria-label="上传参考图">
-            <div class="ref-plus">+</div>
-            <div style="font-size:.84rem;margin-top:4px">上传或拖入参考图</div>
-            <p>最多 6 张 · 单张 ≤ 4MB · 文生图 / 改图</p>
-            <button type="button" id="ref-pick" style="margin-top:8px;padding:6px 14px;font-size:.78rem;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">选择图片</button>
-          </div>
-          <input type="file" id="ref-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" />
-          <div class="ref-previews" id="ref-previews"></div>
+        <div class="ratio-grid" id="gem-ratio-grid">
+          <button type="button" class="ratio-btn active" data-aspect="1:1"><span class="r-ico">▢</span>1:1</button>
+          <button type="button" class="ratio-btn" data-aspect="16:9"><span class="r-ico">▭</span>16:9</button>
+          <button type="button" class="ratio-btn" data-aspect="9:16"><span class="r-ico">▯</span>9:16</button>
+          <button type="button" class="ratio-btn" data-aspect="4:3"><span class="r-ico">▭</span>4:3</button>
+          <button type="button" class="ratio-btn" data-aspect="3:4"><span class="r-ico">▯</span>3:4</button>
+          <button type="button" class="ratio-btn" data-aspect="3:2"><span class="r-ico">▭</span>3:2</button>
+          <button type="button" class="ratio-btn" data-aspect="2:3"><span class="r-ico">▯</span>2:3</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Wan: 主区比例（与 GPT 统一样式）── -->
+    <div class="param-section" id="params-wan">
+      <div class="section-title">图片比例</div>
+      <div class="field">
+        <div class="ratio-grid" id="wan-ratio-grid">
+          <button type="button" class="ratio-btn active" data-size="1024*1024"><span class="r-ico">▢</span>1:1</button>
+          <button type="button" class="ratio-btn" data-size="720*1280"><span class="r-ico">▯</span>9:16</button>
+          <button type="button" class="ratio-btn" data-size="1280*720"><span class="r-ico">▭</span>16:9</button>
+          <button type="button" class="ratio-btn" data-size="1280*1280"><span class="r-ico">▢</span>1:1 高清</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="more-settings" id="more-settings">
+      <button type="button" class="more-settings-toggle" id="more-settings-toggle" aria-expanded="false" aria-controls="more-settings-body">
+        其他设置 <span class="more-settings-chevron">▾</span>
+      </button>
+      <div class="more-settings-body" id="more-settings-body" hidden>
 
         <div class="param-section show" id="more-extra-openai">
           <div class="section-title">GPT 图像 · 更多</div>
@@ -575,7 +593,7 @@
           </div>
           <div class="row-2">
             <div class="field">
-              <label for="gpt-size">精确尺寸（覆盖上方比例）</label>
+              <label for="gpt-size" tips="（覆盖上方比例）">精确尺寸</label>
               <select id="gpt-size">
                 <option value="">自动</option>
                 <option value="1024x1024">1024×1024</option>
@@ -665,8 +683,9 @@
           </div>
           <div class="note">🔒 阿里云 TOS 要求水印必须开启。</div>
         </div>
-      </div>
-    </details>
+
+      </div><!-- /.more-settings-body -->
+    </div><!-- /.more-settings -->
 
     <button class="btn-gen" id="btn-gen">
       <span id="btn-text">✨ 生成图片</span>
@@ -678,13 +697,7 @@
   </aside>
 
   <main class="gallery-area" id="generate-area">
-    <div class="gallery-head">
-      <div id="status-bar" class="status-bar"></div>
-      <div class="gallery-actions">
-        <button type="button" class="toolbar-btn" id="btn-hist-drawer" title="生成历史">🕑</button>
-        <button type="button" class="toolbar-btn" id="btn-cred-dialog" title="API 配置">⚙️</button>
-      </div>
-    </div>
+    <div id="status-bar" class="status-bar"></div>
     <div class="gallery" id="gallery">
       <div class="empty" id="empty">
         <div class="icon">🎨</div>
@@ -696,7 +709,7 @@
 </div>
 
 <div id="hist-drawer-backdrop" class="hist-drawer-backdrop" hidden></div>
-<aside id="hist-drawer" class="hist-drawer" hidden aria-hidden="true">
+<aside id="hist-drawer" class="hist-drawer" hidden>
   <div class="hist-drawer-top">
     <h2>生成历史</h2>
     <button type="button" class="hist-drawer-close" id="hist-drawer-close" aria-label="关闭">×</button>
@@ -717,10 +730,10 @@
   </div>
 </aside>
 
-<dialog id="cred-dialog" class="cred-dialog">
-  <div class="cred-dialog-inner">
-    <div class="cred-dialog-title">API 配置</div>
-    <p class="cred-dialog-hint">填写上游 Base URL 与完整 API Key。脱敏或占位密钥无法调用；请从控制台复制完整密钥粘贴。</p>
+<div id="cred-panel" class="cred-panel" hidden>
+  <div class="cred-panel-inner">
+    <div class="cred-panel-title">API 配置</div>
+    <p class="cred-panel-hint">填写上游 Base URL 与完整 API Key。脱敏或占位密钥无法调用；请从控制台复制完整密钥粘贴。</p>
     <div class="field">
       <label for="base-url">接口地址（Base URL）</label>
       <input id="base-url" type="url" placeholder="https://imgapi.example.com" />
@@ -733,11 +746,11 @@
       </div>
       <div id="cred-warn" class="cred-warn" role="status"></div>
     </div>
-    <div class="cred-dialog-actions">
-      <button type="button" id="cred-dialog-close">完成</button>
+    <div class="cred-panel-actions">
+      <button type="button" id="cred-panel-close">完成</button>
     </div>
   </div>
-</dialog>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -782,14 +795,15 @@ function updateCredWarnUI() {
 }
 
 function openCredDialog() {
-  const d = $('cred-dialog');
-  if (d && typeof d.showModal === 'function' && !d.open) d.showModal();
+  const p = $('cred-panel');
+  if (p) p.hidden = false;
   updateCredWarnUI();
+  requestAnimationFrame(() => $('base-url')?.focus());
 }
 
 function closeCredDialog() {
-  const d = $('cred-dialog');
-  if (d?.open) d.close();
+  const p = $('cred-panel');
+  if (p) p.hidden = true;
 }
 
 /** 首次进入或凭证不完整 / 脱敏时自动弹出配置。 */
@@ -1140,7 +1154,7 @@ const persistFields = [
   'prompt',
   'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
   'gpt-discount-model', 'gpt-cw', 'gpt-ch',
-  'gem-aspect', 'gem-n', 'wan-size', 'wan-n'
+  'gem-n', 'wan-n'
 ];
 persistFields.forEach(id => {
   const el = $(id);
@@ -1194,30 +1208,55 @@ $('model-select')?.addEventListener('change', () => {
 });
 
 // ── Event handlers ──────────────────────────────────────
-$('btn-cred-dialog')?.addEventListener('click', () => openCredDialog());
-$('cred-dialog-close')?.addEventListener('click', () => closeCredDialog());
+$('btn-cred-dialog')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const p = $('cred-panel');
+  if (p && !p.hidden) { closeCredDialog(); } else { openCredDialog(); }
+});
+$('cred-panel-close')?.addEventListener('click', () => closeCredDialog());
+
+// Close cred panel on click outside
+document.addEventListener('click', (e) => {
+  const p = $('cred-panel');
+  if (p && !p.hidden && !p.contains(e.target) && e.target.id !== 'btn-cred-dialog') {
+    closeCredDialog();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeCredDialog();
+});
+
+// ── More-settings toggle ─────────────────────────────────
+$('more-settings-toggle')?.addEventListener('click', () => {
+  const body = $('more-settings-body');
+  const btn  = $('more-settings-toggle');
+  if (!body || !btn) return;
+  const open = !body.hidden;
+  body.hidden = open;
+  btn.setAttribute('aria-expanded', String(!open));
+});
 
 function openHistDrawer() {
   const back = $('hist-drawer-backdrop');
   const dr = $('hist-drawer');
   if (back) back.hidden = false;
-  if (dr) {
-    dr.hidden = false;
-    dr.setAttribute('aria-hidden', 'false');
-  }
+  if (dr) dr.hidden = false;
   mergeAndPersistHistory({ reset: true })
     .then(() => renderHistoryPanel())
     .catch(() => renderHistoryPanel());
+  requestAnimationFrame(() => {
+    $('hist-drawer-close')?.focus({ preventScroll: true });
+  });
 }
 
 function closeHistDrawer() {
   const back = $('hist-drawer-backdrop');
   const dr = $('hist-drawer');
-  if (back) back.hidden = true;
-  if (dr) {
-    dr.hidden = true;
-    dr.setAttribute('aria-hidden', 'true');
+  if (dr && dr.contains(document.activeElement)) {
+    $('btn-hist-drawer')?.focus({ preventScroll: true });
   }
+  if (back) back.hidden = true;
+  if (dr) dr.hidden = true;
 }
 
 $('btn-hist-drawer')?.addEventListener('click', () => openHistDrawer());
@@ -1441,6 +1480,48 @@ function wireRefAndGpt() {
   $('gpt-cw')?.addEventListener('input', onGptCustomDimsInput);
   $('gpt-ch')?.addEventListener('input', onGptCustomDimsInput);
 
+  // ── Gemini ratio grid ──
+  $('gem-ratio-grid')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.ratio-btn');
+    if (!btn) return;
+    document.querySelectorAll('#gem-ratio-grid .ratio-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    save('gem-aspect', btn.dataset.aspect || '1:1');
+  });
+  // Restore gemini ratio
+  (function() {
+    const saved = load('gem-aspect', null);
+    if (!saved) return;
+    const grid = $('gem-ratio-grid');
+    if (!grid) return;
+    const match = grid.querySelector(`.ratio-btn[data-aspect="${saved}"]`);
+    if (match) {
+      grid.querySelectorAll('.ratio-btn').forEach((b) => b.classList.remove('active'));
+      match.classList.add('active');
+    }
+  })();
+
+  // ── Wan ratio grid ──
+  $('wan-ratio-grid')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.ratio-btn');
+    if (!btn) return;
+    document.querySelectorAll('#wan-ratio-grid .ratio-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    save('wan-size', btn.dataset.size || '1024*1024');
+  });
+  // Restore wan ratio
+  (function() {
+    const saved = load('wan-size', null);
+    if (!saved) return;
+    const grid = $('wan-ratio-grid');
+    if (!grid) return;
+    const match = grid.querySelector(`.ratio-btn[data-size="${saved}"]`);
+    if (match) {
+      grid.querySelectorAll('.ratio-btn').forEach((b) => b.classList.remove('active'));
+      match.classList.add('active');
+    }
+  })();
+
   const pick = () => $('ref-input')?.click();
   $('ref-pick')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1498,7 +1579,8 @@ function buildBody() {
     base.n = parseInt($('gpt-n').value) || 1;
     base.response_format = $('gpt-format').value || 'url';
   } else if (activeProvider === 'gemini') {
-    base.aspect_ratio = $('gem-aspect').value || '1:1';
+    const gemBtn = document.querySelector('#gem-ratio-grid .ratio-btn.active');
+    base.aspect_ratio = gemBtn?.dataset.aspect || '1:1';
     base.n = parseInt($('gem-n').value) || 1;
     base.response_format = 'b64_json';
     if (activeModel !== 'gemini/gemini-2.5-flash-image') {
@@ -1510,7 +1592,8 @@ function buildBody() {
     const budget = parseInt($('gem-thinking')?.value ?? 0);
     if (budget > 0) base.thinking_budget = budget;
   } else if (activeProvider === 'wan') {
-    base.size = $('wan-size').value || '1024*1024';
+    const wanBtn = document.querySelector('#wan-ratio-grid .ratio-btn.active');
+    base.size = wanBtn?.dataset.size || '1024*1024';
     base.n = parseInt($('wan-n').value) || 1;
     if (activeModel === 'wan/wan2.7-image-pro') {
       base.thinking_mode = $('wan-thinking')?.checked ?? false;
