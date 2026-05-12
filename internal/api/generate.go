@@ -28,9 +28,9 @@ type imageData struct {
 
 const maxGenerateBodyBytes = 32 << 20 // base64 reference images in JSON
 
-// GenerateRequest is the JSON body for POST /v1/images/generations.
-// It is kept OpenAI-compatible while carrying provider-specific extensions
-// as top-level optional fields with clear documentation.
+// GenerateRequest is the JSON body for image generation (POST /api/generate
+// and internal callers). Provider-specific extensions are optional top-level
+// fields with clear documentation.
 type GenerateRequest struct {
 	Model          string `json:"model"`
 	Prompt         string `json:"prompt"`
@@ -85,7 +85,7 @@ func providerRefs(in []refimages.Input) ([]provider.ReferenceImage, error) {
 }
 
 // normalizeModelID removes a leading catalog prefix (gemini/, openai/, wan/) so
-// POST /api/generate and /v1/images/generations accept either full ids
+// POST /api/generate accepts either full ids
 // (e.g. gemini/gemini-3.1-flash-image-preview) or upstream wire ids
 // (e.g. gemini-3.1-flash-image-preview). Gemini generateContent URLs must not
 // include the "gemini/" provider segment in the model path segment.
@@ -164,15 +164,15 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	}
 
 	provReq := provider.GenerateRequest{
-		Model:          upstreamWire,
-		Prompt:         req.Prompt,
-		N:              n,
-		Size:           req.Size,
-		Quality:        req.Quality,
-		ResponseFormat: format,
-		Style:          req.Style,
-		AspectRatio:    req.AspectRatio,
-		ImageSize:      req.ImageSize,
+		Model:           upstreamWire,
+		Prompt:          req.Prompt,
+		N:               n,
+		Size:            req.Size,
+		Quality:         req.Quality,
+		ResponseFormat:  format,
+		Style:           req.Style,
+		AspectRatio:     req.AspectRatio,
+		ImageSize:       req.ImageSize,
 		ThinkingBudget:  req.ThinkingBudget,
 		ThinkingMode:    req.ThinkingMode,
 		ReferenceImages: refs,
@@ -218,36 +218,6 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	}, nil
 }
 
-// HandleImageGeneration serves POST /v1/images/generations.
-//
-// When a job store is wired (cmd/genpic M1+), the request is enqueued and a
-// 202 Accepted + job object is returned immediately; poll GET /v1/jobs/{id}
-// for status and results. When no job store is configured, falls back to the
-// synchronous 200 path (useful for testing with no job store).
-func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
-
-	var req GenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		Error(w, pkgerrors.BadRequest("parse_error", "could not parse request body: "+err.Error()))
-		return
-	}
-
-	// ── Async path (M1+) ──────────────────────────────────────────────────
-	if jobStoreInstance != nil {
-		handleImageGenerationAsync(w, req, callerScopeFromRequest(r))
-		return
-	}
-
-	// ── Sync fallback (no job store configured) ───────────────────────────
-	out, err := executeImageGeneration(r.Context(), req)
-	if err != nil {
-		Error(w, err)
-		return
-	}
-	JSON(w, http.StatusOK, out)
-}
-
 // jobFromGenerateRequest builds a queued job record (provider name resolved when known).
 func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *jobstore.Job {
 	normalised := normalizeModelID(req.Model)
@@ -268,28 +238,6 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 		UserID:    uid,
 		SessionID: sid,
 	}
-}
-
-// handleImageGenerationAsync creates a job, launches a goroutine, and returns
-// 202 Accepted immediately. The caller polls GET /v1/jobs/{id} for results.
-func handleImageGenerationAsync(w http.ResponseWriter, req GenerateRequest, owner jobstore.OwnerScope) {
-	job := jobFromGenerateRequest(req, owner)
-
-	id, err := jobStoreInstance.Create(job)
-	if err != nil {
-		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))
-		return
-	}
-
-	// Detach from the HTTP request context so the job is not cancelled when the
-	// connection closes; use a background context for the generation goroutine.
-	bgCtx := context.Background()
-
-	go runJob(bgCtx, id, req)
-
-	// Return 202 with the initial job record.
-	j, _ := jobStoreInstance.Get(id)
-	JSON(w, http.StatusAccepted, toJobResponse(j))
 }
 
 // finalizeJobResult updates the job to succeeded or failed after generation.
@@ -347,6 +295,10 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 // upstream as-is; the terminal running genpic prints the full upstream request
 // and response JSON to stderr for each call (large base64 and thoughtSignature
 // strings are replaced with placeholders).
+//
+// When a job store is configured (cmd/genpic), the handler returns 202 Accepted
+// with a job record immediately and runs generation in the background; clients
+// poll GET /v1/jobs/{id}. Without a job store (e.g. tests), it waits and returns 200.
 func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 
@@ -363,38 +315,28 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := compatctx.With(r.Context(), &compatctx.Override{
+	ov := &compatctx.Override{
 		BaseURL:     base,
 		APIKey:      key,
 		LogToStderr: true,
-	})
+	}
+	ctx := compatctx.With(r.Context(), ov)
 
-	// Same persistence as /v1/images/generations: the SPA uses this path, so we
-	// record one job per request when a store is wired (MySQL or in-memory).
+	// Full platform (cmd/genpic): always wire a job store — enqueue async and
+	// return 202; clients poll GET /v1/jobs/{id}. compatctx must be attached to
+	// a detached context so closing the HTTP connection does not cancel upstream.
 	if jobStoreInstance != nil {
-		job := jobFromGenerateRequest(body.GenerateRequest, callerScopeFromRequest(r))
+		owner := callerScopeFromRequest(r)
+		job := jobFromGenerateRequest(body.GenerateRequest, owner)
 		id, err := jobStoreInstance.Create(job)
 		if err != nil {
 			Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))
 			return
 		}
-		now := time.Now()
-		jobStoreInstance.Update(id, func(j *jobstore.Job) {
-			j.Status = jobstore.StatusRunning
-			j.StartedAt = now
-		})
-		out, err := executeImageGeneration(ctx, body.GenerateRequest)
-		if err == nil {
-			if e := materializeJobImages(id, out); e != nil {
-				err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
-			}
-		}
-		finalizeJobResult(id, out, err)
-		if err != nil {
-			Error(w, err)
-			return
-		}
-		JSON(w, http.StatusOK, out)
+		bgCtx := compatctx.With(context.Background(), ov)
+		go runJob(bgCtx, id, body.GenerateRequest)
+		j, _ := jobStoreInstance.Get(id)
+		JSON(w, http.StatusAccepted, toJobResponse(j))
 		return
 	}
 

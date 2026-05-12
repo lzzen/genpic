@@ -15,11 +15,11 @@ import (
 
 // serverYAML is the server section (full platform listen port).
 type serverYAML struct {
-	Port          string `yaml:"port"`
-	ReadTimeout   string `yaml:"read_timeout"`
-	WriteTimeout  string `yaml:"write_timeout"`
-	IdleTimeout   string `yaml:"idle_timeout"`
-	ArtifactsDir  string `yaml:"artifacts_dir"`
+	Port         string `yaml:"port"`
+	ReadTimeout  string `yaml:"read_timeout"`
+	WriteTimeout string `yaml:"write_timeout"`
+	IdleTimeout  string `yaml:"idle_timeout"`
+	ArtifactsDir string `yaml:"artifacts_dir"`
 }
 
 // mvpLiteYAML is the mvp_lite section of config.yaml.
@@ -94,7 +94,7 @@ type Config struct {
 	Gemini ProviderConfig
 	Wan    ProviderConfig
 
-	// Rate-limiting: global RPM cap for /v1/images/generations (0 = unlimited).
+	// Rate-limiting: global RPM cap for POST /api/generate (0 = unlimited).
 	GlobalRPM int
 
 	// Database connection settings (cmd/genpic only). DSN="" means in-memory fallback.

@@ -1290,6 +1290,27 @@ function buildBody() {
   return base;
 }
 
+/** Poll GET /v1/jobs/{id} until succeeded or failed (same session as generate). */
+async function pollGenpicJob(jobId) {
+  const sess = getOrCreateGenpicSessionId();
+  const terminal = { succeeded: true, failed: true };
+  for (;;) {
+    const jr = await fetch('/v1/jobs/' + encodeURIComponent(jobId), {
+      headers: { 'X-Genpic-Session': sess },
+    });
+    const raw = await jr.text();
+    let j = {};
+    if (raw) {
+      try { j = JSON.parse(raw); } catch (_) { /* ignore */ }
+    }
+    if (!jr.ok) {
+      throw new Error(j?.error?.message ?? ('HTTP ' + jr.status));
+    }
+    if (terminal[j.status]) return j;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
 // ── Add images to gallery ───────────────────────────────
 function addImages(images, model, provider) {
   $('empty').style.display = 'none';
@@ -1390,6 +1411,35 @@ $('btn-gen').addEventListener('click', async () => {
 
     if (!res.ok) {
       setStatus('error', '失败：' + (data?.error?.message ?? `HTTP ${res.status}`));
+      return;
+    }
+
+    if (res.status === 202) {
+      setStatus('loading', '任务已提交，生成中…');
+      const jobId = data.id;
+      if (!jobId) {
+        setStatus('error', '未返回任务 id，无法轮询状态');
+        return;
+      }
+      let j;
+      try {
+        j = await pollGenpicJob(jobId);
+      } catch (e) {
+        setStatus('error', e.message || String(e));
+        return;
+      }
+      if (j.status === 'failed') {
+        setStatus('error', j.error?.message ?? '生成失败');
+        return;
+      }
+      const images = j.data || [];
+      if (images.length === 0) {
+        setStatus('error', '未返回图片，请检查参数或稍后重试');
+        return;
+      }
+      setStatus('success', `✓ 生成 ${images.length} 张图片（${effectiveModelId()}）`);
+      addImages(images, effectiveModelId(), activeProvider);
+      saveToHistory(images, effectiveModelId(), activeProvider, prompt);
       return;
     }
 

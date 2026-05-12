@@ -19,7 +19,7 @@ go run ./cmd/mvplite -config /path/to/config.yaml
 
 Optional: `PORT=9090` overrides the listen port from yaml (`mvp_lite.port` for MVP Lite, `server.port` for Full platform) / default.
 
-**`model_id_map`** (optional, same `config.yaml`): remap catalog or wire model ids to the upstream model string (e.g. `openai/gpt-image-2` → `gpt-image-2-all`). Used by **mvplite** when proxying `/api/generate` and by **genpic** for `/v1/images/generations` and `/api/generate`. See `config.example.yaml`.
+**`model_id_map`** (optional, same `config.yaml`): remap catalog or wire model ids to the upstream model string (e.g. `openai/gpt-image-2` → `gpt-image-2-all`). Used by **mvplite** when proxying `/api/generate` and by **genpic** for `/api/generate`. See `config.example.yaml`.
 
 NewAPI-style deep link (query params are read once then stripped from the address bar):
 
@@ -36,7 +36,7 @@ Without `config.yaml`, the server still starts; the UI has no default Base URL u
 
 与 **MVP Lite** 一样，可在模块根放置 **`config.yaml`**（或 **`go run ./cmd/genpic -config /path/to/config.yaml`**）：**`mvp_lite.default_base_url`** 由 **`GET /api/public-config`** 暴露给嵌入式主页；**`server.port`** 为全平台默认监听端口（**`mvp_lite.port`** 仅给 **MVP Lite** 用），**`PORT`** 环境变量优先。无配置文件时进程照常启动，浏览器需自行填写 Base URL 或使用 **`?address=`**。
 
-`GEMINI_BASE_URL` 为可选：仅当你使用 **`POST /v1/images/generations`** 且希望由服务端持有上游密钥时才需要。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的请求 JSON 与响应 JSON（其中超长 **base64**、**thoughtSignature** 会被替换为占位符，避免刷屏）。
+`GEMINI_BASE_URL` 为可选：在 **`config.yaml`** 中为 **genpic 服务端适配器** 配置默认 Gemini 上游时使用。嵌入式主页走 **`POST /api/generate`** 时，请在请求 JSON 里传 **`base_url`** 与 **`api_key`**（与浏览器表单一致）；每次调用会在运行 `go run ./cmd/genpic` 的终端 **stderr** 打印发往第三方的请求 JSON 与响应 JSON（其中超长 **base64**、**thoughtSignature** 会被替换为占位符，避免刷屏）。
 
 `GEMINI_BASE_URL` 应为**仅含协议与主机**的地址（不要带 `/v1` 等路径）。Gemini 适配器会请求 `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent`（与 `model-fingers/gemini-image.md` 一致）。
 
@@ -73,14 +73,14 @@ curl http://localhost:8080/health
 | `GENPIC_DEV` | No | — | `1` / `true` / `yes` / `on`: log Gemini `generateContent` URL, redacted key, request/response JSON previews (large `inlineData` redacted), and on **model not found** dump registered catalog/upstream ids |
 | `OPENAI_BASE_URL` | No | — | OpenAI-compatible aggregator base URL |
 | `OPENAI_API_KEY` | No | — | Server-side key for OpenAI channel |
-| `GEMINI_BASE_URL` | No | — | 可选；仅 `POST /v1/images/generations` 使用。`POST /api/generate` 用 JSON 里的 `base_url` |
-| `GEMINI_API_KEY` | No | — | 可选；仅 `POST /v1/images/generations`。`POST /api/generate` 用 JSON 里的 `api_key` |
+| `GEMINI_BASE_URL` | No | — | 可选；服务端默认 Gemini 上游（`config.yaml`）。网页 `POST /api/generate` 用 JSON 里的 `base_url` |
+| `GEMINI_API_KEY` | No | — | 可选；服务端默认 Gemini 密钥。网页 `POST /api/generate` 用 JSON 里的 `api_key` |
 | `WAN_BASE_URL` | No | — | DashScope endpoint (CN or AP) |
 | `WAN_API_KEY` | No | — | Server-side DashScope key |
 
 ## Troubleshooting
 
-### 502 on `/v1/images/generations`
+### 502 on `POST /api/generate`
 
 1. Check the structured log for `"upstream_error"` — it includes the upstream
    HTTP status and message.

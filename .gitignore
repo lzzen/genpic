@@ -3,6 +3,6 @@
 .DS_Store
 *.log
 config.yaml
-mvplite
-genpic
+/mvplite
+/genpic
 data/*

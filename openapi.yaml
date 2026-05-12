@@ -4,39 +4,36 @@ info:
   title: Genpic Platform API
   version: "0.1.0"
   description: |
-    OpenAI-compatible image generation API for the Genpic platform.
+    Genpic image generation platform HTTP API.
 
-    **Authentication**: `/v1/*` is currently **unauthenticated** in this codebase.
+    **Primary generation**: `POST /api/generate` — the server routes `model` to
+    OpenAI, Gemini, or Wan adapters. Each request carries `base_url` and `api_key`
+    for your upstream aggregator (same as the embedded web UI).
+
+    **Authentication**: these routes are **unauthenticated** in this codebase.
     Put the service behind your own gateway or network controls for production.
-    Upstream provider keys used by the server are held in config / environment
-    variables and are never returned to API callers.
+    Server defaults in `config.yaml` wire adapters but are never returned to callers.
 
-    **Generation history (owner headers)**:
-    - `X-Genpic-User-Id` — optional opaque user id for signed-in callers (no SSO here yet).
-    - `X-Genpic-Session` — optional stable random id per browser for anonymous jobs.
-    Jobs are stored with these fields; `GET /jobs` and `GET /jobs/{id}` only return
-    rows that match the same headers (except legacy jobs with no owner, which remain
-    readable by id for backwards compatibility).
-
-    **Base URL**: `{address}/v1` where `{address}` is the official platform origin
-    (e.g. `https://imgapi.example.com`). Third-party clients using NewAPI
-    "chat application integration" should set `{address}` to this value exactly.
+    **Job owner headers** (optional):
+    - `X-Genpic-User-Id` — opaque user id when you add auth later.
+    - `X-Genpic-Session` — stable per-browser id (embedded UI sets this automatically).
+    Jobs are listed and fetched only when the same headers are sent.
   contact:
     name: Genpic Engineering
   license:
     name: Proprietary
 
 servers:
-  - url: https://imgapi.example.com/v1
-    description: Production (replace with your actual domain)
-  - url: http://localhost:8080/v1
+  - url: http://localhost:8080
     description: Local development
+  - url: https://imgapi.example.com
+    description: Production (replace with your origin)
 
 tags:
   - name: models
     description: List available image generation models
-  - name: images
-    description: Image generation (OpenAI-compatible)
+  - name: generate
+    description: Primary image generation (POST /api/generate)
   - name: jobs
     description: Async job status and results
   - name: community
@@ -64,15 +61,14 @@ paths:
 
   # ── Models ─────────────────────────────────────
 
-  /models:
+  /v1/models:
     get:
       operationId: listModels
       tags: [models]
       summary: List available image-generation models
       description: |
         Returns the models this deployment exposes.
-        Response shape mirrors OpenAI `/v1/models` for compatibility with
-        OpenAI-compatible clients.
+        Response shape mirrors OpenAI `GET /v1/models` for tooling compatibility.
       responses:
         "200":
           description: Model list
@@ -81,30 +77,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ModelList"
 
-  # ── Images ─────────────────────────────────────
+  # ── Generate (primary) ─────────────────────────
 
-  /images/generations:
+  /api/generate:
     post:
-      operationId: createImageGeneration
-      tags: [images]
-      summary: Generate images from a text prompt
+      operationId: apiGenerate
+      tags: [generate]
+      summary: Generate images (async job + poll, or sync without job store)
       description: |
-        OpenAI-compatible image generation endpoint.
+        **cmd/genpic** (job store always enabled): enqueues a generation job and returns
+        **202 Accepted** with a job object (`id`, `status`, …). Poll `GET /v1/jobs/{id}`
+        until `status` is `succeeded` or `failed`; on success, `data` holds images
+        (`url` and/or `b64_json`, `mime_type`, `revised_prompt`).
 
-        **Model routing**:
-        - `gpt-image-2` → OpenAI Images API shape
-        - `gemini-*` → native Gemini `POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent` (`contents`, `generationConfig.responseModalities`, `imageConfig`)
-        - `wan2.7-*` → native DashScope shape (translated server-side)
+        **mvp_lite** (no job store): waits for the upstream and returns **200** with
+        `created`, `data`, and `x_provider` (same normalized shape as the synchronous path).
 
-        The response is always normalized to the `ImageGenerationResponse` shape
-        regardless of which upstream was used. This makes the endpoint predictable
-        for OpenAI-compatible clients even when routing to non-OpenAI providers.
+        **Model routing** (by `model` id): OpenAI Images, Gemini generateContent, or Wan
+        multimodal — see provider docs in-repo.
 
-        **Async vs sync**: In MVP Lite all calls are synchronous (wait for result).
-        In `cmd/genpic`, requests are accepted into an in-memory job queue and the
-        response is **202** with a `job_id`; poll `GET /jobs/{id}` for the result.
-        Send `X-Genpic-Session` (anonymous) or `X-Genpic-User-Id` (signed-in) so the
-        job is attributed and later listable under the same headers.
+        Send `X-Genpic-Session` and/or `X-Genpic-User-Id` so jobs are scoped for listing.
       parameters:
         - $ref: "#/components/parameters/GenpicUserId"
         - $ref: "#/components/parameters/GenpicSession"
@@ -113,11 +105,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ImageGenerationRequest"
+              $ref: "#/components/schemas/ApiGenerateRequest"
             examples:
               gpt_image:
                 summary: GPT Image 2 — basic text-to-image
                 value:
+                  base_url: "https://api.openai.com/v1"
+                  api_key: "sk-…"
                   model: gpt-image-2
                   prompt: "A serene mountain lake at golden hour, photorealistic"
                   n: 1
@@ -125,36 +119,29 @@ paths:
                   quality: high
                   response_format: url
               gemini_flash:
-                summary: Gemini 2.5 Flash — portrait (native generateContent)
+                summary: Gemini 2.5 Flash — portrait
                 value:
+                  base_url: "https://generativelanguage.googleapis.com/v1beta"
+                  api_key: "…"
                   model: gemini-2.5-flash-image
                   prompt: "Studio portrait of a fox wearing a graduation cap"
                   n: 1
                   aspect_ratio: "1:1"
                   image_size: "512"
                   response_format: b64_json
-              wan_landscape:
-                summary: Wan 2.7 — Chinese ink painting
-                value:
-                  model: wan2.7-image
-                  prompt: "水墨山水画，意境深远，云雾缭绕"
-                  n: 1
-                  size: "1024*1024"
       responses:
         "200":
-          description: Images generated successfully
+          description: Images returned synchronously (e.g. MVP Lite)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImageGenerationResponse"
         "202":
-          description: |
-            Job accepted and queued (Full Platform async mode).
-            Poll `GET /jobs/{id}` for the result.
+          description: Job accepted (cmd/genpic); poll GET /v1/jobs/{id}
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobAcceptedResponse"
+                $ref: "#/components/schemas/GenerationJob"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -166,15 +153,14 @@ paths:
 
   # ── Jobs ───────────────────────────────────────
 
-  /jobs/{job_id}:
+  /v1/jobs/{job_id}:
     get:
       operationId: getJob
       tags: [jobs]
       summary: Get generation job status and result
       description: |
-        Poll this endpoint after receiving a `202 Accepted` from
-        `POST /images/generations`. Returns the current job state and,
-        when `status == succeeded`, the generated image URLs/data.
+        Poll after `202 Accepted` from `POST /api/generate`. When `status == succeeded`,
+        `data` contains generated images.
 
         Returns **404** when the job exists but does not belong to the caller's
         `X-Genpic-User-Id` / `X-Genpic-Session` scope.
@@ -186,19 +172,18 @@ paths:
           required: true
           schema:
             type: string
-            format: ulid
-          description: Job ID returned in the `202` response
+          description: Job `id` from the `202` response body
       responses:
         "200":
           description: Job record (any status)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobRecord"
+                $ref: "#/components/schemas/GenerationJob"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /jobs:
+  /v1/jobs:
     get:
       operationId: listJobs
       tags: [jobs]
@@ -316,7 +301,7 @@ components:
       properties:
         model:
           type: string
-          description: Model ID as listed in /models
+          description: Model ID as listed in GET /v1/models
           example: gpt-image-2
         prompt:
           type: string
@@ -407,6 +392,9 @@ components:
         revised_prompt:
           type: string
           description: Prompt as revised by the upstream model (when available)
+        mime_type:
+          type: string
+          description: Image MIME type when inline base64 is used (e.g. image/png)
 
     ImageGenerationResponse:
       type: object
@@ -432,63 +420,81 @@ components:
             [Non-standard] Upstream provider that served this request.
             Values: openai | gemini | wan
 
-    JobAcceptedResponse:
-      type: object
-      required: [job_id, status]
-      properties:
-        job_id:
-          type: string
-          format: ulid
-        status:
-          type: string
-          enum: [queued]
-        poll_url:
-          type: string
-          format: uri
-          description: Absolute URL to GET for status updates
+    ApiGenerateRequest:
+      allOf:
+        - $ref: "#/components/schemas/ImageGenerationRequest"
+        - type: object
+          required: [base_url, api_key]
+          properties:
+            base_url:
+              type: string
+              description: Upstream OpenAI-compatible origin (per request; same as the web UI).
+            api_key:
+              type: string
+              description: API key for that upstream (per request).
 
     JobStatus:
       type: string
       enum: [queued, running, succeeded, failed]
 
-    JobRecord:
+    GenerationJob:
       type: object
-      required: [id, status, created_at]
+      required: [id, object, model, status, created_at]
       properties:
         id:
           type: string
-          format: ulid
-        status:
-          $ref: "#/components/schemas/JobStatus"
+          description: Opaque job id; use as `{job_id}` in GET /v1/jobs/{job_id}
+        object:
+          type: string
+          enum: [generation.job]
         model:
           type: string
         provider:
           type: string
-          enum: [openai, gemini, wan]
+          description: Adapter name (e.g. openai, gemini, wan)
+        status:
+          $ref: "#/components/schemas/JobStatus"
         created_at:
-          type: string
-          format: date-time
+          type: integer
+          format: int64
+          description: Unix timestamp (seconds)
+        started_at:
+          type: integer
+          format: int64
+          description: Unix timestamp when generation began
         finished_at:
-          type: string
-          format: date-time
-        result:
-          $ref: "#/components/schemas/ImageGenerationResponse"
-          description: Present only when status == succeeded
-        error:
-          $ref: "#/components/schemas/APIError"
-          description: Present only when status == failed
-
-    JobList:
-      type: object
-      required: [data]
-      properties:
+          type: integer
+          format: int64
+          description: Unix timestamp when the job completed
         data:
           type: array
           items:
-            $ref: "#/components/schemas/JobRecord"
+            $ref: "#/components/schemas/ImageData"
+          description: Image results when status is succeeded
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          description: Present when status is failed
+
+    JobList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationJob"
         next_cursor:
           type: string
-          description: Pass as `cursor` in next request; absent when no more pages
+          nullable: true
+          description: Opaque cursor for pagination; null when no more pages
 
     # ── Errors ──
 

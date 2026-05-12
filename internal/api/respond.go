@@ -1,5 +1,5 @@
-// Package api contains HTTP handlers, middleware, and DTO types for the
-// Genpic platform's v1 external surface.
+// Package api contains HTTP handlers, DTOs, and response helpers for the Genpic
+// platform HTTP API (`/api/*`, `/v1/*`).
 //
 // Handlers are thin: they validate input, call domain/pkg functions, and
 // serialise the result. Business logic lives in pkg/ and internal subdirectories.

@@ -1,21 +1,20 @@
 // Package main is the full Genpic platform binary (cmd/genpic).
 //
-// Architecture: the server holds upstream provider credentials for /v1;
-// the embedded SPA may override them per request on POST /api/generate.
+// Architecture: the server holds upstream provider credentials for adapters;
+// the embedded SPA supplies base_url + api_key per request on POST /api/generate.
 //
 // Route surface (matches openapi.yaml):
 //   - GET  /v1/models               — list available models
-//   - POST /v1/images/generations   — enqueue generation job (202 Accepted + job)
 //   - GET  /v1/jobs/{job_id}        — poll job status and images
 //   - GET  /v1/jobs                 — list jobs (newest first, cursor pagination)
 //   - GET  /api/artifacts/{job_id}/{name} — generated image file (PNG/JPEG/WebP/GIF)
 //   - GET  /health                  — liveness check
 //   - GET  /api/public-config       — non-secret defaults for the SPA
-//   - POST /api/generate            — SPA compat: sync generation with per-request credentials
+//   - POST /api/generate            — enqueue generation (202 + job); poll GET /v1/jobs/{id}
 //
 // Rate limiting:
 //
-//	An optional global RPM cap (rate_limit.global_rpm) applies to POST /v1/images/generations.
+//	An optional global RPM cap (rate_limit.global_rpm) applies to POST /api/generate.
 //
 // Jobs: MySQL or in-memory store; successful b64 responses are written under
 // server.artifacts_dir (default data/genpic-artifacts) and exposed as /api/artifacts/....
@@ -126,11 +125,10 @@ func main() {
 		api.JSON(w, http.StatusOK, map[string]string{"default_base_url": defaultBaseURL})
 	})
 	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
-	mux.HandleFunc("POST /api/generate", api.HandleCompatGenerate)
+	mux.HandleFunc("POST /api/generate", rateMiddleware(globalLimiter, api.HandleCompatGenerate))
 
 	v1Mux := http.NewServeMux()
 	v1Mux.HandleFunc("GET /v1/models", api.HandleListModels)
-	v1Mux.HandleFunc("POST /v1/images/generations", rateMiddleware(globalLimiter, api.HandleImageGeneration))
 	v1Mux.HandleFunc("GET /v1/jobs/{job_id}", api.HandleGetJob)
 	v1Mux.HandleFunc("GET /v1/jobs", api.HandleListJobs)
 	mux.Handle("/v1/", v1Mux)
@@ -167,9 +165,8 @@ func main() {
 }
 
 // registerProviders wires all provider adapters using server-side credentials
-// from config.yaml (with env var fallback). The MVP SPA (/api/generate) may
-// override these per-request via compatctx; /v1/images/generations uses only
-// the server-side credentials.
+// from config.yaml (with env var fallback). The embedded SPA overrides these
+// per request via compatctx (JSON base_url + api_key on POST /api/generate).
 func registerProviders(log *slog.Logger, cfg mvpconfig.Config) {
 	provider.Register(openai.New(openai.Config{
 		BaseURL: cfg.OpenAI.BaseURL,

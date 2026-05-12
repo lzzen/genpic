@@ -69,7 +69,7 @@ wan:
 
 # ── Rate limiting ───────────────────────────────────────────────────────────
 rate_limit:
-  # Global RPM cap for POST /v1/images/generations (0 = unlimited)
+  # Global RPM cap for POST /api/generate (0 = unlimited)
   global_rpm: 0
 
 # ── Idempotency ─────────────────────────────────────────────────────────────

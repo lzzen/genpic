@@ -16,8 +16,7 @@ Clients
                               │  Genpic Platform      │
                               │                       │
                               │  GET  /v1/models      │
-                              │  POST /v1/images/     │
-                              │       generations     │
+                              │  POST /api/generate   │
                               │  GET  /v1/jobs/{id}   │
                               │  GET  /health         │
                               │  GET  /  (static UI)  │
@@ -77,8 +76,9 @@ genpic/
 
 `cmd/genpic` does **not** implement platform-issued Bearer keys in-tree: `/v1/*`
 is open at the application layer; use your edge or private network for access
-control. Upstream provider credentials for `/v1/images/generations` are read
-from server config / environment variables only.
+control. Upstream provider defaults for adapters are read from server config /
+environment variables; the browser still supplies `base_url` and `api_key` on
+`POST /api/generate` for the live upstream call.
 
 The embedded SPA (`POST /api/generate`) sends **per-request** `base_url` and
 `api_key` for the upstream aggregator (same pattern as MVP Lite).
@@ -88,7 +88,7 @@ gateway” model; wire that at a reverse proxy or in a future release.
 
 ## Provider routing
 
-`POST /v1/images/generations` dispatches to a provider based on `model`:
+`POST /api/generate` dispatches to a provider based on `model`:
 
 | Model prefix | Provider | Upstream shape |
 |---|---|---|
@@ -104,7 +104,7 @@ All providers implement `pkg/provider.Provider` and are registered in `cmd/genpi
 |---|---|
 | **MVP Lite** | `cmd/mvplite` — single binary, no DB, no auth, direct proxy |
 | **M0**       | `cmd/genpic` — all three providers, in-memory rate limit |
-| **M1**       | **Current:** in-memory async jobs for `/v1` (`202` + poll). **Planned:** Redis/DB, billing, object storage |
+| **M1**       | **Current:** async `POST /api/generate` (`202` + poll `GET /v1/jobs/{id}`). **Planned:** Redis/DB, billing, object storage |
 | **M2**       | Gemini native generateContent path (`model-fingers/gemini-image.md`) |
 | **M3**       | Wan sub-pages (image editing, multi-image) |
 | **M4**       | Credit account management, admin UI, NewAPI integration wizard |

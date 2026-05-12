@@ -73,7 +73,6 @@ func toJobResponse(j *jobstore.Job) jobResponse {
 }
 
 // HandleGetJob serves GET /v1/jobs/{job_id}.
-// Returns the current status and images (when succeeded) for the given job.
 func HandleGetJob(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {
 		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "not_ready", "job store not initialised"))
