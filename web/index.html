@@ -40,27 +40,25 @@
     /* ── Layout ── */
     .layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
-    /* ── Nav sidebar ── */
-    nav {
-      width: 60px; flex-shrink: 0; border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; align-items: center; padding: 16px 0; gap: 8px;
+    /* ── Vendor rail (left) ── */
+    nav.vendor-rail {
+      width: 92px; flex-shrink: 0; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: stretch; padding: 12px 8px; gap: 6px;
       background: var(--surface);
     }
-    .nav-btn {
-      width: 42px; height: 42px; border-radius: 10px; border: 1px solid transparent;
-      background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem; color: var(--muted); transition: all .15s;
-      position: relative;
+    .vendor-btn {
+      border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted);
+      font-size: .72rem; font-weight: 600; line-height: 1.25;
+      padding: 10px 6px; cursor: pointer; transition: all .15s; text-align: center;
     }
-    .nav-btn:hover { background: var(--surface2); color: var(--text); }
-    .nav-btn.active { background: var(--surface2); border-color: var(--border); color: var(--accent); }
-    .nav-btn .tooltip {
-      position: absolute; left: 52px; background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text); font-size: .75rem; padding: 4px 8px; border-radius: 6px;
-      white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .15s;
-      z-index: 100;
+    .vendor-btn:hover { color: var(--text); border-color: var(--accent); }
+    .vendor-btn.active {
+      border-color: var(--accent); color: var(--accent);
+      background: rgba(92, 77, 219, 0.1);
     }
-    .nav-btn:hover .tooltip { opacity: 1; }
+    .vendor-btn[data-vendor="gemini"].active { border-color: var(--accent2); color: var(--accent2); background: rgba(10, 140, 196, 0.1); }
+    .vendor-btn[data-vendor="wan"].active { border-color: var(--accent3); color: var(--accent3); background: rgba(232, 93, 4, 0.1); }
 
     /* ── Config panel ── */
     .config-panel {
@@ -69,20 +67,13 @@
       background: var(--surface);
     }
 
-    /* ── Model tabs ── */
-    .model-tabs {
-      display: flex; gap: 6px; flex-wrap: wrap;
+    .more-settings { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface2); padding: 0 10px 10px; margin-bottom: 4px; }
+    .more-settings > summary {
+      cursor: pointer; font-size: .8rem; font-weight: 600; color: var(--muted);
+      list-style: none; padding: 10px 4px; user-select: none;
     }
-    .model-tab {
-      padding: 5px 10px; border-radius: 7px; font-size: .78rem; cursor: pointer;
-      border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
-      transition: all .15s;
-    }
-    .model-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(92, 77, 219, 0.1); }
-    .model-tab[data-provider="gemini"].active { border-color: var(--accent2); color: var(--accent2); background: rgba(10, 140, 196, 0.1); }
-    .model-tab[data-provider="wan"].active { border-color: var(--accent3); color: var(--accent3); background: rgba(232, 93, 4, 0.1); }
-    /* 万相入口暂隐藏；恢复时删掉下一行 */
-    .model-tab[data-provider="wan"] { display: none !important; }
+    .more-settings > summary::-webkit-details-marker { display: none; }
+    .more-settings-body { display: flex; flex-direction: column; gap: 2px; }
 
     /* ── Form sections ── */
     .section-title { font-size: .72rem; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); margin-bottom: 8px; }
@@ -195,6 +186,52 @@
 
     /* ── Gallery area ── */
     .gallery-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+
+    .gallery-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 8px 14px 0 18px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .gallery-head .status-bar { flex: 1; min-width: 140px; margin: 0; padding: 8px 0; }
+    .gallery-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .toolbar-btn {
+      width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--muted); cursor: pointer; font-size: 1.05rem;
+      display: flex; align-items: center; justify-content: center; transition: all .12s;
+    }
+    .toolbar-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    .cred-dialog { border: none; border-radius: 14px; padding: 0; max-width: min(440px, 94vw); box-shadow: 0 16px 48px rgba(28,35,51,.18); }
+    .cred-dialog::backdrop { background: rgba(28, 35, 51, 0.35); }
+    .cred-dialog-inner { padding: 20px 22px 16px; }
+    .cred-dialog-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .cred-dialog-hint { font-size: .75rem; color: var(--muted); line-height: 1.45; margin-bottom: 14px; }
+    .cred-dialog-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
+    .cred-dialog-actions button {
+      padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; font-size: .85rem;
+    }
+    .cred-dialog-actions button:hover { background: var(--accent-h); }
+
+    .hist-drawer-backdrop {
+      position: fixed; inset: 0; background: rgba(28, 35, 51, 0.25); z-index: 200;
+    }
+    .hist-drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 210;
+      background: var(--bg); border-left: 1px solid var(--border);
+      box-shadow: -8px 0 32px rgba(28, 35, 51, 0.08);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .hist-drawer-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+    }
+    .hist-drawer-top h2 { font-size: .95rem; font-weight: 600; margin: 0; }
+    .hist-drawer-close {
+      width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1;
+    }
+    .hist-drawer-close:hover { color: var(--danger); border-color: #fecaca; }
+    .hist-drawer-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
 
     .status-bar { padding: 10px 18px; font-size: .85rem; display: none; flex-shrink: 0; }
     .status-bar.show { display: block; }
@@ -380,7 +417,8 @@
     }
 
     @media (max-width: 900px) {
-      nav { display: none; }
+      nav.vendor-rail { width: 72px; padding: 10px 6px; }
+      .vendor-btn { font-size: .65rem; padding: 8px 4px; }
       .config-panel { width: 260px; }
     }
     @media (max-width: 640px) {
@@ -430,75 +468,24 @@
 
 <div class="layout" id="app">
 
-  <!-- ── Icon nav ── -->
-  <nav>
-    <button class="nav-btn active" data-tab="generate" title="">
-      🎨<span class="tooltip">生成</span>
-    </button>
-    <button class="nav-btn" data-tab="history" title="">
-      🕑<span class="tooltip">历史</span>
-    </button>
-  </nav>
+  <nav class="vendor-rail" id="vendor-rail" aria-label="厂商"></nav>
 
-  <!-- ── Config / form sidebar ── -->
   <aside class="config-panel" id="sidebar">
 
-    <!-- Model selector -->
-    <div>
-      <div class="section-title">模型</div>
-      <div class="model-tabs" id="model-tabs">
-        <!-- GPT Image group -->
-        <div class="model-tab active" data-model="openai/gpt-image-2" data-provider="openai">GPT Image 2</div>
-        <!-- Gemini group -->
-        <div class="model-tab" data-model="gemini/gemini-2.5-flash-image" data-provider="gemini">Gemini 2.5 Flash</div>
-        <div class="model-tab" data-model="gemini/gemini-3.1-flash-image-preview" data-provider="gemini">Gemini 3.1</div>
-        <div class="model-tab" data-model="gemini/gemini-3-pro-image-preview" data-provider="gemini">Gemini 3 Pro</div>
-        <!-- Wan group -->
-        <div class="model-tab" data-model="wan/wan2.7-image" data-provider="wan">万相 2.7</div>
-        <div class="model-tab" data-model="wan/wan2.7-image-pro" data-provider="wan">万相 2.7 Pro</div>
-      </div>
-    </div>
-
     <div class="field">
-      <label>参考图片（可选）</label>
-      <div class="ref-zone" id="ref-zone" tabindex="0" role="button" aria-label="上传参考图">
-        <div class="ref-plus">+</div>
-        <div style="font-size:.84rem;margin-top:4px">上传或拖入参考图</div>
-        <p>最多 6 张 · 单张 ≤ 4MB · 文生图 / 改图</p>
-        <button type="button" id="ref-pick" style="margin-top:8px;padding:6px 14px;font-size:.78rem;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">选择图片</button>
-      </div>
-      <input type="file" id="ref-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" />
-      <div class="ref-previews" id="ref-previews"></div>
+      <div class="section-title">模型</div>
+      <select id="model-select" aria-label="选择模型"></select>
     </div>
 
-    <!-- 提示词 -->
     <div class="field">
       <label for="prompt">提示词</label>
       <textarea id="prompt" placeholder="描述你想要生成的图片…" rows="5"></textarea>
     </div>
 
-    <!-- ── OpenAI params ── -->
+    <!-- ── OpenAI: 主区仅比例 ── -->
     <div class="param-section show" id="params-openai">
-      <div class="section-title">GPT 图像</div>
+      <div class="section-title">图片比例</div>
       <div class="field">
-        <label>渠道</label>
-        <div class="seg-row">
-          <button type="button" class="seg-btn active" id="ch-official" data-ch="official">官方渠道</button>
-          <button type="button" class="seg-btn" id="ch-discount" data-ch="discount">折扣渠道</button>
-        </div>
-      </div>
-      <div class="field" id="gpt-discount-wrap" style="display:none">
-        <label for="gpt-discount-model">折扣渠道模型 ID</label>
-        <input id="gpt-discount-model" type="text" placeholder="如 openai/gpt-image-2-all（需与聚合站一致）" />
-      </div>
-      <div class="field">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label style="margin:0">图片比例</label>
-          <div class="toggle-row" style="margin:0;width:auto">
-            <span class="toggle-label" style="margin-right:8px">自定义尺寸</span>
-            <label class="toggle"><input type="checkbox" id="gpt-custom-size"><span class="toggle-slider"></span></label>
-          </div>
-        </div>
         <div class="ratio-grid" id="gpt-ratio-grid">
           <button type="button" class="ratio-btn active" data-size="1024x1024" data-label="1:1"><span class="r-ico">▢</span>1:1</button>
           <button type="button" class="ratio-btn" data-size="1024x1536" data-label="2:3"><span class="r-ico">▯</span>2:3</button>
@@ -511,152 +498,173 @@
         </div>
         <div class="res-est" id="gpt-res-est">分辨率 1024×1024</div>
       </div>
-      <div class="row-2" id="gpt-custom-dims" style="display:none">
-        <div class="field">
-          <label for="gpt-cw">宽</label>
-          <input id="gpt-cw" type="number" min="256" max="4096" step="64" value="1024" />
-        </div>
-        <div class="field">
-          <label for="gpt-ch">高</label>
-          <input id="gpt-ch" type="number" min="256" max="4096" step="64" value="1024" />
-        </div>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="gpt-size">精确尺寸（可选，覆盖上方比例）</label>
-          <select id="gpt-size">
-            <option value="">自动</option>
-            <option value="1024x1024">1024×1024</option>
-            <option value="1536x1024">1536×1024</option>
-            <option value="1024x1536">1024×1536</option>
-            <option value="1792x1024">1792×1024</option>
-            <option value="1024x1792">1024×1792</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="gpt-quality">画质</label>
-          <select id="gpt-quality">
-            <option value="">自动</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-          </select>
-        </div>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="gpt-n">数量</label>
-          <select id="gpt-n">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="4">4</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="gpt-style">风格</label>
-          <select id="gpt-style">
-            <option value="">默认</option>
-            <option value="vivid">鲜明</option>
-            <option value="natural">自然</option>
-          </select>
-        </div>
-      </div>
+    </div>
+
+    <!-- ── Gemini: 主区仅比例 ── -->
+    <div class="param-section" id="params-gemini">
+      <div class="section-title">图片比例</div>
       <div class="field">
-        <label for="gpt-format">返回格式</label>
-        <select id="gpt-format">
-          <option value="url">链接（URL）</option>
-          <option value="b64_json">Base64</option>
+        <label for="gem-aspect">比例</label>
+        <select id="gem-aspect">
+          <option value="1:1">1:1</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+          <option value="4:3">4:3</option>
+          <option value="3:4">3:4</option>
+          <option value="3:2">3:2</option>
+          <option value="2:3">2:3</option>
         </select>
       </div>
     </div>
 
-    <!-- ── Gemini params ── -->
-    <div class="param-section" id="params-gemini">
-      <div class="section-title">Gemini 参数</div>
-      <div class="row-2">
-        <div class="field">
-          <label for="gem-aspect">比例</label>
-          <select id="gem-aspect">
-            <option value="1:1">1:1</option>
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-            <option value="4:3">4:3</option>
-            <option value="3:4">3:4</option>
-            <option value="3:2">3:2</option>
-            <option value="2:3">2:3</option>
-          </select>
-        </div>
-        <div class="field" id="gem-image-size-wrap">
-          <label for="gem-image-size" id="gem-image-size-label">分辨率档位</label>
-          <select id="gem-image-size"></select>
-        </div>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="gem-n">数量</label>
-          <select id="gem-n">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="4">4</option>
-          </select>
-        </div>
-      </div>
-      <div class="field" id="gem-thinking-field" style="display:none">
-        <label>思考预算 <span id="gem-thinking-val">0</span></label>
-        <div class="range-row">
-          <input type="range" id="gem-thinking" min="0" max="8192" step="256" value="0" />
-          <span class="range-val" id="gem-thinking-display">关闭</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Wan params ── -->
+    <!-- ── Wan: 主区尺寸（视作比例/画幅） ── -->
     <div class="param-section" id="params-wan">
-      <div class="section-title">通义万相参数</div>
-      <div class="row-2">
-        <div class="field">
-          <label for="wan-size">尺寸</label>
-          <select id="wan-size">
-            <option value="1024*1024">1024×1024</option>
-            <option value="720*1280">720×1280</option>
-            <option value="1280*720">1280×720</option>
-            <option value="1280*1280">1280×1280</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="wan-n">数量</label>
-          <select id="wan-n">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="4">4</option>
-          </select>
-        </div>
+      <div class="section-title">画幅尺寸</div>
+      <div class="field">
+        <label for="wan-size">尺寸</label>
+        <select id="wan-size">
+          <option value="1024*1024">1024×1024</option>
+          <option value="720*1280">720×1280</option>
+          <option value="1280*720">1280×720</option>
+          <option value="1280*1280">1280×1280</option>
+        </select>
       </div>
-      <div class="toggle-row" id="wan-thinking-row" style="display:none">
-        <span class="toggle-label">思考模式（高质量，较慢）</span>
-        <label class="toggle"><input type="checkbox" id="wan-thinking"><span class="toggle-slider"></span></label>
-      </div>
-      <div class="note">🔒 阿里云 TOS 要求水印必须开启。</div>
     </div>
 
-    <hr style="border:none;border-top:1px solid var(--border);" />
-
-    <!-- API config (collapsed by default) -->
-    <details id="api-config">
-      <summary style="cursor:pointer;font-size:.8rem;color:var(--muted);margin-bottom:10px;list-style:none;">
-        ⚙️ API 配置 <span style="float:right">▸</span>
-      </summary>
-      <div class="field" style="margin-top:10px">
-        <label for="base-url">接口地址（Base URL）</label>
-        <input id="base-url" type="url" placeholder="https://imgapi.example.com" />
-      </div>
-      <div class="field">
-        <label for="api-key">密钥（API Key）</label>
-        <div class="api-wrap">
-          <input id="api-key" type="password" placeholder="sk-…" autocomplete="off" />
-          <button class="eye" type="button" id="eye-btn">👁</button>
+    <details class="more-settings" id="more-settings">
+      <summary>其他设置</summary>
+      <div class="more-settings-body">
+        <div class="field">
+          <label>参考图片（可选）</label>
+          <div class="ref-zone" id="ref-zone" tabindex="0" role="button" aria-label="上传参考图">
+            <div class="ref-plus">+</div>
+            <div style="font-size:.84rem;margin-top:4px">上传或拖入参考图</div>
+            <p>最多 6 张 · 单张 ≤ 4MB · 文生图 / 改图</p>
+            <button type="button" id="ref-pick" style="margin-top:8px;padding:6px 14px;font-size:.78rem;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">选择图片</button>
+          </div>
+          <input type="file" id="ref-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" />
+          <div class="ref-previews" id="ref-previews"></div>
         </div>
-        <div id="cred-warn" class="cred-warn" role="status"></div>
+
+        <div class="param-section show" id="more-extra-openai">
+          <div class="section-title">GPT 图像 · 更多</div>
+          <div class="field">
+            <label>渠道</label>
+            <div class="seg-row">
+              <button type="button" class="seg-btn active" id="ch-official" data-ch="official">官方渠道</button>
+              <button type="button" class="seg-btn" id="ch-discount" data-ch="discount">折扣渠道</button>
+            </div>
+          </div>
+          <div class="field" id="gpt-discount-wrap" style="display:none">
+            <label for="gpt-discount-model">折扣渠道模型 ID</label>
+            <input id="gpt-discount-model" type="text" placeholder="如 openai/gpt-image-2-all（需与聚合站一致）" />
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">自定义宽高（像素）</span>
+            <label class="toggle"><input type="checkbox" id="gpt-custom-size"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="row-2" id="gpt-custom-dims" style="display:none">
+            <div class="field">
+              <label for="gpt-cw">宽</label>
+              <input id="gpt-cw" type="number" min="256" max="4096" step="64" value="1024" />
+            </div>
+            <div class="field">
+              <label for="gpt-ch">高</label>
+              <input id="gpt-ch" type="number" min="256" max="4096" step="64" value="1024" />
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label for="gpt-size">精确尺寸（覆盖上方比例）</label>
+              <select id="gpt-size">
+                <option value="">自动</option>
+                <option value="1024x1024">1024×1024</option>
+                <option value="1536x1024">1536×1024</option>
+                <option value="1024x1536">1024×1536</option>
+                <option value="1792x1024">1792×1024</option>
+                <option value="1024x1792">1024×1792</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="gpt-quality">画质</label>
+              <select id="gpt-quality">
+                <option value="">自动</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label for="gpt-n">数量</label>
+              <select id="gpt-n">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="gpt-style">风格</label>
+              <select id="gpt-style">
+                <option value="">默认</option>
+                <option value="vivid">鲜明</option>
+                <option value="natural">自然</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="gpt-format">返回格式</label>
+            <select id="gpt-format">
+              <option value="url">链接（URL）</option>
+              <option value="b64_json">Base64</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="param-section" id="more-extra-gemini">
+          <div class="section-title">Banana · 更多</div>
+          <div class="row-2">
+            <div class="field" id="gem-image-size-wrap">
+              <label for="gem-image-size" id="gem-image-size-label">分辨率档位</label>
+              <select id="gem-image-size"></select>
+            </div>
+            <div class="field">
+              <label for="gem-n">数量</label>
+              <select id="gem-n">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="gem-thinking-field" style="display:none">
+            <label>思考预算 <span id="gem-thinking-val">0</span></label>
+            <div class="range-row">
+              <input type="range" id="gem-thinking" min="0" max="8192" step="256" value="0" />
+              <span class="range-val" id="gem-thinking-display">关闭</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="param-section" id="more-extra-wan">
+          <div class="section-title">万相 · 更多</div>
+          <div class="row-2">
+            <div class="field">
+              <label for="wan-n">数量</label>
+              <select id="wan-n">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+          <div class="toggle-row" id="wan-thinking-row" style="display:none">
+            <span class="toggle-label">思考模式（高质量，较慢）</span>
+            <label class="toggle"><input type="checkbox" id="wan-thinking"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="note">🔒 阿里云 TOS 要求水印必须开启。</div>
+        </div>
       </div>
     </details>
 
@@ -665,25 +673,37 @@
       <span class="btn-sub" id="btn-est">参考图走改图能力；消耗以聚合站为准</span>
     </button>
 
-    <div class="note" tips="模型、提示词与参数保存在本机 localStorage。接口地址与密钥使用浏览器 AES-GCM 加密写入本机（无 Web Crypto 时降级为 Base64 封装）。?address= 与 ?key= 可从 NewAPI 跳转预填（进入后从地址栏移除）；address 可省略时使用服务器 config.yaml 里的 mvp_lite.default_base_url。脱敏 Key（如 sk****…）无法调用上游，请改为完整 Key。">模型、<strong>提示词</strong>与参数保存在本机 localStorage。接口地址与密钥使用浏览器 AES-GCM 加密写入本机。</div>
+    <div class="note" tips="模型、提示词与参数保存在本机 localStorage。接口地址与密钥使用浏览器 AES-GCM 加密写入本机（无 Web Crypto 时降级为 Base64 封装）。?address= 与 ?key= 可从 NewAPI 跳转预填（进入后从地址栏移除）；address 可省略时使用服务器 config.yaml 里的 mvp_lite.default_base_url。脱敏 Key（如 sk****…）无法调用上游，请改为完整 Key。">模型、<strong>提示词</strong>与参数保存在本机 localStorage。点击右上角「⚙️」配置 Base URL 与 API Key（本机加密保存）。</div>
 
   </aside>
 
-  <!-- ── Gallery (generate tab) ── -->
   <main class="gallery-area" id="generate-area">
-    <div id="status-bar" class="status-bar"></div>
+    <div class="gallery-head">
+      <div id="status-bar" class="status-bar"></div>
+      <div class="gallery-actions">
+        <button type="button" class="toolbar-btn" id="btn-hist-drawer" title="生成历史">🕑</button>
+        <button type="button" class="toolbar-btn" id="btn-cred-dialog" title="API 配置">⚙️</button>
+      </div>
+    </div>
     <div class="gallery" id="gallery">
       <div class="empty" id="empty">
         <div class="icon">🎨</div>
-        <p>选择模型并输入提示词，点击「生成图片」开始</p>
+        <p>选择厂商与模型并输入提示词，点击「生成图片」开始</p>
       </div>
     </div>
   </main>
 
-  <!-- ── History panel ── -->
-  <main class="history-area" id="history-area" style="display:none">
-    <div class="hist-header">
-      <h2>生成历史</h2>
+</div>
+
+<div id="hist-drawer-backdrop" class="hist-drawer-backdrop" hidden></div>
+<aside id="hist-drawer" class="hist-drawer" hidden aria-hidden="true">
+  <div class="hist-drawer-top">
+    <h2>生成历史</h2>
+    <button type="button" class="hist-drawer-close" id="hist-drawer-close" aria-label="关闭">×</button>
+  </div>
+  <div class="hist-drawer-scroll">
+    <div class="hist-header" style="padding-top:4px">
+      <span></span>
       <button class="hist-clear-btn" id="hist-clear-btn">清空</button>
     </div>
     <div id="hist-empty" class="hist-empty">
@@ -694,9 +714,30 @@
     <div id="hist-load-more-wrap" class="hist-load-more-wrap" style="display:none">
       <button type="button" id="hist-load-more-btn" class="hist-load-more-btn">加载更多</button>
     </div>
-  </main>
+  </div>
+</aside>
 
-</div>
+<dialog id="cred-dialog" class="cred-dialog">
+  <div class="cred-dialog-inner">
+    <div class="cred-dialog-title">API 配置</div>
+    <p class="cred-dialog-hint">填写上游 Base URL 与完整 API Key。脱敏或占位密钥无法调用；请从控制台复制完整密钥粘贴。</p>
+    <div class="field">
+      <label for="base-url">接口地址（Base URL）</label>
+      <input id="base-url" type="url" placeholder="https://imgapi.example.com" />
+    </div>
+    <div class="field">
+      <label for="api-key">密钥（API Key）</label>
+      <div class="api-wrap">
+        <input id="api-key" type="password" placeholder="sk-…" autocomplete="off" />
+        <button class="eye" type="button" id="eye-btn">👁</button>
+      </div>
+      <div id="cred-warn" class="cred-warn" role="status"></div>
+    </div>
+    <div class="cred-dialog-actions">
+      <button type="button" id="cred-dialog-close">完成</button>
+    </div>
+  </div>
+</dialog>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -731,11 +772,31 @@ function setCredWarn(msg) {
 }
 
 function updateCredWarnUI() {
-  if (looksLikeMaskedKey($('api-key').value)) {
+  const inp = $('api-key');
+  if (!inp) return;
+  if (looksLikeMaskedKey(inp.value)) {
     setCredWarn('检测到脱敏或占位符（如 sk****…）。NewAPI 传入的密钥常不完整，请粘贴完整密钥后再生成。');
   } else {
     setCredWarn('');
   }
+}
+
+function openCredDialog() {
+  const d = $('cred-dialog');
+  if (d && typeof d.showModal === 'function' && !d.open) d.showModal();
+  updateCredWarnUI();
+}
+
+function closeCredDialog() {
+  const d = $('cred-dialog');
+  if (d?.open) d.close();
+}
+
+/** 首次进入或凭证不完整 / 脱敏时自动弹出配置。 */
+function maybeAutoOpenCredDialog() {
+  const base = effectiveBaseURL();
+  const key = ($('api-key')?.value || '').trim();
+  if (looksLikeMaskedKey(key) || !base || !key) openCredDialog();
 }
 
 let _derivedKeyPromise;
@@ -869,8 +930,7 @@ async function bootstrapCredentials() {
   updateCredWarnUI();
 
   if (qAddr || qKey) {
-    const dc = $('api-config');
-    if (dc) dc.open = true;
+    openCredDialog();
     try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
   }
 
@@ -880,11 +940,14 @@ async function bootstrapCredentials() {
   $('base-url').addEventListener('change', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
   $('api-key').addEventListener('input', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
   $('api-key').addEventListener('change', () => { updateCredWarnUI(); scheduleSaveCredentials(); });
+
+  maybeAutoOpenCredDialog();
 }
 
 // ── Active state ────────────────────────────────────────
 let activeModel = 'openai/gpt-image-2';
 let activeProvider = 'openai';
+let activeVendorId = 'openai';
 
 /** Reference images for image-to-image (max 6). */
 let referenceEntries = [];
@@ -894,15 +957,17 @@ function setActiveModel(modelId, provider) {
   activeModel = modelId;
   activeProvider = provider;
 
-  // Update tab highlights
-  document.querySelectorAll('.model-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.model === modelId);
+  const ms = $('model-select');
+  if (ms && ms.value !== modelId) ms.value = modelId;
+
+  activeVendorId = provider;
+  document.querySelectorAll('#vendor-rail .vendor-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.vendor === provider);
   });
 
-  // Show/hide param sections
-  ['openai', 'gemini', 'wan'].forEach(p => {
-    const el = $('params-' + p);
-    if (el) el.classList.toggle('show', p === provider);
+  ['openai', 'gemini', 'wan'].forEach((p) => {
+    $('params-' + p)?.classList.toggle('show', p === provider);
+    $('more-extra-' + p)?.classList.toggle('show', p === provider);
   });
 
   // Show thinking field only for thinking-capable Gemini models
@@ -919,6 +984,7 @@ function setActiveModel(modelId, provider) {
 
   save('active-model', modelId);
   save('active-provider', provider);
+  save('active-vendor', provider);
 
   if (provider === 'gemini') syncGemImageSizeUI(modelId);
 }
@@ -963,6 +1029,112 @@ function syncGemImageSizeUI(modelId) {
 function save(k, v) { try { localStorage.setItem('genpic:' + k, v); } catch {} }
 function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def; } catch { return def; } }
 
+let uiCatalog = null;
+
+const FALLBACK_UI_CATALOG = {
+  vendors: [
+    { id: 'openai', name: 'GPT image', models: [{ id: 'openai/gpt-image-2', label: 'GPT Image 2' }] },
+    {
+      id: 'gemini',
+      name: 'Banana',
+      models: [
+        { id: 'gemini/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash' },
+        { id: 'gemini/gemini-3.1-flash-image-preview', label: 'Gemini 3.1' },
+        { id: 'gemini/gemini-3-pro-image-preview', label: 'Gemini 3 Pro' },
+      ],
+    },
+    {
+      id: 'wan',
+      name: '万相生图',
+      models: [
+        { id: 'wan/wan2.7-image', label: '万相 2.7' },
+        { id: 'wan/wan2.7-image-pro', label: '万相 2.7 Pro' },
+      ],
+    },
+  ],
+};
+
+async function loadUICatalog() {
+  try {
+    const r = await fetch('/api/ui/catalog');
+    if (r.ok) {
+      uiCatalog = await r.json();
+      return;
+    }
+  } catch (_) {}
+  uiCatalog = FALLBACK_UI_CATALOG;
+}
+
+function applyVendorRail() {
+  const rail = $('vendor-rail');
+  if (!rail) return;
+  rail.innerHTML = '';
+  (uiCatalog?.vendors || []).forEach((v) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'vendor-btn';
+    b.dataset.vendor = v.id;
+    b.textContent = v.name || v.id;
+    b.addEventListener('click', () => selectVendor(v.id));
+    rail.appendChild(b);
+  });
+}
+
+function getModelsForVendor(vid) {
+  const v = (uiCatalog?.vendors || []).find((x) => x.id === vid);
+  return Array.isArray(v?.models) ? v.models : [];
+}
+
+function selectVendor(vid) {
+  activeVendorId = vid;
+  save('active-vendor', vid);
+  document.querySelectorAll('#vendor-rail .vendor-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.vendor === vid);
+  });
+  const sel = $('model-select');
+  if (!sel) return;
+  const prev = sel.value;
+  const models = getModelsForVendor(vid);
+  sel.innerHTML = '';
+  models.forEach((m) => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.label || m.id;
+    sel.appendChild(o);
+  });
+  let next = models[0]?.id || '';
+  if (models.some((m) => m.id === prev)) next = prev;
+  if (next) {
+    sel.value = next;
+    setActiveModel(next, modelToProvider(next));
+  }
+}
+
+function modelToProvider(modelId) {
+  const m = String(modelId || '').trim();
+  if (m.startsWith('openai/')) return 'openai';
+  if (m.startsWith('gemini/')) return 'gemini';
+  if (m.startsWith('wan/')) return 'wan';
+  return 'openai';
+}
+
+async function initCatalogAndModels() {
+  await loadUICatalog();
+  if (!uiCatalog || !Array.isArray(uiCatalog.vendors) || uiCatalog.vendors.length === 0) {
+    uiCatalog = FALLBACK_UI_CATALOG;
+  }
+  applyVendorRail();
+  const vids = uiCatalog.vendors.map((v) => v.id);
+  let vend = load('active-vendor', null);
+  if (!vend || !vids.includes(vend)) vend = uiCatalog.vendors[0]?.id || 'openai';
+  selectVendor(vend);
+  const sm = load('active-model', null);
+  if (sm && getModelsForVendor(vend).some((m) => m.id === sm)) {
+    $('model-select').value = sm;
+    setActiveModel(sm, modelToProvider(sm));
+  }
+}
+
 // Restore persisted values
 const persistFields = [
   'prompt',
@@ -981,41 +1153,82 @@ persistFields.forEach(id => {
   }
 });
 
-const savedModel = load('active-model', 'openai/gpt-image-2');
-const savedProvider = load('active-provider', 'openai');
-const wanHidden = savedProvider === 'wan' || (typeof savedModel === 'string' && savedModel.startsWith('wan/'));
-setActiveModel(
-  wanHidden ? 'openai/gpt-image-2' : savedModel,
-  wanHidden ? 'openai' : savedProvider
-);
-
-const gisz = $('gem-image-size');
-if (gisz && gisz.options.length) {
-  const v = load('gem-image-size', null);
-  if (v !== null && [...gisz.options].some((o) => o.value === v)) gisz.value = v;
-  gisz.addEventListener('change', () => save('gem-image-size', gisz.value));
-}
-
 gptChannel = (load('gpt-channel', 'official') || 'official');
 const dm0 = load('gpt-discount-model', null);
 if (dm0 !== null && $('gpt-discount-model')) $('gpt-discount-model').value = dm0;
-wireRefAndGpt();
 
-// Ensure anonymous session exists before any /jobs or /api/generate calls
-// (localStorage `genpic:browser-session` === header `X-Genpic-Session` === DB `session_id`).
 getOrCreateGenpicSessionId();
 
 bootstrapCredentials()
+  .then(() => initCatalogAndModels())
+  .then(() => {
+    const gisz = $('gem-image-size');
+    if (gisz && gisz.options.length) {
+      const v = load('gem-image-size', null);
+      if (v !== null && [...gisz.options].some((o) => o.value === v)) gisz.value = v;
+      gisz.addEventListener('change', () => save('gem-image-size', gisz.value));
+    }
+    wireRefAndGpt();
+    const sz = ($('gpt-size')?.value || '').trim();
+    const grid = $('gpt-ratio-grid');
+    if (grid) {
+      let matched = null;
+      grid.querySelectorAll('.ratio-btn').forEach((b) => {
+        if ((b.dataset.size || '').trim() === sz) matched = b;
+      });
+      if (matched) {
+        grid.querySelectorAll('.ratio-btn').forEach((b) => b.classList.remove('active'));
+        matched.classList.add('active');
+      }
+    }
+    updateGptResEst();
+  })
   .then(() => mergeAndPersistHistory({ reset: true }))
   .then(() => renderHistoryPanel())
-  .catch(e => console.warn('bootstrapCredentials', e));
+  .catch((e) => console.warn('bootstrap', e));
 
-// ── Event handlers ──────────────────────────────────────
-document.querySelectorAll('.model-tab').forEach(tab => {
-  tab.addEventListener('click', () => setActiveModel(tab.dataset.model, tab.dataset.provider));
+$('model-select')?.addEventListener('change', () => {
+  const id = $('model-select').value;
+  setActiveModel(id, modelToProvider(id));
+  save('active-model', id);
 });
 
-$('eye-btn').addEventListener('click', () => {
+// ── Event handlers ──────────────────────────────────────
+$('btn-cred-dialog')?.addEventListener('click', () => openCredDialog());
+$('cred-dialog-close')?.addEventListener('click', () => closeCredDialog());
+
+function openHistDrawer() {
+  const back = $('hist-drawer-backdrop');
+  const dr = $('hist-drawer');
+  if (back) back.hidden = false;
+  if (dr) {
+    dr.hidden = false;
+    dr.setAttribute('aria-hidden', 'false');
+  }
+  mergeAndPersistHistory({ reset: true })
+    .then(() => renderHistoryPanel())
+    .catch(() => renderHistoryPanel());
+}
+
+function closeHistDrawer() {
+  const back = $('hist-drawer-backdrop');
+  const dr = $('hist-drawer');
+  if (back) back.hidden = true;
+  if (dr) {
+    dr.hidden = true;
+    dr.setAttribute('aria-hidden', 'true');
+  }
+}
+
+$('btn-hist-drawer')?.addEventListener('click', () => openHistDrawer());
+$('hist-drawer-close')?.addEventListener('click', () => closeHistDrawer());
+$('hist-drawer-backdrop')?.addEventListener('click', () => closeHistDrawer());
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('hist-drawer')?.hidden) closeHistDrawer();
+});
+
+$('eye-btn')?.addEventListener('click', () => {
   const inp = $('api-key');
   inp.type = inp.type === 'password' ? 'text' : 'password';
 });
@@ -1386,14 +1599,13 @@ $('btn-gen').addEventListener('click', async () => {
   if (!prompt) { setStatus('error', '请输入提示词'); return; }
   if (!baseURL) {
     setStatus('error', '请填写接口地址，或在服务器 config.yaml 中配置 mvp_lite.default_base_url');
-    const dc = $('api-config');
-    if (dc) dc.open = true;
+    openCredDialog();
     return;
   }
-  if (!apiKey)  { setStatus('error', '请在「API 配置」中填写密钥'); const ac = $('api-config'); if (ac) ac.open = true; return; }
+  if (!apiKey)  { setStatus('error', '请点击右上角 ⚙️ 填写完整密钥'); openCredDialog(); return; }
   if (looksLikeMaskedKey(apiKey)) {
     setStatus('error', '密钥疑似脱敏或不完整，请替换为完整密钥');
-    const ac = $('api-config'); if (ac) ac.open = true;
+    openCredDialog();
     return;
   }
 
@@ -1830,29 +2042,6 @@ function renderHistoryPanel() {
   });
   updateHistLoadMoreUI();
 }
-
-// ── Tab switching ────────────────────────────────────────
-function setTab(tab) {
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
-  });
-  const sidebar  = $('sidebar');
-  const genArea  = $('generate-area');
-  const histArea = $('history-area');
-  const isGen = tab === 'generate';
-  if (sidebar)  sidebar.style.display  = isGen ? '' : 'none';
-  if (genArea)  genArea.style.display  = isGen ? '' : 'none';
-  if (histArea) histArea.style.display = isGen ? 'none' : '';
-  if (!isGen) {
-    mergeAndPersistHistory({ reset: true })
-      .then(() => renderHistoryPanel())
-      .catch(() => renderHistoryPanel());
-  }
-}
-
-document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', () => setTab(btn.dataset.tab));
-});
 
 $('hist-clear-btn')?.addEventListener('click', () => {
   if (confirm('确认清空全部生成历史？')) {

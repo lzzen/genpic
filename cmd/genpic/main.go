@@ -10,6 +10,7 @@
 //   - GET  /api/artifacts/{job_id}/{name} — generated image file (PNG/JPEG/WebP/GIF)
 //   - GET  /health                  — liveness check
 //   - GET  /api/public-config       — non-secret defaults for the SPA
+//   - GET  /api/ui/catalog          — vendor + model list for the embedded SPA (DB-backed later)
 //   - POST /api/generate            — enqueue generation (202 + job); poll GET /jobs/{id}
 //
 // Rate limiting:
@@ -124,6 +125,7 @@ func main() {
 	mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, _ *http.Request) {
 		api.JSON(w, http.StatusOK, map[string]string{"default_base_url": defaultBaseURL})
 	})
+	mux.HandleFunc("GET /api/ui/catalog", api.HandleUICatalog)
 	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
 	mux.HandleFunc("POST /api/generate", rateMiddleware(globalLimiter, api.HandleCompatGenerate))
 

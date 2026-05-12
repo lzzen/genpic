@@ -135,6 +135,7 @@ func main() {
 
 	// Specific routes must be registered before the catch-all "/".
 	mux.HandleFunc("GET /api/public-config", handlePublicConfig)
+	mux.HandleFunc("GET /api/ui/catalog", handleUICatalog)
 	mux.HandleFunc("POST /api/generate", handleGenerate)
 	mux.HandleFunc("GET /health", handleHealth)
 
@@ -168,6 +169,19 @@ func handlePublicConfig(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"default_base_url": mvpState.DefaultBaseURL,
 	})
+}
+
+// uiCatalogJSON is the SPA vendor + model rail (same shape as genpic GET /api/ui/catalog).
+const uiCatalogJSON = `{"vendors":[{"id":"openai","name":"GPT image","models":[{"id":"openai/gpt-image-2","label":"GPT Image 2"}]},{"id":"gemini","name":"Banana","models":[{"id":"gemini/gemini-2.5-flash-image","label":"Gemini 2.5 Flash"},{"id":"gemini/gemini-3.1-flash-image-preview","label":"Gemini 3.1"},{"id":"gemini/gemini-3-pro-image-preview","label":"Gemini 3 Pro"}]},{"id":"wan","name":"万相生图","models":[{"id":"wan/wan2.7-image","label":"万相 2.7"},{"id":"wan/wan2.7-image-pro","label":"万相 2.7 Pro"}]}]}`
+
+func handleUICatalog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, uiCatalogJSON)
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
