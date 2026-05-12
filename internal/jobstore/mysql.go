@@ -3,10 +3,11 @@ package jobstore
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
 // mysqlDDL is applied on startup (CREATE TABLE IF NOT EXISTS).
@@ -25,15 +26,19 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   images      MEDIUMTEXT,
   tokens_used INT           NOT NULL DEFAULT 0,
   key_id      VARCHAR(64)   NOT NULL DEFAULT '',
+  user_id     VARCHAR(128)  NOT NULL DEFAULT '',
+  session_id  VARCHAR(128)  NOT NULL DEFAULT '',
   created_at  DATETIME(3)   NOT NULL,
   started_at  DATETIME(3)   NULL,
   finished_at DATETIME(3)   NULL,
-  INDEX idx_created_id (created_at DESC, id DESC)
+  INDEX idx_created_id (created_at, id),
+  INDEX idx_list_session (session_id, created_at, id),
+  INDEX idx_list_user (user_id, created_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `
 
 const mysqlCols = `id, model, provider, prompt, status, error_code, error_msg,
-  images, tokens_used, key_id, created_at, started_at, finished_at`
+  images, tokens_used, key_id, user_id, session_id, created_at, started_at, finished_at`
 
 // MySQL is a MySQL-backed job store satisfying the Store interface.
 type MySQL struct {
@@ -67,7 +72,42 @@ func NewMySQL(dsn string, maxOpen, maxIdle int) (*MySQL, error) {
 	if _, err := db.Exec(mysqlDDL); err != nil {
 		return nil, fmt.Errorf("jobstore/mysql: apply schema: %w", err)
 	}
+	if err := migrateMySQLSchema(db); err != nil {
+		return nil, err
+	}
 	return &MySQL{db: db}, nil
+}
+
+// migrateMySQLSchema adds owner columns and list indexes on older deployments
+// that pre-date user_id / session_id. Duplicate column/index errors are ignored.
+func migrateMySQLSchema(db *sql.DB) error {
+	stmts := []string{
+		`ALTER TABLE generation_jobs ADD COLUMN user_id VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE generation_jobs ADD COLUMN session_id VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE generation_jobs ADD INDEX idx_list_session (session_id, created_at, id)`,
+		`ALTER TABLE generation_jobs ADD INDEX idx_list_user (user_id, created_at, id)`,
+	}
+	for _, q := range stmts {
+		if _, err := db.Exec(q); err != nil {
+			var me *mysqldriver.MySQLError
+			if errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061) {
+				continue
+			}
+			return fmt.Errorf("jobstore/mysql: migrate: %w", err)
+		}
+	}
+	return nil
+}
+
+func mysqlListWhere(scope OwnerScope) (clause string, args []any) {
+	switch {
+	case scope.UserID != "":
+		return "j.user_id = ?", []any{scope.UserID}
+	case scope.SessionID != "":
+		return "j.session_id = ? AND j.user_id = ''", []any{scope.SessionID}
+	default:
+		return "j.user_id = '' AND j.session_id = ''", nil
+	}
 }
 
 // Create inserts a new job and returns its assigned ID.
@@ -87,11 +127,11 @@ func (s *MySQL) Create(job *Job) (string, error) {
 	_, err = s.db.Exec(`
 		INSERT INTO generation_jobs
 		  (id, model, provider, prompt, status, error_code, error_msg,
-		   images, tokens_used, key_id, created_at, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		   images, tokens_used, key_id, user_id, session_id, created_at, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Model, job.Provider, job.Prompt,
 		string(job.Status), job.ErrorCode, job.ErrorMsg,
-		imagesJSON, job.TokensUsed, job.KeyID,
+		imagesJSON, job.TokensUsed, job.KeyID, job.UserID, job.SessionID,
 		job.CreatedAt, nullTime(job.StartedAt), nullTime(job.FinishedAt),
 	)
 	if err != nil {
@@ -154,11 +194,12 @@ func (s *MySQL) Update(id string, fn func(*Job)) bool {
 }
 
 // List returns up to limit jobs newest-first, using cursor (a job ID) for pagination.
-func (s *MySQL) List(limit int, cursor string) ([]*Job, string) {
+func (s *MySQL) List(limit int, cursor string, scope OwnerScope) ([]*Job, string) {
 	if limit <= 0 {
 		limit = 20
 	}
 
+	where, wargs := mysqlListWhere(scope)
 	var (
 		rows *sql.Rows
 		err  error
@@ -166,20 +207,25 @@ func (s *MySQL) List(limit int, cursor string) ([]*Job, string) {
 	)
 
 	if cursor == "" {
+		args := append(append([]any{}, wargs...), limit+1)
 		rows, err = s.db.Query(
-			sel+` FROM generation_jobs j ORDER BY j.created_at DESC, j.id DESC LIMIT ?`,
-			limit+1,
+			sel+` FROM generation_jobs j WHERE `+where+`
+			ORDER BY j.created_at DESC, j.id DESC LIMIT ?`,
+			args...,
 		)
 	} else {
 		// Keyset: select rows with (created_at, id) strictly less than the cursor row.
+		args := append([]any{cursor}, wargs...)
+		args = append(args, limit+1)
 		rows, err = s.db.Query(
 			sel+` FROM generation_jobs j
 			INNER JOIN generation_jobs c ON c.id = ?
-			WHERE j.created_at < c.created_at
-			   OR (j.created_at = c.created_at AND j.id < c.id)
+			WHERE `+where+`
+			AND (j.created_at < c.created_at
+			   OR (j.created_at = c.created_at AND j.id < c.id))
 			ORDER BY j.created_at DESC, j.id DESC
 			LIMIT ?`,
-			cursor, limit+1,
+			args...,
 		)
 	}
 	if err != nil {
@@ -228,7 +274,7 @@ func doScan(s rowScanner) (*Job, error) {
 	if err := s.Scan(
 		&j.ID, &j.Model, &j.Provider, &j.Prompt,
 		&status, &j.ErrorCode, &j.ErrorMsg,
-		&imgData, &j.TokensUsed, &j.KeyID,
+		&imgData, &j.TokensUsed, &j.KeyID, &j.UserID, &j.SessionID,
 		&j.CreatedAt, &startedAt, &finishedAt,
 	); err != nil {
 		return nil, err

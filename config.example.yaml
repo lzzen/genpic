@@ -100,3 +100,8 @@ idempotency:
 #   dsn: "genpic:password@tcp(localhost:3306)/genpic?parseTime=true&charset=utf8mb4"
 #   max_open_conns: 10   # default: 10
 #   max_idle_conns: 5    # default: 5
+#
+# Generation rows include optional owner headers (no main-site SSO in this build):
+#   X-Genpic-User-Id    — opaque logged-in user id when you add auth later
+#   X-Genpic-Session    — stable random id per browser for anonymous history
+# The embedded web UI sends X-Genpic-Session automatically (localStorage).

@@ -801,6 +801,25 @@ function effectiveBaseURL() {
   return (window.__genpicDefaultBaseUrl || '').trim();
 }
 
+// Stable anonymous identity for server-side generation history (see X-Genpic-Session).
+const GENPIC_SESSION_KEY = 'genpic:browser-session';
+
+function getOrCreateGenpicSessionId() {
+  try {
+    let s = localStorage.getItem(GENPIC_SESSION_KEY);
+    if (s && typeof s === 'string') {
+      s = s.trim();
+      if (s.length > 0 && s.length <= 128) return s;
+    }
+    s = (crypto.randomUUID && crypto.randomUUID()) ||
+      'sess_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(GENPIC_SESSION_KEY, s);
+    return s;
+  } catch {
+    return 'sess_anon_fallback';
+  }
+}
+
 async function bootstrapCredentials() {
   let defaultBase = '';
   try {
@@ -1352,7 +1371,10 @@ $('btn-gen').addEventListener('click', async () => {
     // server routes by model ID from the request body.
     const res = await fetch('/api/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Genpic-Session': getOrCreateGenpicSessionId(),
+      },
       body: JSON.stringify(body),
     });
     const raw = await res.text();

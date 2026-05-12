@@ -89,6 +89,11 @@ func HandleGetJob(w http.ResponseWriter, r *http.Request) {
 		Error(w, pkgerrors.NotFound("job"))
 		return
 	}
+	owner := callerScopeFromRequest(r)
+	if !owner.CanViewJob(j) {
+		Error(w, pkgerrors.NotFound("job"))
+		return
+	}
 	JSON(w, http.StatusOK, toJobResponse(j))
 }
 
@@ -111,7 +116,8 @@ func HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	cursor := r.URL.Query().Get("cursor")
 
-	jobs, nextCursor := jobStoreInstance.List(limit, cursor)
+	owner := callerScopeFromRequest(r)
+	jobs, nextCursor := jobStoreInstance.List(limit, cursor, owner)
 
 	items := make([]jobResponse, 0, len(jobs))
 	for _, j := range jobs {

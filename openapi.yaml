@@ -11,6 +11,13 @@ info:
     Upstream provider keys used by the server are held in config / environment
     variables and are never returned to API callers.
 
+    **Generation history (owner headers)**:
+    - `X-Genpic-User-Id` — optional opaque user id for signed-in callers (no SSO here yet).
+    - `X-Genpic-Session` — optional stable random id per browser for anonymous jobs.
+    Jobs are stored with these fields; `GET /jobs` and `GET /jobs/{id}` only return
+    rows that match the same headers (except legacy jobs with no owner, which remain
+    readable by id for backwards compatibility).
+
     **Base URL**: `{address}/v1` where `{address}` is the official platform origin
     (e.g. `https://imgapi.example.com`). Third-party clients using NewAPI
     "chat application integration" should set `{address}` to this value exactly.
@@ -96,6 +103,11 @@ paths:
         **Async vs sync**: In MVP Lite all calls are synchronous (wait for result).
         In `cmd/genpic`, requests are accepted into an in-memory job queue and the
         response is **202** with a `job_id`; poll `GET /jobs/{id}` for the result.
+        Send `X-Genpic-Session` (anonymous) or `X-Genpic-User-Id` (signed-in) so the
+        job is attributed and later listable under the same headers.
+      parameters:
+        - $ref: "#/components/parameters/GenpicUserId"
+        - $ref: "#/components/parameters/GenpicSession"
       requestBody:
         required: true
         content:
@@ -163,7 +175,12 @@ paths:
         Poll this endpoint after receiving a `202 Accepted` from
         `POST /images/generations`. Returns the current job state and,
         when `status == succeeded`, the generated image URLs/data.
+
+        Returns **404** when the job exists but does not belong to the caller's
+        `X-Genpic-User-Id` / `X-Genpic-Session` scope.
       parameters:
+        - $ref: "#/components/parameters/GenpicUserId"
+        - $ref: "#/components/parameters/GenpicSession"
         - name: job_id
           in: path
           required: true
@@ -186,7 +203,14 @@ paths:
       operationId: listJobs
       tags: [jobs]
       summary: List recent generation jobs (newest first)
+      description: |
+        Jobs are filtered by optional owner headers: when `X-Genpic-User-Id` is set,
+        only that user's jobs are returned; otherwise when `X-Genpic-Session` is set,
+        only anonymous jobs for that session; when both are absent, only legacy jobs
+        with no stored owner are listed.
       parameters:
+        - $ref: "#/components/parameters/GenpicUserId"
+        - $ref: "#/components/parameters/GenpicSession"
         - name: limit
           in: query
           schema:
@@ -212,6 +236,28 @@ paths:
                 $ref: "#/components/schemas/JobList"
 
 components:
+
+  parameters:
+    GenpicUserId:
+      name: X-Genpic-User-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+      description: |
+        Opaque user identifier when the caller is authenticated outside Genpic.
+        Jobs created with this header are listed only when the same value is sent.
+    GenpicSession:
+      name: X-Genpic-Session
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+      description: |
+        Stable random id per browser or device (for example a UUID in localStorage).
+        Used for anonymous generation history when `X-Genpic-User-Id` is not set.
 
   schemas:
 

@@ -235,7 +235,7 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 
 	// ── Async path (M1+) ──────────────────────────────────────────────────
 	if jobStoreInstance != nil {
-		handleImageGenerationAsync(w, r, req)
+		handleImageGenerationAsync(w, req, callerScopeFromRequest(r))
 		return
 	}
 
@@ -249,24 +249,31 @@ func HandleImageGeneration(w http.ResponseWriter, r *http.Request) {
 }
 
 // jobFromGenerateRequest builds a queued job record (provider name resolved when known).
-func jobFromGenerateRequest(req GenerateRequest) *jobstore.Job {
+func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *jobstore.Job {
 	normalised := normalizeModelID(req.Model)
 	providerName := ""
 	if prov, _, ok := provider.ProviderForModel(normalised); ok {
 		providerName = prov.Name()
 	}
+	uid := owner.UserID
+	sid := owner.SessionID
+	if uid != "" {
+		sid = ""
+	}
 	return &jobstore.Job{
-		Model:    req.Model,
-		Provider: providerName,
-		Prompt:   req.Prompt,
-		Status:   jobstore.StatusQueued,
+		Model:     req.Model,
+		Provider:  providerName,
+		Prompt:    req.Prompt,
+		Status:    jobstore.StatusQueued,
+		UserID:    uid,
+		SessionID: sid,
 	}
 }
 
 // handleImageGenerationAsync creates a job, launches a goroutine, and returns
 // 202 Accepted immediately. The caller polls GET /v1/jobs/{id} for results.
-func handleImageGenerationAsync(w http.ResponseWriter, r *http.Request, req GenerateRequest) {
-	job := jobFromGenerateRequest(req)
+func handleImageGenerationAsync(w http.ResponseWriter, req GenerateRequest, owner jobstore.OwnerScope) {
+	job := jobFromGenerateRequest(req, owner)
 
 	id, err := jobStoreInstance.Create(job)
 	if err != nil {
@@ -365,7 +372,7 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	// Same persistence as /v1/images/generations: the SPA uses this path, so we
 	// record one job per request when a store is wired (MySQL or in-memory).
 	if jobStoreInstance != nil {
-		job := jobFromGenerateRequest(body.GenerateRequest)
+		job := jobFromGenerateRequest(body.GenerateRequest, callerScopeFromRequest(r))
 		id, err := jobStoreInstance.Create(job)
 		if err != nil {
 			Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))

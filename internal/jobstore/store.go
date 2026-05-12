@@ -55,6 +55,11 @@ type Job struct {
 
 	// KeyID reserved for future per-caller ACL (currently unset).
 	KeyID string
+
+	// UserID is set when the client sends X-Genpic-User-Id (future main-site auth).
+	UserID string
+	// SessionID is set for anonymous clients (X-Genpic-Session); ignored when UserID is set on the job.
+	SessionID string
 }
 
 // IsTerminal reports whether the job has reached a final state.
@@ -76,7 +81,8 @@ type Store interface {
 	// List returns up to limit jobs, newest first, starting after cursor.
 	// An empty cursor means start from the beginning. Returns a next cursor
 	// (empty string when there are no more results).
-	List(limit int, cursor string) ([]*Job, string)
+	// scope restricts rows to the caller (see OwnerScope).
+	List(limit int, cursor string, scope OwnerScope) ([]*Job, string)
 }
 
 // ─── Memory implementation ────────────────────────────────────────────────────
@@ -157,16 +163,19 @@ func (m *Memory) Update(id string, fn func(*Job)) bool {
 
 // List returns up to limit jobs, newest first, starting after the job with ID
 // cursor. An empty cursor starts from the newest job.
-func (m *Memory) List(limit int, cursor string) ([]*Job, string) {
+func (m *Memory) List(limit int, cursor string, scope OwnerScope) ([]*Job, string) {
 	if limit <= 0 {
 		limit = 20
 	}
 	m.mu.Lock()
-	// Build a reversed snapshot (newest first).
-	snap := make([]*Job, len(m.ordered))
-	for i, j := range m.ordered {
-		cp := *j
-		snap[len(m.ordered)-1-i] = &cp
+	// Build a reversed snapshot (newest first), filtered by owner scope.
+	var snap []*Job
+	for i := len(m.ordered) - 1; i >= 0; i-- {
+		j := m.ordered[i]
+		if scope.ListContains(j) {
+			cp := *j
+			snap = append(snap, &cp)
+		}
 	}
 	m.mu.Unlock()
 
