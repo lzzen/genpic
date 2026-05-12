@@ -298,7 +298,7 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 //
 // When a job store is configured (cmd/genpic), the handler returns 202 Accepted
 // with a job record immediately and runs generation in the background; clients
-// poll GET /v1/jobs/{id}. Without a job store (e.g. tests), it waits and returns 200.
+// poll GET /jobs/{id}. Without a job store (e.g. tests), it waits and returns 200.
 func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes)
 
@@ -323,7 +323,7 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx := compatctx.With(r.Context(), ov)
 
 	// Full platform (cmd/genpic): always wire a job store — enqueue async and
-	// return 202; clients poll GET /v1/jobs/{id}. compatctx must be attached to
+	// return 202; clients poll GET /jobs/{id}. compatctx must be attached to
 	// a detached context so closing the HTTP connection does not cancel upstream.
 	if jobStoreInstance != nil {
 		owner := callerScopeFromRequest(r)

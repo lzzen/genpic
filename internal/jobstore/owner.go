@@ -8,7 +8,7 @@ type OwnerScope struct {
 	SessionID string
 }
 
-// ListContains reports whether job j should appear in GET /v1/jobs for scope o.
+// ListContains reports whether job j should appear in GET /jobs for scope o.
 // When UserID is set, only jobs with the same user_id match.
 // Otherwise when SessionID is set, only anonymous jobs (empty user_id) with that session match.
 // When both are empty, only legacy rows (no owner columns set) match.

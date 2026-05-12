@@ -1290,12 +1290,12 @@ function buildBody() {
   return base;
 }
 
-/** Poll GET /v1/jobs/{id} until succeeded or failed (same session as generate). */
+/** Poll GET /jobs/{id} until succeeded or failed (same session as generate). */
 async function pollGenpicJob(jobId) {
   const sess = getOrCreateGenpicSessionId();
   const terminal = { succeeded: true, failed: true };
   for (;;) {
-    const jr = await fetch('/v1/jobs/' + encodeURIComponent(jobId), {
+    const jr = await fetch('/jobs/' + encodeURIComponent(jobId), {
       headers: { 'X-Genpic-Session': sess },
     });
     const raw = await jr.text();

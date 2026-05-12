@@ -15,9 +15,9 @@ Clients
                               ┌──────────────────────┐
                               │  Genpic Platform      │
                               │                       │
-                              │  GET  /v1/models      │
+                              │  GET  /models         │
                               │  POST /api/generate   │
-                              │  GET  /v1/jobs/{id}   │
+                              │  GET  /jobs/{id}      │
                               │  GET  /health         │
                               │  GET  /  (static UI)  │
                               │                       │
@@ -58,7 +58,7 @@ genpic/
 ├── web/              # Static frontend (embedded at build time)
 ├── contracts/
 │   └── providers.yaml # Machine-readable model contract table
-├── openapi.yaml       # OpenAPI 3.1 contract (external v1 surface)
+├── openapi.yaml       # OpenAPI 3.1 contract (public HTTP surface)
 ├── config.example.yaml
 ├── .github/
 │   ├── workflows/ci.yaml
@@ -74,8 +74,8 @@ genpic/
 
 ## Authentication and secrets
 
-`cmd/genpic` does **not** implement platform-issued Bearer keys in-tree: `/v1/*`
-is open at the application layer; use your edge or private network for access
+`cmd/genpic` does **not** implement platform-issued Bearer keys in-tree: **`/models`**
+and **`/jobs`** are open at the application layer; use your edge or private network for access
 control. Upstream provider defaults for adapters are read from server config /
 environment variables; the browser still supplies `base_url` and `api_key` on
 `POST /api/generate` for the live upstream call.
@@ -104,7 +104,7 @@ All providers implement `pkg/provider.Provider` and are registered in `cmd/genpi
 |---|---|
 | **MVP Lite** | `cmd/mvplite` — single binary, no DB, no auth, direct proxy |
 | **M0**       | `cmd/genpic` — all three providers, in-memory rate limit |
-| **M1**       | **Current:** async `POST /api/generate` (`202` + poll `GET /v1/jobs/{id}`). **Planned:** Redis/DB, billing, object storage |
+| **M1**       | **Current:** async `POST /api/generate` (`202` + poll `GET /jobs/{id}`). **Planned:** Redis/DB, billing, object storage |
 | **M2**       | Gemini native generateContent path (`model-fingers/gemini-image.md`) |
 | **M3**       | Wan sub-pages (image editing, multi-image) |
 | **M4**       | Credit account management, admin UI, NewAPI integration wizard |

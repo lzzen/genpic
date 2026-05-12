@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	pkgerrors "genpic/pkg/errors"
 	"genpic/internal/jobstore"
+	pkgerrors "genpic/pkg/errors"
 )
 
 // jobStoreInstance is set by SetJobStore during server startup.
@@ -17,16 +17,16 @@ func SetJobStore(s jobstore.Store) { jobStoreInstance = s }
 
 // jobResponse is the JSON shape returned for a single job.
 type jobResponse struct {
-	ID         string            `json:"id"`
-	Object     string            `json:"object"`
-	Model      string            `json:"model"`
-	Provider   string            `json:"provider,omitempty"`
-	Status     string            `json:"status"`
-	CreatedAt  int64             `json:"created_at"`
-	StartedAt  *int64            `json:"started_at,omitempty"`
-	FinishedAt *int64            `json:"finished_at,omitempty"`
-	Data       []jobImageData    `json:"data,omitempty"`
-	Error      *jobErrorData     `json:"error,omitempty"`
+	ID         string         `json:"id"`
+	Object     string         `json:"object"`
+	Model      string         `json:"model"`
+	Provider   string         `json:"provider,omitempty"`
+	Status     string         `json:"status"`
+	CreatedAt  int64          `json:"created_at"`
+	StartedAt  *int64         `json:"started_at,omitempty"`
+	FinishedAt *int64         `json:"finished_at,omitempty"`
+	Data       []jobImageData `json:"data,omitempty"`
+	Error      *jobErrorData  `json:"error,omitempty"`
 }
 
 type jobImageData struct {
@@ -72,7 +72,7 @@ func toJobResponse(j *jobstore.Job) jobResponse {
 	return r
 }
 
-// HandleGetJob serves GET /v1/jobs/{job_id}.
+// HandleGetJob serves GET /jobs/{job_id}.
 func HandleGetJob(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {
 		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "not_ready", "job store not initialised"))
@@ -96,7 +96,7 @@ func HandleGetJob(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, toJobResponse(j))
 }
 
-// HandleListJobs serves GET /v1/jobs.
+// HandleListJobs serves GET /jobs.
 // Supports ?limit= (default 20, max 100) and ?cursor= for pagination.
 func HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {

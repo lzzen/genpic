@@ -4,13 +4,13 @@
 // the embedded SPA supplies base_url + api_key per request on POST /api/generate.
 //
 // Route surface (matches openapi.yaml):
-//   - GET  /v1/models               — list available models
-//   - GET  /v1/jobs/{job_id}        — poll job status and images
-//   - GET  /v1/jobs                 — list jobs (newest first, cursor pagination)
+//   - GET  /models                  — list available models
+//   - GET  /jobs/{job_id}           — poll job status and images
+//   - GET  /jobs                    — list jobs (newest first, cursor pagination)
 //   - GET  /api/artifacts/{job_id}/{name} — generated image file (PNG/JPEG/WebP/GIF)
 //   - GET  /health                  — liveness check
 //   - GET  /api/public-config       — non-secret defaults for the SPA
-//   - POST /api/generate            — enqueue generation (202 + job); poll GET /v1/jobs/{id}
+//   - POST /api/generate            — enqueue generation (202 + job); poll GET /jobs/{id}
 //
 // Rate limiting:
 //
@@ -127,11 +127,9 @@ func main() {
 	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
 	mux.HandleFunc("POST /api/generate", rateMiddleware(globalLimiter, api.HandleCompatGenerate))
 
-	v1Mux := http.NewServeMux()
-	v1Mux.HandleFunc("GET /v1/models", api.HandleListModels)
-	v1Mux.HandleFunc("GET /v1/jobs/{job_id}", api.HandleGetJob)
-	v1Mux.HandleFunc("GET /v1/jobs", api.HandleListJobs)
-	mux.Handle("/v1/", v1Mux)
+	mux.HandleFunc("GET /models", api.HandleListModels)
+	mux.HandleFunc("GET /jobs/{job_id}", api.HandleGetJob)
+	mux.HandleFunc("GET /jobs", api.HandleListJobs)
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

@@ -7,7 +7,7 @@ import (
 	"genpic/pkg/provider"
 )
 
-// HandleListModels serves GET /v1/models.
+// HandleListModels serves GET /models.
 // It returns the flat model list from the provider registry, shaped to match
 // the OpenAI /v1/models response so OpenAI-compatible clients work out of the box.
 func HandleListModels(w http.ResponseWriter, r *http.Request) {

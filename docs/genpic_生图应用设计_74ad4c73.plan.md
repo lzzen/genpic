@@ -120,7 +120,7 @@ isProject: false
 
 - **心智模型**：用「显式 `error` 返回 + 早返回」替代大量 try/catch；用「小接口 + 组合」替代深继承；并发用 `context.Context` 贯穿超时/取消。
 - **项目骨架**：单仓内分 `cmd/`（入口）、`internal/`（业务不可被外部 import）、`pkg/`（可复用库）；HTTP 用 `chi` 或 `echo`/`fiber` 之一即可，避免过早微服务。
-- **学习顺序**：官方 [A Tour of Go](https://go.dev/tour/) → [Effective Go](https://go.dev/doc/effective_go) → 在仓库内先写通 **鉴权 + `GET /v1/models` + 健康检查** 再扩队列与适配器；用 `go test` 表驱动测试覆盖计费与权限边界。
+- **学习顺序**：官方 [A Tour of Go](https://go.dev/tour/) → [Effective Go](https://go.dev/doc/effective_go) → 在仓库内先写通 **鉴权 + `GET /models` + 健康检查** 再扩队列与适配器；用 `go test` 表驱动测试覆盖计费与权限边界。
 - **依赖管理**：`go mod`；数据库 `sqlc` 或 GORM（二选一，团队定）；配置 `viper`/`env`；日志 `slog` 或 zap。
 - **与 PHP 对比的坑**：注意 JSON `omitempty` 与零值；`nil` slice/map 行为；部署用静态链接二进制 + systemd/k8s，无需在服务器保留源码。
 
@@ -168,8 +168,8 @@ flowchart LR
 
 | 路由 | 用途 |
 |------|------|
-| `GET /v1/models` | 列出可用图像模型（可映射内部 `provider/model`）。 |
-| `POST /v1/images/generations` | **gpt-image-2** 主入口；请求体尽量贴近 OpenAI（`model`, `prompt`, `n`, `size`, `quality`, `response_format` 等）。 |
+| `GET /models` | 列出可用图像模型（可映射内部 `provider/model`）。 |
+| `POST /api/generate` | 主生图入口（`base_url` + `api_key` + OpenAI 形参）；全平台异步 `202` + 轮询 `GET /jobs/{id}`。 |
 | `POST /v1/chat/completions`（可选但推荐） | 部分客户端只认聊天接口：对 **Gemini Banana** 可用「单轮 user 消息 + 指示生成图」的约定 schema，或返回 `choices[0].message` 中带图片 URL/base64 的扩展字段（需在 OpenAPI 中**明确非标准字段**并做客户端说明）。 |
 
 **注意**：Wan2.7 的 JSON 与 OpenAI 差异大，有两种策略：
@@ -225,7 +225,7 @@ flowchart LR
 ## 8. 异步、实时与前端
 
 - **队列**：Redis Stream / NATS（与 Go worker 常见组合）；任务状态与队列消息 id 关联便于排障。
-- **Web 控制台**：表单提交 → 返回 `job_id` → 轮询 `GET /v1/jobs/{id}` 或 SSE；画廊与右侧历史读同一查询接口。
+- **Web 控制台**：表单提交 → 返回 `job_id` → 轮询 `GET /jobs/{id}` 或 SSE；画廊与右侧历史读同一查询接口。
 - **鉴权**：Web 会话（Cookie/JWT）与 API Key 体系可共用 `user_id`，便于算力扣费一致。
 
 ## 9. 安全与合规
@@ -243,7 +243,7 @@ flowchart LR
 ## 11. 交付里程碑（建议）
 
 0. **MVP Lite**：单 Go 服务 + 原生 HTML/JS 极简页面/API；用户填写 `base_url`、`api_key`、`model_id`、`prompt` 即可生图；不做数据库、队列、支付、社区，不引入前端框架或 Node 构建链。
-1. **M0**：在 MVP Lite 验证通过后，整理仓库脚手架 + OpenAPI CI + `GET /v1/models` + Key 鉴权 + 限流。
+1. **M0**：在 MVP Lite 验证通过后，整理仓库脚手架 + OpenAPI CI + `GET /models` + Key 鉴权 + 限流。
 2. **M1**：`images/generations` → gpt-image-2 全链路（异步 + 存储 + 任务查询）。
 3. **M2**：Gemini Banana 子页 + 适配器 +（可选）`chat/completions` 窄约定。
 4. **M3**：Wan2.7 子页（文生图 + 基础多图）+ 适配器。

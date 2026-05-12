@@ -91,15 +91,15 @@ curl http://localhost:8080/health
 ### Model not found (404)
 
 The `model` field in the request does not match any registered model ID.
-Run `GET /v1/models` to see what is currently registered, and compare against
+Run `GET /models` to see what is currently registered, and compare against
 `contracts/providers.yaml`.
 
 For Gemini image models, this often means the **model string does not match**
-the built-in catalog (see `GET /v1/models`). When using **`POST /api/generate`**, ensure **`base_url` and `api_key`** are present in the JSON body.
+the built-in catalog (see `GET /models`). When using **`POST /api/generate`**, ensure **`base_url` and `api_key`** are present in the JSON body.
 
 With **`GENPIC_DEV=1`**, startup logs list registered models when resolution fails.
 
-### Provider not appearing in `/v1/models`
+### Provider not appearing in `/models`
 
 The provider's `*_BASE_URL` environment variable is missing. Check startup
 logs for `"provider disabled"` warnings.
@@ -115,7 +115,7 @@ timeout via provider config or contact the aggregator operator.
 In M0 there is no automatic failover. If an upstream is down:
 
 1. Remove or clear the failing provider's `*_BASE_URL` env var.
-2. Restart the service — the provider will be excluded from `/v1/models`.
+2. Restart the service — the provider will be excluded from `/models`.
 3. Notify users of the outage via status page.
 
 Full automatic failover is planned for M4.

@@ -35,7 +35,7 @@ tags:
   - name: generate
     description: Primary image generation (POST /api/generate)
   - name: jobs
-    description: Async job status and results
+    description: Async job status (`GET /jobs`, `GET /jobs/{id}`)
   - name: community
     description: Public artwork discovery (future M5)
   - name: health
@@ -61,7 +61,7 @@ paths:
 
   # ── Models ─────────────────────────────────────
 
-  /v1/models:
+  /models:
     get:
       operationId: listModels
       tags: [models]
@@ -86,7 +86,7 @@ paths:
       summary: Generate images (async job + poll, or sync without job store)
       description: |
         **cmd/genpic** (job store always enabled): enqueues a generation job and returns
-        **202 Accepted** with a job object (`id`, `status`, …). Poll `GET /v1/jobs/{id}`
+        **202 Accepted** with a job object (`id`, `status`, …). Poll `GET /jobs/{id}`
         until `status` is `succeeded` or `failed`; on success, `data` holds images
         (`url` and/or `b64_json`, `mime_type`, `revised_prompt`).
 
@@ -137,7 +137,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ImageGenerationResponse"
         "202":
-          description: Job accepted (cmd/genpic); poll GET /v1/jobs/{id}
+          description: Job accepted (cmd/genpic); poll GET /jobs/{id}
           content:
             application/json:
               schema:
@@ -153,7 +153,7 @@ paths:
 
   # ── Jobs ───────────────────────────────────────
 
-  /v1/jobs/{job_id}:
+  /jobs/{job_id}:
     get:
       operationId: getJob
       tags: [jobs]
@@ -183,7 +183,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /v1/jobs:
+  /jobs:
     get:
       operationId: listJobs
       tags: [jobs]
@@ -301,7 +301,7 @@ components:
       properties:
         model:
           type: string
-          description: Model ID as listed in GET /v1/models
+          description: Model ID as listed in GET /models
           example: gpt-image-2
         prompt:
           type: string
@@ -443,7 +443,7 @@ components:
       properties:
         id:
           type: string
-          description: Opaque job id; use as `{job_id}` in GET /v1/jobs/{job_id}
+          description: Opaque job id; use as `{job_id}` in GET /jobs/{job_id}
         object:
           type: string
           enum: [generation.job]

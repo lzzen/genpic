@@ -31,7 +31,7 @@ SKU IDs are stable strings stored in the `entitlements` table.
 
 SKUs are checked at the route level by the `auth` middleware reading the
 caller's entitlements. Callers without `community:browse` see only their
-own works via `/v1/jobs`.
+own works via `/jobs`.
 
 ## 3. Thumbnail and CDN strategy
 
