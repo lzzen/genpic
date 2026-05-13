@@ -1,9 +1,10 @@
 // Package wan implements provider.Provider for Aliyun Tongyi Wanxiang 2.7
 // image generation models (wan2.7-image and wan2.7-image-pro).
 //
-// Wan uses the DashScope multimodal-generation API, which differs significantly
-// from the OpenAI shape. It is NOT aliased through images/generations on the
-// external surface to avoid semantic mismatch (see design §5.2 and ADR-001).
+// Requests use the multimodal body shape (input.messages + parameters); the
+// upstream HTTP path is POST {base}/v1/images/generations. The synchronous
+// response often wraps the native DashScope object under "metadata"; parsing
+// prefers that field and falls back to top-level output or OpenAI-like "data".
 //
 // Watermarking is always applied per Aliyun TOS and cannot be disabled by callers.
 package wan
@@ -75,9 +76,8 @@ func New(cfg Config) *Provider {
 func (p *Provider) Name() string                 { return "wan" }
 func (p *Provider) Models() []provider.ModelInfo { return p.models }
 
-// Generate calls the DashScope multimodal-generation endpoint.
-// The DashScope request body is substantially different from OpenAI; this
-// adapter translates the normalised GenerateRequest into the required shape.
+// Generate calls POST {base}/v1/images/generations with a DashScope-shaped body
+// and parses images from metadata.output (or legacy / data fallbacks).
 func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (*provider.GenerateResponse, error) {
 	log := logger.FromContext(ctx)
 	start := time.Now()
@@ -91,7 +91,6 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	if err != nil {
 		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build DashScope request", err)
 	}
-
 	url := strings.TrimRight(baseURL, "/") + "/v1/images/generations"
 	headers := map[string]string{
 		"Content-Type":  "application/json",
@@ -183,16 +182,53 @@ func buildDashScopeRequest(req provider.GenerateRequest) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-// parseDashScopeResponse extracts images from the DashScope synchronous response.
-// DashScope wraps images under output.choices[].message.content[].image.
+// parseDashScopeResponse extracts images from the upstream JSON.
+//
+// Wan on /v1/images/generations typically returns an OpenAI-like envelope with
+// the native DashScope payload under "metadata"; we read that object only.
+// If "metadata" is absent, we treat the whole body as the legacy top-level shape.
 func parseDashScopeResponse(raw []byte) ([]provider.Image, error) {
+	var root struct {
+		Metadata json.RawMessage `json:"metadata"`
+		Data     []struct {
+			URL     string `json:"url"`
+			B64JSON string `json:"b64_json"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse Wan response", err)
+	}
+
+	inner := raw
+	if len(root.Metadata) > 0 && string(root.Metadata) != "null" {
+		inner = root.Metadata
+	}
+
+	images, err := imagesFromDashScopeShape(inner)
+	if err != nil {
+		return nil, err
+	}
+	if len(images) == 0 && len(root.Data) > 0 {
+		for _, d := range root.Data {
+			if d.URL != "" {
+				images = append(images, provider.Image{URL: d.URL})
+			} else if d.B64JSON != "" {
+				images = append(images, provider.Image{B64JSON: d.B64JSON})
+			}
+		}
+	}
+	return images, nil
+}
+
+// imagesFromDashScopeShape parses the native DashScope sync object:
+// output.choices[].message.content[].image plus optional code/message.
+func imagesFromDashScopeShape(raw []byte) ([]provider.Image, error) {
 	var resp struct {
 		Output struct {
 			Choices []struct {
 				Message struct {
 					Content []struct {
 						Image string `json:"image"`
-						Text  string `json:"text"`
 					} `json:"content"`
 				} `json:"message"`
 			} `json:"choices"`
@@ -201,10 +237,8 @@ func parseDashScopeResponse(raw []byte) ([]provider.Image, error) {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse DashScope response", err)
+		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse Wan metadata", err)
 	}
-	// DashScope returns error as a code/message pair at the top level
-	// (not nested under an "error" key like OpenAI).
 	if resp.Code != "" && resp.Code != "Success" {
 		return nil, pkgerrors.UpstreamErr(resp.Code, resp.Message, nil)
 	}
@@ -212,15 +246,15 @@ func parseDashScopeResponse(raw []byte) ([]provider.Image, error) {
 	var images []provider.Image
 	for _, choice := range resp.Output.Choices {
 		for _, part := range choice.Message.Content {
-			if part.Image != "" {
-				// DashScope returns image as a URL or a data URI depending on the model.
-				if strings.HasPrefix(part.Image, "data:") {
-					if idx := strings.Index(part.Image, ","); idx >= 0 {
-						images = append(images, provider.Image{B64JSON: part.Image[idx+1:]})
-					}
-				} else {
-					images = append(images, provider.Image{URL: part.Image})
+			if part.Image == "" {
+				continue
+			}
+			if strings.HasPrefix(part.Image, "data:") {
+				if idx := strings.Index(part.Image, ","); idx >= 0 {
+					images = append(images, provider.Image{B64JSON: part.Image[idx+1:]})
 				}
+			} else {
+				images = append(images, provider.Image{URL: part.Image})
 			}
 		}
 	}

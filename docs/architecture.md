@@ -94,7 +94,7 @@ gateway” model; wire that at a reverse proxy or in a future release.
 |---|---|---|
 | `openai/*`  | OpenAI adapter | `POST {base}/v1/images/generations` (OpenAI Images API) |
 | `gemini/*`  | Gemini adapter | `POST {base}/v1beta/models/{model}:generateContent` (IMAGE modality, `inlineData` in candidates) |
-| `wan/*`     | Wan adapter    | `POST {base}/api/v1/services/aigc/multimodal-generation/generation` |
+| `wan/*`     | Wan adapter    | `POST {base}/v1/images/generations` (multimodal body; images from `metadata.output` when present) |
 
 All providers implement `pkg/provider.Provider` and are registered in `cmd/genpic/main.go`.
 

@@ -187,16 +187,14 @@ providers:
 
   # ────────────────────────────────────────────────
   # Aliyun Tongyi Wanxiang — wan2.7-image series
-  # Native DashScope path; NOT aliased as OpenAI images/generations
-  # to avoid semantic mismatch (see design §5.2).
+  # HTTP path is OpenAI-compatible; request body stays wan_multimodal.
+  # Sync responses often place native output under metadata.output.
   # ────────────────────────────────────────────────
   - id: wan/wan2.7-image
     display_name: "通义万相 2.7"
     provider: wan
     upstream:
       model: wan2.7-image
-      # DashScope multimodal generation endpoint
-      # path: /api/v1/services/aigc/multimodal-generation/generation
       path: /v1/images/generations
       method: POST
       request_shape: wan_multimodal
@@ -229,7 +227,6 @@ providers:
     provider: wan
     upstream:
       model: wan2.7-image-pro
-      # path: /api/v1/services/aigc/multimodal-generation/generation
       path: /v1/images/generations
       method: POST
       request_shape: wan_multimodal
