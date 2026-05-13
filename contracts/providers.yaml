@@ -196,7 +196,8 @@ providers:
     upstream:
       model: wan2.7-image
       # DashScope multimodal generation endpoint
-      path: /api/v1/services/aigc/multimodal-generation/generation
+      # path: /api/v1/services/aigc/multimodal-generation/generation
+      path: /v1/images/generations
       method: POST
       request_shape: wan_multimodal
       timeout_s: 120
@@ -228,7 +229,8 @@ providers:
     provider: wan
     upstream:
       model: wan2.7-image-pro
-      path: /api/v1/services/aigc/multimodal-generation/generation
+      # path: /api/v1/services/aigc/multimodal-generation/generation
+      path: /v1/images/generations
       method: POST
       request_shape: wan_multimodal
       timeout_s: 180

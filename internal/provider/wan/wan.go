@@ -92,7 +92,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		return nil, pkgerrors.Wrap(http.StatusBadRequest, pkgerrors.TypeValidation, "build_request", "could not build DashScope request", err)
 	}
 
-	url := strings.TrimRight(baseURL, "/") + "/api/v1/services/aigc/multimodal-generation/generation"
+	url := strings.TrimRight(baseURL, "/") + "/v1/images/generations"
 	headers := map[string]string{
 		"Content-Type":  "application/json",
 		"Authorization": "Bearer " + apiKey,
