@@ -99,7 +99,7 @@ See `.github/workflows/ci.yaml` for the full CI pipeline.
 |---|---|
 | MVP Lite | ✅ Done |
 | M0 — multi-provider skeleton, OpenAPI, pkg/ | ✅ Done |
-| M1 — async `POST /api/generate` + jobs (`/jobs`); DB + object storage | Partial (async + poll) |
+| M1 — async `POST /api/generate` + jobs (`/jobs`); MySQL job store + image artifacts | ✅ Done |
 | M2 — Gemini chat completions path | 🔲 Planned |
 | M3 — Wan editing + multi-image | 🔲 Planned |
 | M4 — credit accounts, admin UI | 🔲 Planned |

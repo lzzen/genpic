@@ -565,10 +565,6 @@
       <div class="more-settings-body" id="more-settings-body" hidden>
 
         <div class="param-section show" id="more-extra-openai">
-          <div class="field" id="gpt-discount-wrap" style="display:none">
-            <label for="gpt-discount-model">折扣渠道模型 ID</label>
-            <input id="gpt-discount-model" type="text" placeholder="如 openai/gpt-image-2-all（需与聚合站一致）" />
-          </div>
           <div class="toggle-row">
             <span class="toggle-label">自定义宽高（像素）</span>
             <label class="toggle"><input type="checkbox" id="gpt-custom-size"><span class="toggle-slider"></span></label>
@@ -955,7 +951,6 @@ let activeVendorId = 'openai';
 
 /** Reference images for image-to-image (max 6). */
 let referenceEntries = [];
-let gptChannel = 'official';
 
 function setActiveModel(modelId, provider) {
   activeModel = modelId;
@@ -1143,7 +1138,7 @@ async function initCatalogAndModels() {
 const persistFields = [
   'prompt',
   'gpt-size', 'gpt-quality', 'gpt-n', 'gpt-style', 'gpt-format',
-  'gpt-discount-model', 'gpt-cw', 'gpt-ch',
+  'gpt-cw', 'gpt-ch',
   'gem-n', 'wan-n'
 ];
 persistFields.forEach(id => {
@@ -1156,10 +1151,6 @@ persistFields.forEach(id => {
     el.addEventListener('input', () => save(id, el.value));
   }
 });
-
-gptChannel = (load('gpt-channel', 'official') || 'official');
-const dm0 = load('gpt-discount-model', null);
-if (dm0 !== null && $('gpt-discount-model')) $('gpt-discount-model').value = dm0;
 
 getOrCreateGenpicSessionId();
 
@@ -1242,9 +1233,6 @@ function openHistDrawer() {
 function closeHistDrawer() {
   const back = $('hist-drawer-backdrop');
   const dr = $('hist-drawer');
-  if (dr && dr.contains(document.activeElement)) {
-    $('btn-hist-drawer')?.focus({ preventScroll: true });
-  }
   if (back) back.hidden = true;
   if (dr) dr.hidden = true;
 }
@@ -1338,28 +1326,7 @@ function hideGalleryCRTLoading() {
 }
 
 function effectiveModelId() {
-  if (activeProvider !== 'openai') return activeModel;
-  const alt = ($('gpt-discount-model')?.value || '').trim();
-  if (gptChannel === 'discount' && alt) return alt;
   return activeModel;
-}
-
-function syncGptChannelUI() {
-  const off = $('ch-official');
-  const disc = $('ch-discount');
-  if (!off || !disc) return;
-  off.classList.toggle('active', gptChannel === 'official');
-  disc.classList.toggle('active', gptChannel === 'discount');
-  const wrap = $('gpt-discount-wrap');
-  if (wrap) wrap.style.display = gptChannel === 'discount' ? 'block' : 'none';
-}
-
-function scheduleGPTSave() {
-  clearTimeout(window.__gptSaveT);
-  window.__gptSaveT = setTimeout(() => {
-    save('gpt-channel', gptChannel);
-    if ($('gpt-discount-model')) save('gpt-discount-model', $('gpt-discount-model').value.trim());
-  }, 200);
 }
 
 function parseDataURL(dataUrl) {
@@ -1435,18 +1402,6 @@ function onGptCustomDimsInput() {
 }
 
 function wireRefAndGpt() {
-  syncGptChannelUI();
-  $('ch-official')?.addEventListener('click', () => {
-    gptChannel = 'official';
-    syncGptChannelUI();
-    scheduleGPTSave();
-  });
-  $('ch-discount')?.addEventListener('click', () => {
-    gptChannel = 'discount';
-    syncGptChannelUI();
-    scheduleGPTSave();
-  });
-  $('gpt-discount-model')?.addEventListener('input', scheduleGPTSave);
   $('gpt-ratio-grid')?.addEventListener('click', (ev) => {
     const btn = ev.target.closest('.ratio-btn');
     if (!btn) return;
