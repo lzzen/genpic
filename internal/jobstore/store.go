@@ -36,6 +36,18 @@ type Image struct {
 	RevisedPrompt string `json:"revised_prompt,omitempty"`
 }
 
+// JobParams stores the generation parameters used to create the job.
+// Persisted alongside the job for "create similar" functionality (M5).
+type JobParams struct {
+	Model       string `json:"model,omitempty"`
+	AspectRatio string `json:"aspect_ratio,omitempty"`
+	ImageSize   string `json:"image_size,omitempty"`
+	Size        string `json:"size,omitempty"`
+	N           int    `json:"n,omitempty"`
+	Quality     string `json:"quality,omitempty"`
+	Style       string `json:"style,omitempty"`
+}
+
 // Job is the canonical record for one image-generation request.
 type Job struct {
 	ID       string
@@ -48,6 +60,11 @@ type Job struct {
 	ErrorMsg   string
 	Images     []Image
 	TokensUsed int
+	Params     *JobParams
+
+	// Visibility controls community listing: "private" (default) or "public".
+	Visibility          string
+	CommunityListedAt   time.Time
 
 	CreatedAt  time.Time
 	StartedAt  time.Time
@@ -56,9 +73,9 @@ type Job struct {
 	// KeyID reserved for future per-caller ACL (currently unset).
 	KeyID string
 
-	// UserID is set when the client sends X-Genpic-User-Id (future main-site auth).
+	// UserID is set when the client sends X-Genpic-User-Id or is authenticated via session.
 	UserID string
-	// SessionID is set for anonymous clients (X-Genpic-Session); ignored when UserID is set on the job.
+	// SessionID is set for anonymous clients (X-Genpic-Session); ignored when UserID is set.
 	SessionID string
 }
 
@@ -97,6 +114,12 @@ type Store interface {
 	AdminList(limit, offset int) ([]*Job, int64)
 	// AdminStats returns aggregate counts. Not authenticated here.
 	AdminStats() AdminStatsSummary
+	// ListPublic returns jobs with visibility="public", newest community_listed_at first.
+	// Used for the community feed. In-memory store returns an empty result.
+	ListPublic(limit int, cursor string) ([]*Job, string)
+	// SetVisibility updates the visibility of a job. userID is the authenticated caller;
+	// the method returns an error if the job is not owned by userID.
+	SetVisibility(id, userID, visibility string) error
 }
 
 // ─── Memory implementation ────────────────────────────────────────────────────
@@ -315,4 +338,27 @@ func (m *Memory) AdminStats() AdminStatsSummary {
 		s.ByProvider[p]++
 	}
 	return s
+}
+
+// ListPublic is a stub for the in-memory store; the community feed requires MySQL.
+func (m *Memory) ListPublic(_ int, _ string) ([]*Job, string) { return nil, "" }
+
+// SetVisibility updates the visibility of a job in-memory.
+func (m *Memory) SetVisibility(id, userID, visibility string) error {
+	m.mu.Lock()
+	j, ok := m.index[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("jobstore: job %s not found", id)
+	}
+	if j.UserID != userID {
+		m.mu.Unlock()
+		return fmt.Errorf("jobstore: permission denied")
+	}
+	j.Visibility = visibility
+	if visibility == "public" && j.CommunityListedAt.IsZero() {
+		j.CommunityListedAt = time.Now()
+	}
+	m.mu.Unlock()
+	return nil
 }

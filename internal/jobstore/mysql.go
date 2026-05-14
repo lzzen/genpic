@@ -16,34 +16,43 @@ import (
 // parseTime=true must be present in the DSN for DATETIME columns to scan into time.Time.
 const mysqlDDL = `
 CREATE TABLE IF NOT EXISTS generation_jobs (
-  id          VARCHAR(64)   NOT NULL PRIMARY KEY,
-  model       VARCHAR(128)  NOT NULL DEFAULT '',
-  provider    VARCHAR(64)   NOT NULL DEFAULT '',
-  prompt      TEXT          NOT NULL,
-  status      VARCHAR(32)   NOT NULL DEFAULT 'queued',
-  error_code  VARCHAR(64)   NOT NULL DEFAULT '',
-  error_msg   TEXT          NOT NULL,
-  images      MEDIUMTEXT,
-  tokens_used INT           NOT NULL DEFAULT 0,
-  key_id      VARCHAR(64)   NOT NULL DEFAULT '',
-  user_id     VARCHAR(128)  NOT NULL DEFAULT '',
-  session_id  VARCHAR(128)  NOT NULL DEFAULT '',
-  created_at  DATETIME(3)   NOT NULL,
-  started_at  DATETIME(3)   NULL,
-  finished_at DATETIME(3)   NULL,
+  id                   VARCHAR(64)   NOT NULL PRIMARY KEY,
+  model                VARCHAR(128)  NOT NULL DEFAULT '',
+  provider             VARCHAR(64)   NOT NULL DEFAULT '',
+  prompt               TEXT          NOT NULL,
+  status               VARCHAR(32)   NOT NULL DEFAULT 'queued',
+  error_code           VARCHAR(64)   NOT NULL DEFAULT '',
+  error_msg            TEXT          NOT NULL,
+  images               MEDIUMTEXT,
+  tokens_used          INT           NOT NULL DEFAULT 0,
+  key_id               VARCHAR(64)   NOT NULL DEFAULT '',
+  user_id              VARCHAR(128)  NOT NULL DEFAULT '',
+  session_id           VARCHAR(128)  NOT NULL DEFAULT '',
+  visibility           VARCHAR(16)   NOT NULL DEFAULT 'private',
+  community_listed_at  DATETIME(3)   NULL,
+  params               TEXT          NULL,
+  created_at           DATETIME(3)   NOT NULL,
+  started_at           DATETIME(3)   NULL,
+  finished_at          DATETIME(3)   NULL,
   INDEX idx_created_id (created_at, id),
   INDEX idx_list_session (session_id, created_at, id),
-  INDEX idx_list_user (user_id, created_at, id)
+  INDEX idx_list_user (user_id, created_at, id),
+  INDEX idx_visibility_created (visibility, created_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `
 
 const mysqlCols = `id, model, provider, prompt, status, error_code, error_msg,
-  images, tokens_used, key_id, user_id, session_id, created_at, started_at, finished_at`
+  images, tokens_used, key_id, user_id, session_id, visibility, community_listed_at, params,
+  created_at, started_at, finished_at`
 
 // MySQL is a MySQL-backed job store satisfying the Store interface.
 type MySQL struct {
 	db *sql.DB
 }
+
+// DB returns the underlying *sql.DB so callers (e.g. main.go for auth setup)
+// can share the connection pool without opening a second connection.
+func (s *MySQL) DB() *sql.DB { return s.db }
 
 // NewMySQL opens a MySQL connection pool, runs the schema DDL, and returns a MySQL store.
 //
@@ -78,14 +87,20 @@ func NewMySQL(dsn string, maxOpen, maxIdle int) (*MySQL, error) {
 	return &MySQL{db: db}, nil
 }
 
-// migrateMySQLSchema adds owner columns and list indexes on older deployments
-// that pre-date user_id / session_id. Duplicate column/index errors are ignored.
+// migrateMySQLSchema adds columns/indexes to older deployments (idempotent).
+// MySQL error 1060 = duplicate column, 1061 = duplicate index — both are ignored.
 func migrateMySQLSchema(db *sql.DB) error {
 	stmts := []string{
+		// M1 → M3 columns (may already exist on fresh installs that use the DDL above)
 		`ALTER TABLE generation_jobs ADD COLUMN user_id VARCHAR(128) NOT NULL DEFAULT ''`,
 		`ALTER TABLE generation_jobs ADD COLUMN session_id VARCHAR(128) NOT NULL DEFAULT ''`,
 		`ALTER TABLE generation_jobs ADD INDEX idx_list_session (session_id, created_at, id)`,
 		`ALTER TABLE generation_jobs ADD INDEX idx_list_user (user_id, created_at, id)`,
+		// M5 columns
+		`ALTER TABLE generation_jobs ADD COLUMN visibility VARCHAR(16) NOT NULL DEFAULT 'private'`,
+		`ALTER TABLE generation_jobs ADD COLUMN community_listed_at DATETIME(3) NULL`,
+		`ALTER TABLE generation_jobs ADD COLUMN params TEXT NULL`,
+		`ALTER TABLE generation_jobs ADD INDEX idx_visibility_created (visibility, created_at, id)`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {
@@ -124,14 +139,25 @@ func (s *MySQL) Create(job *Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	paramsJSON, err := marshalParams(job.Params)
+	if err != nil {
+		return "", err
+	}
+	vis := job.Visibility
+	if vis == "" {
+		vis = "private"
+	}
 	_, err = s.db.Exec(`
 		INSERT INTO generation_jobs
 		  (id, model, provider, prompt, status, error_code, error_msg,
-		   images, tokens_used, key_id, user_id, session_id, created_at, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		   images, tokens_used, key_id, user_id, session_id,
+		   visibility, community_listed_at, params,
+		   created_at, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Model, job.Provider, job.Prompt,
 		string(job.Status), job.ErrorCode, job.ErrorMsg,
 		imagesJSON, job.TokensUsed, job.KeyID, job.UserID, job.SessionID,
+		vis, nullTime(job.CommunityListedAt), paramsJSON,
 		job.CreatedAt, nullTime(job.StartedAt), nullTime(job.FinishedAt),
 	)
 	if err != nil {
@@ -336,23 +362,38 @@ func scanJobRows(r *sql.Rows) (*Job, error) {
 
 func doScan(s rowScanner) (*Job, error) {
 	var (
-		j          Job
-		status     string
-		imgData    []byte
-		startedAt  sql.NullTime
-		finishedAt sql.NullTime
+		j                  Job
+		status             string
+		imgData            []byte
+		paramsData         []byte
+		communityListedAt  sql.NullTime
+		startedAt          sql.NullTime
+		finishedAt         sql.NullTime
 	)
 	if err := s.Scan(
 		&j.ID, &j.Model, &j.Provider, &j.Prompt,
 		&status, &j.ErrorCode, &j.ErrorMsg,
 		&imgData, &j.TokensUsed, &j.KeyID, &j.UserID, &j.SessionID,
+		&j.Visibility, &communityListedAt, &paramsData,
 		&j.CreatedAt, &startedAt, &finishedAt,
 	); err != nil {
 		return nil, err
 	}
 	j.Status = Status(status)
+	if j.Visibility == "" {
+		j.Visibility = "private"
+	}
 	if len(imgData) > 0 {
 		_ = json.Unmarshal(imgData, &j.Images)
+	}
+	if len(paramsData) > 0 {
+		var p JobParams
+		if err := json.Unmarshal(paramsData, &p); err == nil {
+			j.Params = &p
+		}
+	}
+	if communityListedAt.Valid {
+		j.CommunityListedAt = communityListedAt.Time
 	}
 	if startedAt.Valid {
 		j.StartedAt = startedAt.Time
@@ -372,6 +413,108 @@ func marshalImages(images []Image) (string, error) {
 		return "", fmt.Errorf("jobstore/mysql: marshal images: %w", err)
 	}
 	return string(b), nil
+}
+
+func marshalParams(p *JobParams) ([]byte, error) {
+	if p == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("jobstore/mysql: marshal params: %w", err)
+	}
+	return b, nil
+}
+
+// ListPublic returns public jobs, newest community_listed_at first.
+func (s *MySQL) ListPublic(limit int, cursor string) ([]*Job, string) {
+	if limit <= 0 {
+		limit = 20
+	}
+	sel := `SELECT j.` + mysqlCols
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if cursor == "" {
+		rows, err = s.db.Query(
+			sel+` FROM generation_jobs j
+			WHERE j.visibility = 'public'
+			ORDER BY j.community_listed_at DESC, j.id DESC
+			LIMIT ?`, limit+1,
+		)
+	} else {
+		rows, err = s.db.Query(
+			sel+` FROM generation_jobs j
+			INNER JOIN generation_jobs c ON c.id = ?
+			WHERE j.visibility = 'public'
+			AND (j.community_listed_at < c.community_listed_at
+			   OR (j.community_listed_at = c.community_listed_at AND j.id < c.id))
+			ORDER BY j.community_listed_at DESC, j.id DESC
+			LIMIT ?`, cursor, limit+1,
+		)
+	}
+	if err != nil {
+		return nil, ""
+	}
+	defer rows.Close()
+
+	var jobs []*Job
+	for rows.Next() {
+		j, err := scanJobRows(rows)
+		if err != nil {
+			continue
+		}
+		jobs = append(jobs, j)
+	}
+	if len(jobs) <= limit {
+		return jobs, ""
+	}
+	return jobs[:limit], jobs[limit-1].ID
+}
+
+// SetVisibility updates a job's visibility. Returns an error if the job is not
+// owned by userID or does not exist.
+func (s *MySQL) SetVisibility(id, userID, visibility string) error {
+	if visibility != "private" && visibility != "public" {
+		return fmt.Errorf("jobstore/mysql: invalid visibility %q", visibility)
+	}
+	var communityListedAt interface{}
+	if visibility == "public" {
+		// Only stamp community_listed_at the first time a job is made public.
+		var existing sql.NullTime
+		_ = s.db.QueryRow(
+			`SELECT community_listed_at FROM generation_jobs WHERE id = ? AND user_id = ?`, id, userID,
+		).Scan(&existing)
+		if !existing.Valid {
+			communityListedAt = time.Now()
+		} else {
+			communityListedAt = existing.Time
+		}
+	}
+
+	var res sql.Result
+	var err error
+	if visibility == "public" {
+		res, err = s.db.Exec(
+			`UPDATE generation_jobs SET visibility = ?, community_listed_at = ? WHERE id = ? AND user_id = ?`,
+			visibility, communityListedAt, id, userID,
+		)
+	} else {
+		res, err = s.db.Exec(
+			`UPDATE generation_jobs SET visibility = ? WHERE id = ? AND user_id = ?`,
+			visibility, id, userID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("jobstore/mysql: set visibility: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("jobstore/mysql: job not found or permission denied")
+	}
+	return nil
 }
 
 func nullTime(t time.Time) sql.NullTime {

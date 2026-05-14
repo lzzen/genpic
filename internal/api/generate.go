@@ -234,6 +234,10 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 	if uid != "" {
 		sid = ""
 	}
+	n := req.N
+	if n == 0 {
+		n = 1
+	}
 	return &jobstore.Job{
 		Model:     req.Model,
 		Provider:  providerName,
@@ -241,6 +245,15 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 		Status:    jobstore.StatusQueued,
 		UserID:    uid,
 		SessionID: sid,
+		Params: &jobstore.JobParams{
+			Model:       req.Model,
+			AspectRatio: req.AspectRatio,
+			ImageSize:   req.ImageSize,
+			Size:        req.Size,
+			N:           n,
+			Quality:     req.Quality,
+			Style:       req.Style,
+		},
 	}
 }
 
@@ -340,7 +353,7 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 		bgCtx := compatctx.With(context.Background(), ov)
 		go runJob(bgCtx, id, body.GenerateRequest)
 		j, _ := jobStoreInstance.Get(id)
-		JSON(w, http.StatusAccepted, toJobResponse(j))
+		JSON(w, http.StatusAccepted, toJobResponseOwner(j))
 		return
 	}
 

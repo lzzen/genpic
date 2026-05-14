@@ -38,6 +38,7 @@ import (
 
 	genpic "genpic"
 	"genpic/internal/api"
+	"genpic/internal/auth"
 	"genpic/internal/jobstore"
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
@@ -87,6 +88,34 @@ func main() {
 	}
 	api.SetJobStore(store)
 
+	// ── Auth store (shares the MySQL DB, no-op when in-memory) ───────────────
+	if ms, ok := store.(*jobstore.MySQL); ok {
+		db := ms.DB()
+		authStore, err := auth.NewStore(db)
+		if err != nil {
+			slog.Error("auth store: init failed", "error", err)
+			os.Exit(1)
+		}
+		api.SetAuthStore(authStore)
+		log.Info("auth store initialised")
+
+		// Periodically remove expired sessions.
+		go func() {
+			t := time.NewTicker(6 * time.Hour)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					authStore.DeleteExpiredSessions()
+				}
+			}
+		}()
+	} else {
+		log.Info("auth store disabled", "reason", "no MySQL DSN; user accounts require a database")
+	}
+
 	// ── Artifact files (b64 → disk, GET /api/artifacts/...) ─────────────────
 	artifactsDir := resolveGenpicArtifactsDir(cfg)
 	api.SetArtifactsRoot(artifactsDir)
@@ -120,6 +149,14 @@ func main() {
 
 	defaultBaseURL := cfg.DefaultBaseURL
 
+	// ── Auth middleware ───────────────────────────────────────────────────────
+	// authStore may be nil (no DB); OptionalAuth handles nil gracefully.
+	var authStoreForMW *auth.Store
+	if as, ok := api.GetAuthStore(); ok {
+		authStoreForMW = as
+	}
+	optAuth := auth.OptionalAuth(authStoreForMW)
+
 	// ── Routes ───────────────────────────────────────────────────────────
 	mux := http.NewServeMux()
 
@@ -131,12 +168,25 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/ui/catalog", api.HandleUICatalog)
 	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
-	mux.HandleFunc("POST /api/generate", rateMiddleware(globalLimiter, api.HandleCompatGenerate))
-	mux.HandleFunc("POST /v1/chat/completions", rateMiddleware(globalLimiter, api.HandleChatCompletions))
+	mux.Handle("POST /api/generate", optAuth(rateMiddleware(globalLimiter, api.HandleCompatGenerate)))
+	mux.Handle("POST /v1/chat/completions", optAuth(rateMiddleware(globalLimiter, api.HandleChatCompletions)))
 
-	mux.HandleFunc("GET /models", api.HandleListModels)
-	mux.HandleFunc("GET /jobs/{job_id}", api.HandleGetJob)
-	mux.HandleFunc("GET /jobs", api.HandleListJobs)
+	// Auth routes (no OptionalAuth needed — they manage the cookie themselves)
+	mux.HandleFunc("POST /api/auth/register", api.HandleRegister)
+	mux.HandleFunc("POST /api/auth/login", api.HandleLogin)
+	mux.HandleFunc("POST /api/auth/logout", api.HandleLogout)
+	mux.Handle("GET /api/auth/me", optAuth(http.HandlerFunc(api.HandleMe)))
+	mux.Handle("GET /api/user/settings", optAuth(http.HandlerFunc(api.HandleGetSettings)))
+	mux.Handle("PUT /api/user/settings", optAuth(http.HandlerFunc(api.HandleUpdateSettings)))
+
+	// Job routes — wrap with OptionalAuth so session resolves user_id
+	mux.Handle("GET /models", optAuth(http.HandlerFunc(api.HandleListModels)))
+	mux.Handle("GET /jobs/{job_id}", optAuth(http.HandlerFunc(api.HandleGetJob)))
+	mux.Handle("GET /jobs", optAuth(http.HandlerFunc(api.HandleListJobs)))
+	mux.Handle("PUT /api/jobs/{job_id}/visibility", optAuth(http.HandlerFunc(api.HandleSetVisibility)))
+
+	// Community feed (M5)
+	mux.Handle("GET /api/community/feed", optAuth(http.HandlerFunc(api.HandleCommunityFeed)))
 
 	mux.HandleFunc("GET /admin/jobs", api.HandleAdminJobs)
 	mux.HandleFunc("GET /admin/stats", api.HandleAdminStats)
@@ -147,13 +197,13 @@ func main() {
 		serveEmbeddedHTML(w, webRoot, "integrate.html")
 	})
 
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/", optAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		http.FileServer(http.FS(webRoot)).ServeHTTP(w, r)
-	}))
+	})))
 
 	port := strings.TrimSpace(cfg.ServerPort)
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
