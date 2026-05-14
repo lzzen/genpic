@@ -181,6 +181,35 @@ async function copyTextToClipboard(text) {
   }
 }
 
+let genpicToastTimer = null;
+function showGenpicToast(message) {
+  let el = $('genpic-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'genpic-toast';
+    el.className = 'genpic-toast';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('genpic-toast--show');
+  clearTimeout(genpicToastTimer);
+  genpicToastTimer = setTimeout(() => {
+    el.classList.remove('genpic-toast--show');
+  }, 2200);
+}
+
+async function copyDescriptionWithToast(text) {
+  const t = String(text || '').trim();
+  if (!t) {
+    showGenpicToast('暂无描述可复制');
+    return;
+  }
+  const ok = await copyTextToClipboard(t);
+  if (ok) showGenpicToast('已复制描述');
+  else setStatus('error', '复制失败，请重试');
+}
+
 function statusZh(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'succeeded') return '成功';
@@ -238,7 +267,6 @@ function buildJobDetailMetaHTML(ctx) {
   if (tokens != null && Number.isFinite(Number(tokens)) && Number(tokens) > 0) {
     computeStr = String(tokens) + '（上游 tokens；聚合站若按算力计费以控制台为准）';
   }
-  const upstreamReq = String(ctx.upstream_request_id || '').trim();
   const jobId = String(ctx.id || '').trim();
 
   let createdStr = '';
@@ -254,9 +282,7 @@ function buildJobDetailMetaHTML(ctx) {
   if (st === 'succeeded') stClass = 'ok';
   if (st === 'failed') stClass = 'fail';
 
-  const idHtml = jobId
-    ? `<code>${genpicEscape(jobId)}</code> <button type="button" class="job-detail-copy-id">复制任务ID</button>`
-    : '未知';
+  const idHtml = jobId ? `<code>${genpicEscape(jobId)}</code>` : '未知';
 
   const rows = [];
   rows.push(['状态', `<span class="status-tag ${stClass}">${genpicEscape(statusZh(st))}</span>`]);
@@ -264,7 +290,6 @@ function buildJobDetailMetaHTML(ctx) {
   rows.push(['任务ID', idHtml]);
   rows.push(['处理耗时', genpicEscape(procStr || '未知')]);
   rows.push(['消耗算力', genpicEscape(computeStr)]);
-  rows.push(['上游请求ID', genpicEscape(upstreamReq || '未知')]);
   rows.push(['创作时间', genpicEscape(createdStr || '未知')]);
 
   return rows.map(([k, v]) => `<div><dt>${genpicEscape(k)}</dt><dd>${v}</dd></div>`).join('');
@@ -576,7 +601,7 @@ function renderCommunityCard(job) {
     b.addEventListener('click', fn);
     return b;
   };
-  act.appendChild(mkBtn('复制描述', () => void copyTextToClipboard(job.prompt || '')));
+  act.appendChild(mkBtn('复制描述', () => void copyDescriptionWithToast(job.prompt || '')));
   act.appendChild(mkBtn('详情', () => {
     if (job.id) void openJobDetailFetchById(job.id);
     else openJobDetail(job);
@@ -1071,12 +1096,7 @@ $('job-detail-modal')?.addEventListener('click', (e) => {
 });
 $('job-detail-copy-prompt')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
-  void copyTextToClipboard(jobDetailCtx.prompt || '');
-});
-$('job-detail-meta')?.addEventListener('click', (e) => {
-  if (e.target.closest('.job-detail-copy-id') && jobDetailCtx?.id) {
-    void copyTextToClipboard(jobDetailCtx.id);
-  }
+  void copyDescriptionWithToast(jobDetailCtx.prompt || '');
 });
 $('job-detail-create-similar')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
@@ -1499,7 +1519,7 @@ function addImages(images, model, provider, prompt = '') {
       b.addEventListener('click', fn);
       return b;
     };
-    act.appendChild(mkBtn('复制描述', () => void copyTextToClipboard(pr)));
+    act.appendChild(mkBtn('复制描述', () => void copyDescriptionWithToast(pr)));
     act.appendChild(mkBtn('详情', () => {
       const gx = galleryCardExtras.get(card);
       openJobDetail({
@@ -2049,7 +2069,7 @@ function renderHistoryPanel() {
       b.addEventListener('click', fn);
       return b;
     };
-    actRow.appendChild(mkH('复制描述', () => void copyTextToClipboard(entry.prompt || '')));
+    actRow.appendChild(mkH('复制描述', () => void copyDescriptionWithToast(entry.prompt || '')));
     actRow.appendChild(mkH('详情', () => openHistEntryDetail(entry)));
     actRow.appendChild(mkH('创作同款', () => applyCreateSimilar(histEntryToDetailPayload(entry))));
     card.appendChild(actRow);

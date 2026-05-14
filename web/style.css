@@ -51,32 +51,30 @@ nav.vendor-rail {
   background: var(--surface);
   transition: width 0.2s ease, padding 0.2s ease, border-width 0.2s ease, min-width 0.2s ease;
 }
-.vendor-rail-top {
+.config-panel-toolbar {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
+  justify-content: flex-start;
+  margin: -6px 0 0 -2px;
   flex-shrink: 0;
-  min-height: 26px;
-  padding-bottom: 2px;
 }
-.vendor-rail-toggle {
+.config-panel .vendor-rail-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface2);
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
 }
-.vendor-rail-toggle:hover {
+.config-panel .vendor-rail-toggle:hover {
   color: var(--text);
-  border-color: var(--accent);
-  background: var(--surface);
+  background: var(--surface2);
 }
 .vendor-rail-toggle-icon {
   display: block;
@@ -105,11 +103,6 @@ nav.vendor-rail {
 }
 .layout.vendor-rail-hidden .vendor-rail-buttons {
   display: none !important;
-}
-.layout.vendor-rail-hidden .vendor-rail-top {
-  justify-content: center;
-  padding-bottom: 0;
-  min-height: 28px;
 }
 .vendor-btn {
   border-radius: 9px; border: 1px solid var(--border);
@@ -581,6 +574,10 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .hist-img-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; background: var(--surface2); }
 .hist-img-item a { display: block; margin-top: 4px; font-size: .68rem; color: var(--accent); text-decoration: none; }
 .hist-img-item a:hover { text-decoration: underline; }
+.hist-entry .card-actions {
+  margin-top: 0;
+  padding: 8px 14px 10px;
+}
 .hist-load-more-wrap { padding: 0 20px 20px; flex-shrink: 0; }
 .hist-load-more-btn {
   width: 100%; padding: 10px 14px; font-size: .82rem; border-radius: 8px;
@@ -705,7 +702,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 
 /* ── Job detail modal (生成详情) ── */
 .job-detail-backdrop {
-  position: fixed; inset: 0; z-index: 200; background: rgba(28,35,51,.5);
+  position: fixed; inset: 0; z-index: 400; background: rgba(28,35,51,.5);
   display: flex; align-items: center; justify-content: center; padding: 16px;
 }
 .job-detail-backdrop[hidden] { display: none !important; }
@@ -757,14 +754,34 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .job-detail-dl .status-tag.ok { background: #dcfce7; color: #166534; }
 .job-detail-dl .status-tag.fail { background: #fee2e2; color: #991b1b; }
 .job-detail-dl .status-tag.run { background: #e0e7ff; color: #3730a3; }
-.job-detail-copy-id {
-  margin-left: 8px; font-size: .7rem; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border);
-  background: var(--surface2); cursor: pointer; font-family: var(--font); color: var(--muted);
-}
-.job-detail-copy-id:hover { border-color: var(--accent); color: var(--accent); }
 .job-detail-footer { margin-top: auto; padding-top: 8px; }
 .job-detail-footer .primary {
   width: 100%; padding: 10px 16px; border-radius: 10px; border: none;
   background: var(--accent); color: #fff; font-size: .88rem; font-weight: 600; cursor: pointer; font-family: var(--font);
 }
 .job-detail-footer .primary:hover { filter: brightness(1.05); }
+
+/* ── Ephemeral toast (复制描述等) ── */
+.genpic-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 500;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: .82rem;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.genpic-toast.genpic-toast--show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
