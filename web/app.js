@@ -175,15 +175,30 @@ async function refreshAuthUser() {
   updateAuthChrome();
 }
 
+/** Single character for the header user chip (38×38); prefer display_name then email local part. */
+function userChromeInitial(u) {
+  if (!u || !u.email) return '';
+  const nick = (u.display_name || '').trim();
+  const local = (u.email.split('@')[0] || '').trim();
+  const src = nick || local;
+  const ch = src ? [...src][0] : '';
+  if (!ch) return '?';
+  return /[a-z]/i.test(ch) ? ch.toUpperCase() : ch;
+}
+
 function updateAuthChrome() {
   const btn = $('btn-auth');
   const em = $('auth-dropdown-email');
   if (!btn) return;
   if (authUser && authUser.email) {
+    btn.textContent = userChromeInitial(authUser);
     const nick = (authUser.display_name || '').trim();
-    btn.textContent = nick ? nick.slice(0, 12) : authUser.email.split('@')[0].slice(0, 12);
+    btn.title = nick ? `${nick} · ${authUser.email}` : authUser.email;
+    btn.setAttribute('aria-label', `账号菜单 · ${authUser.email}`);
   } else {
     btn.textContent = '登录';
+    btn.removeAttribute('title');
+    btn.setAttribute('aria-label', '登录');
   }
   if (em) em.textContent = authUser && authUser.email ? authUser.email : '';
 }
@@ -458,6 +473,7 @@ function setActiveModel(modelId, provider) {
   if (ms && ms.value !== modelId) ms.value = modelId;
 
   activeVendorId = provider;
+  $('btn-community')?.classList.remove('active');
   document.querySelectorAll('#vendor-rail .vendor-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.vendor === provider);
   });
@@ -526,6 +542,24 @@ function syncGemImageSizeUI(modelId) {
 function save(k, v) { try { localStorage.setItem('genpic:' + k, v); } catch {} }
 function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def; } catch { return def; } }
 
+function syncVendorRailToggleUI() {
+  const app = $('app');
+  const btn = $('btn-vendor-rail-toggle');
+  if (!btn || !app) return;
+  const hidden = app.classList.contains('vendor-rail-hidden');
+  btn.textContent = hidden ? '⟩' : '⟨';
+  btn.title = hidden ? '展开厂商栏' : '收起厂商栏';
+  btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+}
+
+function applyVendorRailHiddenFromStorage() {
+  const app = $('app');
+  if (!app) return;
+  if (load('vendor-rail-hidden', '') === '1') app.classList.add('vendor-rail-hidden');
+  else app.classList.remove('vendor-rail-hidden');
+  syncVendorRailToggleUI();
+}
+
 let uiCatalog = null;
 
 const FALLBACK_UI_CATALOG = {
@@ -575,14 +609,6 @@ function applyVendorRail() {
     b.addEventListener('click', () => selectVendor(v.id));
     rail.appendChild(b);
   });
-  const c = document.createElement('button');
-  c.type = 'button';
-  c.className = 'vendor-btn';
-  c.dataset.vendor = 'community';
-  c.textContent = '社区';
-  c.title = '公开作品广场';
-  c.addEventListener('click', () => selectVendor('community'));
-  rail.appendChild(c);
 }
 
 function getModelsForVendor(vid) {
@@ -593,17 +619,18 @@ function getModelsForVendor(vid) {
 function selectVendor(vid) {
   const sidebar = $('sidebar');
   const genArea = $('generate-area');
+  const btnComm = $('btn-community');
   if (vid === 'community') {
     activeVendorId = 'community';
     save('active-vendor', 'community');
-    document.querySelectorAll('#vendor-rail .vendor-btn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.vendor === 'community');
-    });
+    document.querySelectorAll('#vendor-rail .vendor-btn').forEach((b) => b.classList.remove('active'));
+    btnComm?.classList.add('active');
     if (sidebar) sidebar.hidden = true;
     if (genArea) genArea.dataset.view = 'community';
     void loadCommunityFeed(true);
     return;
   }
+  btnComm?.classList.remove('active');
   if (sidebar) sidebar.hidden = false;
   if (genArea) genArea.dataset.view = 'generate';
 
@@ -679,6 +706,8 @@ persistFields.forEach(id => {
 });
 
 getOrCreateGenpicSessionId();
+
+applyVendorRailHiddenFromStorage();
 
 bootstrapCredentials()
   .then(() => initCatalogAndModels())
@@ -763,6 +792,15 @@ function closeHistDrawer() {
   if (back) back.hidden = true;
   if (dr) dr.hidden = true;
 }
+
+$('btn-community')?.addEventListener('click', () => selectVendor('community'));
+
+$('btn-vendor-rail-toggle')?.addEventListener('click', () => {
+  $('app')?.classList.toggle('vendor-rail-hidden');
+  const hidden = $('app')?.classList.contains('vendor-rail-hidden');
+  save('vendor-rail-hidden', hidden ? '1' : '');
+  syncVendorRailToggleUI();
+});
 
 $('btn-hist-drawer')?.addEventListener('click', () => openHistDrawer());
 $('hist-drawer-close')?.addEventListener('click', () => closeHistDrawer());
