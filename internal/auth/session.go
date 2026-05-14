@@ -7,8 +7,7 @@ import (
 )
 
 // CreateSession generates a cryptographically random session token, stores it in
-// user_sessions with a 30-day TTL, and returns the token string. The caller is
-// responsible for setting the HTTP cookie.
+// user_sessions with the store's configured TTL, and returns the token string.
 func (s *Store) CreateSession(userID string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -16,7 +15,7 @@ func (s *Store) CreateSession(userID string) (string, error) {
 	}
 	token := fmt.Sprintf("%x", b)
 	now := time.Now()
-	expires := now.Add(sessionTTL)
+	expires := now.Add(s.sessionTTL)
 	_, err := s.db.Exec(
 		`INSERT INTO user_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
 		token, userID, expires, now,

@@ -17,20 +17,18 @@ func SetJobStore(s jobstore.Store) { jobStoreInstance = s }
 
 // jobResponse is the JSON shape returned for a single job.
 type jobResponse struct {
-	ID         string             `json:"id"`
-	Object     string             `json:"object"`
-	Model      string             `json:"model"`
-	Provider   string             `json:"provider,omitempty"`
-	// Prompt is omitted when the caller is not the job owner (privacy gate).
-	Prompt     string             `json:"prompt,omitempty"`
-	Status     string             `json:"status"`
-	Visibility string             `json:"visibility,omitempty"`
-	CreatedAt  int64              `json:"created_at"`
-	StartedAt  *int64             `json:"started_at,omitempty"`
-	FinishedAt *int64             `json:"finished_at,omitempty"`
-	Data       []jobImageData     `json:"data,omitempty"`
-	Error      *jobErrorData      `json:"error,omitempty"`
-	// Params is present when the caller is the job owner; used for "create similar".
+	ID         string              `json:"id"`
+	Object     string              `json:"object"`
+	Model      string              `json:"model"`
+	Provider   string              `json:"provider,omitempty"`
+	Prompt     string              `json:"prompt,omitempty"`
+	Status     string              `json:"status"`
+	Visibility string              `json:"visibility,omitempty"`
+	CreatedAt  int64               `json:"created_at"`
+	StartedAt  *int64              `json:"started_at,omitempty"`
+	FinishedAt *int64              `json:"finished_at,omitempty"`
+	Data       []jobImageData      `json:"data,omitempty"`
+	Error      *jobErrorData       `json:"error,omitempty"`
 	Params     *jobstore.JobParams `json:"params,omitempty"`
 }
 
@@ -46,11 +44,24 @@ type jobErrorData struct {
 	Message string `json:"message"`
 }
 
+// jobCallerOwnsPrompt reports whether the caller identified by scope should see
+// the job's prompt and params (same attribution rules as history listing).
+func jobCallerOwnsPrompt(scope jobstore.OwnerScope, j *jobstore.Job) bool {
+	if j.UserID == "" && j.SessionID == "" {
+		return true
+	}
+	if scope.UserID != "" {
+		return j.UserID != "" && scope.UserID == j.UserID
+	}
+	if scope.SessionID != "" {
+		return j.UserID == "" && j.SessionID == scope.SessionID
+	}
+	return false
+}
+
 // toJobResponse converts a Job to its JSON response shape.
-// callerUserID is used to gate prompt and params visibility: only the job
-// owner sees the full prompt and generation params.
-func toJobResponse(j *jobstore.Job, callerUserID string) jobResponse {
-	isOwner := callerUserID != "" && j.UserID != "" && callerUserID == j.UserID
+func toJobResponse(j *jobstore.Job, scope jobstore.OwnerScope) jobResponse {
+	showPrompt := jobCallerOwnsPrompt(scope, j)
 
 	r := jobResponse{
 		ID:         j.ID,
@@ -61,7 +72,7 @@ func toJobResponse(j *jobstore.Job, callerUserID string) jobResponse {
 		Visibility: j.Visibility,
 		CreatedAt:  j.CreatedAt.Unix(),
 	}
-	if isOwner {
+	if showPrompt {
 		r.Prompt = j.Prompt
 		if j.Params != nil {
 			r.Params = j.Params
@@ -89,10 +100,9 @@ func toJobResponse(j *jobstore.Job, callerUserID string) jobResponse {
 	return r
 }
 
-// toJobResponseOwner is a convenience wrapper for callers that always own the job
-// (e.g. the generate handler that just enqueued it).
+// toJobResponseOwner includes prompt/params for the job author.
 func toJobResponseOwner(j *jobstore.Job) jobResponse {
-	return toJobResponse(j, j.UserID)
+	return toJobResponse(j, jobstore.OwnerScope{UserID: j.UserID})
 }
 
 // HandleGetJob serves GET /jobs/{job_id}.
@@ -116,11 +126,10 @@ func HandleGetJob(w http.ResponseWriter, r *http.Request) {
 		Error(w, pkgerrors.NotFound("job"))
 		return
 	}
-	JSON(w, http.StatusOK, toJobResponse(j, callerUserID(r)))
+	JSON(w, http.StatusOK, toJobResponse(j, owner))
 }
 
 // HandleListJobs serves GET /jobs.
-// Supports ?limit= (default 20, max 100) and ?cursor= for pagination.
 func HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {
 		JSON(w, http.StatusOK, map[string]any{"object": "list", "data": []any{}, "next_cursor": nil})
@@ -139,12 +148,11 @@ func HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	cursor := r.URL.Query().Get("cursor")
 
 	owner := callerScopeFromRequest(r)
-	uid := callerUserID(r)
 	jobs, nextCursor := jobStoreInstance.List(limit, cursor, owner)
 
 	items := make([]jobResponse, 0, len(jobs))
 	for _, j := range jobs {
-		items = append(items, toJobResponse(j, uid))
+		items = append(items, toJobResponse(j, owner))
 	}
 
 	var nc any

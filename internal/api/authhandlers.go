@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"genpic/internal/auth"
 	pkgerrors "genpic/pkg/errors"
@@ -223,11 +222,15 @@ func HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 // ── Cookie helpers ────────────────────────────────────────────────────────────
 
 func setSessionCookie(w http.ResponseWriter, token string) {
+	maxAge := int(auth.DefaultSessionTTL.Seconds())
+	if authStoreInstance != nil {
+		maxAge = int(authStoreInstance.SessionTTL().Seconds())
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.SessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})

@@ -10,14 +10,19 @@ info:
     OpenAI, Gemini, or Wan adapters. Each request carries `base_url` and `api_key`
     for your upstream aggregator (same as the embedded web UI).
 
-    **Authentication**: these routes are **unauthenticated** in this codebase.
-    Put the service behind your own gateway or network controls for production.
-    Server defaults in `config.yaml` wire adapters but are never returned to callers.
+    **Session authentication** (when MySQL is configured):
+    - Cookie `genpic_session` — HTTP-only session token set by `POST /api/auth/register`
+      or `POST /api/auth/login`. Send requests with `credentials: include` from browsers.
+    - Authenticated requests resolve the signed-in user’s id for job ownership.
 
-    **Job owner headers** (optional):
-    - `X-Genpic-User-Id` — opaque user id when you add auth later.
-    - `X-Genpic-Session` — stable per-browser id (embedded UI sets this automatically).
-    Jobs are listed and fetched only when the same headers are sent.
+    **Job owner headers** (optional; still supported):
+    - `X-Genpic-User-Id` — opaque user id (legacy / external auth integration).
+    - `X-Genpic-Session` — stable per-browser id for anonymous history; required for
+      migrating anonymous jobs on first login when sent alongside login/register.
+    Jobs are listed and fetched only when the same cookie/session/user scope matches.
+
+    Put the service behind your own gateway or network controls for production where needed.
+    Server defaults in `config.yaml` wire adapters but are never returned to callers.
   contact:
     name: Genpic Engineering
   license:
@@ -38,8 +43,10 @@ tags:
     description: OpenAI chat completions path for image generation (POST /v1/chat/completions)
   - name: jobs
     description: Async job status (`GET /jobs`, `GET /jobs/{id}`)
+  - name: auth
+    description: User registration, login, session cookie, and privacy settings
   - name: community
-    description: Public artwork discovery (future M5)
+    description: Public artwork feed and visibility controls
   - name: health
     description: Service health and liveness
 
@@ -229,7 +236,7 @@ paths:
         `data` contains generated images.
 
         Returns **404** when the job exists but does not belong to the caller's
-        `X-Genpic-User-Id` / `X-Genpic-Session` scope.
+        scope (session cookie, `X-Genpic-User-Id`, or `X-Genpic-Session`).
       parameters:
         - $ref: "#/components/parameters/GenpicUserId"
         - $ref: "#/components/parameters/GenpicSession"
@@ -255,10 +262,10 @@ paths:
       tags: [jobs]
       summary: List recent generation jobs (newest first)
       description: |
-        Jobs are filtered by optional owner headers: when `X-Genpic-User-Id` is set,
-        only that user's jobs are returned; otherwise when `X-Genpic-Session` is set,
-        only anonymous jobs for that session; when both are absent, only legacy jobs
-        with no stored owner are listed.
+        Jobs are filtered by caller scope: authenticated users (via `genpic_session`
+        cookie) see their jobs; with `X-Genpic-User-Id` only that user's jobs;
+        with `X-Genpic-Session` only anonymous jobs for that session; when neither
+        applies as owner scope, only legacy jobs with no stored owner are listed.
       parameters:
         - $ref: "#/components/parameters/GenpicUserId"
         - $ref: "#/components/parameters/GenpicSession"
@@ -286,6 +293,218 @@ paths:
               schema:
                 $ref: "#/components/schemas/JobList"
 
+  # ── Auth & settings ────────────────────────────
+
+  /api/auth/register:
+    post:
+      operationId: authRegister
+      tags: [auth]
+      summary: Register a new account (sets session cookie)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/GenpicSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRegisterRequest"
+      responses:
+        "201":
+          description: User created; genpic_session cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPublic"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: Auth disabled (no database configured)
+
+  /api/auth/login:
+    post:
+      operationId: authLogin
+      tags: [auth]
+      summary: Log in (sets session cookie)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/GenpicSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthLoginRequest"
+      responses:
+        "200":
+          description: Login succeeded; genpic_session cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPublic"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Auth disabled (no database configured)
+
+  /api/auth/logout:
+    post:
+      operationId: authLogout
+      tags: [auth]
+      summary: Log out (clears session cookie)
+      security: []
+      responses:
+        "200":
+          description: Session cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [logged_out]
+
+  /api/auth/me:
+    get:
+      operationId: authMe
+      tags: [auth]
+      summary: Current authenticated user
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPublic"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Auth disabled
+
+  /api/user/settings:
+    get:
+      operationId: getUserSettings
+      tags: [auth]
+      summary: Read privacy settings for the signed-in user
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      responses:
+        "200":
+          description: Settings object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Auth disabled
+    put:
+      operationId: updateUserSettings
+      tags: [auth]
+      summary: Update privacy settings (partial body allowed)
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSettingsPatch"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Auth disabled
+
+  /api/jobs/{job_id}/visibility:
+    put:
+      operationId: setJobVisibility
+      tags: [community]
+      summary: Set job visibility for community feed (author only)
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Job id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobVisibilityBody"
+      responses:
+        "200":
+          description: Updated job (includes prompt and params for owner)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/community/feed:
+    get:
+      operationId: communityFeed
+      tags: [community]
+      summary: Paginated public jobs for discovery
+      description: |
+        Returns jobs with visibility public. Prompt visibility for anonymous callers
+        follows each author's prompt_public setting; logged-in users see full prompts.
+        Params for remix flows are returned only when the caller is authenticated.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from next_cursor
+      responses:
+        "200":
+          description: Feed page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityFeed"
+
 components:
 
   parameters:
@@ -309,6 +528,15 @@ components:
       description: |
         Stable random id per browser or device (for example a UUID in localStorage).
         Used for anonymous generation history when `X-Genpic-User-Id` is not set.
+    GenpicSessionCookie:
+      name: genpic_session
+      in: cookie
+      required: false
+      schema:
+        type: string
+      description: |
+        HTTP-only session cookie returned by register/login. Optional on routes that
+        treat anonymous and authenticated callers differently.
 
   schemas:
 
@@ -520,7 +748,17 @@ components:
           description: Adapter name (e.g. openai, gemini, wan)
         prompt:
           type: string
-          description: Original generation prompt (from job record)
+          description: |
+            Original prompt when the caller may view it (owner session or policy allows).
+            Empty when hidden (e.g. other users' jobs without prompt_public).
+        visibility:
+          type: string
+          enum: [private, public]
+          description: Community listing; default private
+        params:
+          description: Generation parameters for remix UIs (owner or feed rules apply)
+          allOf:
+            - $ref: "#/components/schemas/JobParams"
         status:
           $ref: "#/components/schemas/JobStatus"
         created_at:
@@ -564,6 +802,103 @@ components:
           type: string
           nullable: true
           description: Opaque cursor for pagination; null when no more pages
+
+    # ── Auth (M4) ──
+
+    AuthRegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        display_name:
+          type: string
+
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    UserPublic:
+      type: object
+      required: [id, email, display_name]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+
+    UserSettings:
+      type: object
+      required: [user_id, community_auto_public, prompt_public]
+      properties:
+        user_id:
+          type: string
+        community_auto_public:
+          type: boolean
+          description: When true, successful jobs may be listed as public automatically
+        prompt_public:
+          type: boolean
+          description: When true, anonymous community viewers may see your prompts
+
+    UserSettingsPatch:
+      type: object
+      properties:
+        community_auto_public:
+          type: boolean
+        prompt_public:
+          type: boolean
+
+    JobVisibilityBody:
+      type: object
+      required: [visibility]
+      properties:
+        visibility:
+          type: string
+          enum: [public, private]
+
+    JobParams:
+      type: object
+      properties:
+        model:
+          type: string
+        aspect_ratio:
+          type: string
+        image_size:
+          type: string
+        size:
+          type: string
+        n:
+          type: integer
+        quality:
+          type: string
+        style:
+          type: string
+
+    CommunityFeed:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationJob"
+        next_cursor:
+          type: string
+          nullable: true
 
     # ── Chat completions (M2) ──
 
@@ -714,6 +1049,18 @@ components:
   responses:
     BadRequest:
       description: Malformed request (missing fields, invalid JSON)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Conflict:
+      description: Request conflicts with current state (e.g. email already registered)
       content:
         application/json:
           schema:

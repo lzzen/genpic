@@ -1,6 +1,3 @@
--- Reference copy of goose migration (applied by the binary via internal/dbmigrate).
--- Source of truth for tooling: internal/dbmigrate/migrations/001_auth_tables.sql
-
 -- +goose Up
 CREATE TABLE IF NOT EXISTS users (
   id            VARCHAR(64)   NOT NULL PRIMARY KEY,

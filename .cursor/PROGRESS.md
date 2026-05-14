@@ -11,86 +11,77 @@
 | M1 — async POST /api/generate + jobs; MySQL job store + 图片 artifacts | ✅ 完成 | 202 + 轮询 GET /jobs/{id}; in-memory fallback; artifacts 写磁盘 |
 | **M2 — Gemini chat completions path** | ✅ 完成 | POST /v1/chat/completions；OpenAI 兼容客户端直接生图 |
 | **M3 — Wan editing + multi-image** | ✅ 完成 | Wan edit_type / bbox_list + Web UI 编辑类型与 bbox 区域 |
-| M4 — 算力账本、管理后台 | 🔲 计划中 | credit_ledger、api_keys 表、管理 UI |
-| M5 — 社区 feed、付费 SKU | 🔲 计划中 | 作品可见性、订阅、按次解锁 |
+| **M4 — 用户系统 + 异步 UX** | ✅ 完成 | Cookie 会话注册/登录；PBKDF2 密码；匿名 jobs 登录迁移；提示词按归属隐藏；前端任务队列并行轮询 |
+| **M5 — 社区 + 创作同款** | ✅ 完成 | job visibility；GET /api/community/feed；GET job 含 params；社区 UI + 隐私开关 + 创作同款 |
+
+---
+
+## M4 — 用户系统 + 异步任务 UX
+
+**目标**：内置账号（MySQL）、HTTP-only `genpic_session`、匿名历史归属迁移、非作者看不到完整 prompt（除非策略允许）、前端可多任务后台轮询。
+
+### 实现要点
+
+- **密码**：`crypto/pbkdf2`（HMAC-SHA256），非 bcrypt（离线构建友好）。
+- **迁移**：`internal/dbmigrate` 嵌入 goose 风格 SQL（`-- +goose Up`）；启动时 `dbmigrate.Up`。
+- **API**：`POST /api/auth/register|login|logout`，`GET /api/auth/me`，`GET|PUT /api/user/settings`；`internal/auth` 中间件 `OptionalAuth` 注入 ctx。
+- **`callerScope`**：`internal/api/caller.go` 优先会话用户 id，保留 header 匿名会话。
+- **前端**：`web/index.html` 登录/注册/隐私设置、`#task-queue-bar`、202 后非阻塞轮询。
+
+### 进度
+
+- [x] users / user_sessions / user_settings DDL + 应用迁移
+- [x] Auth 包 + handlers + main 路由
+- [x] 登录/注册迁移匿名 `generation_jobs`
+- [x] `toJobResponse` prompt/params 归属规则
+- [x] 任务队列 UX
+
+---
+
+## M5 — 社区 + 创作同款
+
+**目标**：作品公开/私密、`community_listed_at`、`GET /api/community/feed`、job JSON 带 `params`、社区列表与「创作同款」预填表单。
+
+### 实现要点
+
+- **`PUT /api/jobs/{job_id}/visibility`**：作者登录后可 `public` / `private`。
+- **Feed**：分页 `limit` / `cursor`；匿名 prompt 受作者 `prompt_public` 约束；已登录可看他人 prompt；`params` 仅登录返回。
+- **`community_auto_public`**：成功任务可按用户设置自动公开（见 `generate` 完成路径）。
+- **OpenAPI**：`openapi.yaml` 已补充 auth / settings / visibility / community / `JobParams`。
+
+### 进度
+
+- [x] visibility 列 + ListPublic / SetVisibility
+- [x] community handlers + 前端 feed + 历史「公开」toggle
+- [x] 创作同款（params + prompt 预填）
 
 ---
 
 ## M2 — Gemini chat completions path
 
-**目标**：实现 `POST /v1/chat/completions`，让 Cherry Studio / AI as Workspace / OpenAI-SDK 等客户端通过标准 Chat API 触发图片生成。
-
-### 设计决策
-
-- **认证**：`Authorization: Bearer <token>` 中的 token 作为上游 `api_key` 覆盖（与 POST /api/generate 的 JSON body 机制一致）。
-- **base_url**：
-  1. 优先读 `X-Base-Url` 请求头（明确指定上游）。
-  2. fallback 到服务端 `config.yaml` 对应 provider 的 `base_url`（Mode A 正式部署场景）。
-- **路由 model → provider**：与 `POST /api/generate` 完全相同的 `provider.ProviderForModel` 查找。
-- **引用图片**：`messages[].content[]` 中 `type:"image_url"` 的 base64 data URL 转换为 `ReferenceImage`。
-- **响应格式**：同步返回 OpenAI chat completions shape；`choices[0].message.content` 为 multimodal array，每张图一个 `image_url` part（`url: "data:image/png;base64,..."`）。
-- **超时**：直接继承 provider `TimeoutSeconds`；不过 async job system（chat clients 无法轮询）。
-
-### 实现文件
-
-| 文件 | 变更 |
-|------|------|
-| `internal/api/chatcompletions.go` | 新建：HandleChatCompletions + 请求/响应类型 |
-| `cmd/genpic/main.go` | 注册 `POST /v1/chat/completions` 路由 |
-| `openapi.yaml` | 添加 `/v1/chat/completions` path + schema |
+（摘要保留；详见历史提交与 `openapi.yaml`。）
 
 ### 进度
 
-- [x] 设计方案确认
-- [x] `internal/api/chatcompletions.go` 编写完成
-- [x] `internal/api/chatcompletions_test.go` 测试覆盖（6 个用例）
-- [x] 路由注册 (`cmd/genpic/main.go`)
-- [x] openapi.yaml 更新（`/v1/chat/completions` path + ChatCompletionsRequest/Response schema）
-- [x] `pkg/provider/Unregister` 辅助函数（供测试清理使用）
-- [x] go build 通过
-- [x] go test 通过（全量）
+- [x] `internal/api/chatcompletions.go` + 测试 + 路由 + openapi
 
 ---
 
 ## M3 — Wan editing + multi-image
 
-**目标**：完善万相图像编辑能力（指定编辑类型、bbox 区域控制）和前端多图上传 UI。
-
-### 设计决策
-
-- **edit_type**：在 `GenerateRequest` 增加 `WanEditType string`（`text_to_image` | `image_edit` | `inpaint`）；Wan adapter 根据类型调整 DashScope body。
-- **bbox_list**：在 `GenerateRequest` 增加 `WanBboxList []WanBbox`；Wan adapter 直接放入 `parameters.bbox_list`。
-- **多图 UI**：web/index.html 的 Wan 面板增加「编辑类型」下拉 + bbox 输入区（仅 Wan 子页显示）。
-
-### 实现文件
-
-| 文件 | 变更 |
-|------|------|
-| `internal/api/generate.go` | `GenerateRequest` 增加 `WanEditType`、`WanBboxList` 字段 |
-| `pkg/provider/provider.go` | `GenerateRequest` 增加 `WanEditType`、`WanBboxList` |
-| `internal/provider/wan/wan.go` | `buildDashScopeRequest` 支持 edit_type + bbox_list |
-| `web/index.html` | Wan 面板：编辑类型选择 + bbox 输入 |
-
 ### 进度
 
-- [x] `pkg/provider.GenerateRequest` 增加 `WanEditType string` + `WanBboxList []WanBbox`
-- [x] `pkg/provider.WanBbox` 类型定义 (x1/y1/x2/y2)
-- [x] `internal/api.GenerateRequest` 增加 `wan_edit_type` + `wan_bbox_list` JSON 字段
-- [x] Wan adapter `buildDashScopeRequest` — edit_type 验证 + bbox_list 构造
-- [x] Web UI — 编辑类型下拉（文生图 / 图像编辑 / 局部重绘）
-- [x] Web UI — bbox 添加/删除 UI（局部重绘模式下显示）
-- [x] go build + test 通过
+- [x] GenerateRequest / Wan adapter / Web UI bbox + edit_type
 
 ---
 
-## 已完成细节
+## 后续可选（未列入上述里程碑）
 
-### M1 关键实现（参考）
-
-- **Job store**：MySQL 持久化（`internal/jobstore/mysql.go`）+ in-memory fallback（24h TTL）。
-- **Artifacts**：生成的 b64 图片写入 `data/genpic-artifacts/{job_id}/`，通过 `GET /api/artifacts/{job_id}/{name}` 提供服务。
-- **Admin dashboard**：`GET /admin`（HTML）；`GET /admin/jobs`、`GET /admin/stats`（JSON API）。
-- **Integration wizard**：`GET /integrate`（HTML）；一键复制 Cherry Studio / AI as Workspace 集成配置。
+| 方向 | 备注 |
+|------|------|
+| 算力账本 / api_keys / billing | 原 PROGRESS 中「M4 账本」构想；可与当前用户系统并行演进 |
+| `pkg/objstore` | S3/OSS 工件存储 |
+| 管理后台强化 | `GET /admin` 仍为占位级 UI |
 
 ### 公共包状态
 
@@ -104,8 +95,7 @@
 | `pkg/modelmap` | ✅ | model ID 重映射 |
 | `pkg/refimages` | ✅ | 引用图片 base64 解析 + 大小限制 |
 | `pkg/compatctx` | ✅ | per-request upstream 凭证注入 |
-| `pkg/mvpconfig` | ✅ | config.yaml + env var 读取 |
-| `pkg/objstore` | 🔲 | M4/M5 时实现（S3/OSS） |
-| `pkg/billing` | 🔲 | M4 时实现 |
-| `pkg/auth` | 🔲 | M4 时实现（api_keys 表 + scope） |
-| `pkg/idempotency` | 🔲 | M4 时实现 |
+| `pkg/mvpconfig` | ✅ | config.yaml + env；含 `auth.session_ttl` |
+| `pkg/objstore` | 🔲 | 对象存储抽象 |
+| `pkg/billing` | 🔲 | 计费 |
+| `pkg/idempotency` | 🔲 | 幂等 |

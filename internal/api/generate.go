@@ -288,6 +288,24 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 		j.Images = images
 		j.FinishedAt = finished
 	})
+	maybeCommunityAutoPublic(jobID)
+}
+
+// maybeCommunityAutoPublic publishes the job when the owner opted into automatic community listing.
+func maybeCommunityAutoPublic(jobID string) {
+	authSt, ok := GetAuthStore()
+	if !ok || jobStoreInstance == nil {
+		return
+	}
+	j, ok := jobStoreInstance.Get(jobID)
+	if !ok || j.UserID == "" || j.Status != jobstore.StatusSucceeded {
+		return
+	}
+	st, err := authSt.GetSettings(j.UserID)
+	if err != nil || !st.CommunityAutoPublic {
+		return
+	}
+	_ = jobStoreInstance.SetVisibility(jobID, j.UserID, "public")
 }
 
 // runJob executes image generation for the given job in the background.

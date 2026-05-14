@@ -105,3 +105,8 @@ idempotency:
 #   X-Genpic-User-Id    — opaque logged-in user id when you add auth later
 #   X-Genpic-Session    — stable random id per browser for anonymous history
 # The embedded web UI sends X-Genpic-Session automatically (localStorage).
+
+# ── Auth (cookie sessions; requires database.dsn / MySQL) ────────────────────
+# Session cookie TTL for POST /api/auth/register and /api/auth/login (Go duration).
+# auth:
+#   session_ttl: "720h"

@@ -1,7 +1,4 @@
 // Package api — M5 community handlers.
-//
-// PUT /api/jobs/{job_id}/visibility — set a job to public or private (auth required)
-// GET /api/community/feed           — paginated public feed (unauthenticated)
 package api
 
 import (
@@ -14,7 +11,6 @@ import (
 )
 
 // HandleSetVisibility serves PUT /api/jobs/{job_id}/visibility.
-// The caller must be authenticated and own the job.
 func HandleSetVisibility(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {
 		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "not_ready", "job store not initialised"))
@@ -57,10 +53,9 @@ func HandleSetVisibility(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCommunityFeed serves GET /api/community/feed.
-// Returns public jobs newest-community_listed_at first.
-// Supports ?limit= (default 20, max 50) and ?cursor= for keyset pagination.
-// Prompt visibility: shown only when the job owner has prompt_public=true,
-// or the caller is the job owner.
+// Prompt rules: any logged-in user sees full prompts; anonymous users only when
+// the author's user_settings.prompt_public is true. Params for 「创作同款」 are
+// returned only to logged-in callers.
 func HandleCommunityFeed(w http.ResponseWriter, r *http.Request) {
 	if jobStoreInstance == nil {
 		JSON(w, http.StatusOK, map[string]any{"object": "list", "data": []any{}, "next_cursor": nil})
@@ -83,11 +78,20 @@ func HandleCommunityFeed(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]jobResponse, 0, len(jobs))
 	for _, j := range jobs {
-		resp := toJobResponse(j, callerUID)
-		// For non-owners: prompt is gated by owner's prompt_public setting.
-		if callerUID != j.UserID {
-			resp.Prompt = communityFeedPrompt(j)
-			resp.Params = nil // params are only for the owner
+		scope := jobstore.OwnerScope{UserID: callerUID}
+		resp := toJobResponse(j, scope)
+
+		if callerUID != "" {
+			if callerUID != j.UserID {
+				resp.Prompt = j.Prompt
+				if j.Params != nil {
+					cp := *j.Params
+					resp.Params = &cp
+				}
+			}
+		} else {
+			resp.Prompt = communityFeedPromptAnonymous(j)
+			resp.Params = nil
 		}
 		items = append(items, resp)
 	}
@@ -103,10 +107,7 @@ func HandleCommunityFeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// communityFeedPrompt returns the prompt visible to non-owner community viewers.
-// It checks the job owner's prompt_public setting via the auth store.
-// Returns empty string when the setting is false or the auth store is unavailable.
-func communityFeedPrompt(j *jobstore.Job) string {
+func communityFeedPromptAnonymous(j *jobstore.Job) string {
 	if authStoreInstance == nil || j.UserID == "" {
 		return ""
 	}

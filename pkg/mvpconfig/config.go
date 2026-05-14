@@ -48,6 +48,11 @@ type databaseYAML struct {
 	MaxIdleConns int    `yaml:"max_idle_conns"`
 }
 
+// authYAML holds optional auth/session tuning (cmd/genpic).
+type authYAML struct {
+	SessionTTL string `yaml:"session_ttl"`
+}
+
 // rootYAML is the full config.yaml structure. Unknown keys are ignored.
 type rootYAML struct {
 	Server     serverYAML        `yaml:"server"`
@@ -58,6 +63,7 @@ type rootYAML struct {
 	Wan        providerYAML      `yaml:"wan"`
 	RateLimit  rateLimitYAML     `yaml:"rate_limit"`
 	Database   databaseYAML      `yaml:"database"`
+	Auth       authYAML          `yaml:"auth"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -103,6 +109,14 @@ type Config struct {
 	// ArtifactsDir is the directory where generated images are written for GET /api/artifacts/...
 	// Resolved in cmd/genpic with GENPIC_ARTIFACTS_DIR override; "-" means disabled.
 	ArtifactsDir string
+
+	// Auth configures cookie-backed sessions (cmd/genpic; requires database).
+	Auth AuthConfig
+}
+
+// AuthConfig holds session lifetime for auth.NewStore.
+type AuthConfig struct {
+	SessionTTL time.Duration
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -132,6 +146,7 @@ func Read(path string) (Config, error) {
 		GlobalRPM:      root.RateLimit.GlobalRPM,
 		Database:       resolveDatabase(root.Database),
 		ArtifactsDir:   strings.TrimSpace(root.Server.ArtifactsDir),
+		Auth:           resolveAuth(root.Auth),
 	}
 
 	return c, nil
@@ -152,6 +167,19 @@ func resolveDatabase(y databaseYAML) DatabaseConfig {
 		maxIdle = 5
 	}
 	return DatabaseConfig{DSN: dsn, MaxOpenConns: maxOpen, MaxIdleConns: maxIdle}
+}
+
+func resolveAuth(y authYAML) AuthConfig {
+	def := 30 * 24 * time.Hour
+	raw := strings.TrimSpace(y.SessionTTL)
+	if raw == "" {
+		return AuthConfig{SessionTTL: def}
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return AuthConfig{SessionTTL: def}
+	}
+	return AuthConfig{SessionTTL: d}
 }
 
 // resolveProvider fills base_url and api_key from env vars when not present

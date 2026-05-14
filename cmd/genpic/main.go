@@ -39,6 +39,7 @@ import (
 	genpic "genpic"
 	"genpic/internal/api"
 	"genpic/internal/auth"
+	"genpic/internal/dbmigrate"
 	"genpic/internal/jobstore"
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
@@ -81,6 +82,12 @@ func main() {
 		}
 		store = ms
 		log.Info("job store initialised", "type", "mysql")
+
+		if err := dbmigrate.Up(ms.DB()); err != nil {
+			slog.Error("database migrations failed", "error", err)
+			os.Exit(1)
+		}
+		log.Info("database migrations applied")
 	} else {
 		store = jobstore.NewMemory(ctx, 2*time.Hour)
 		log.Info("job store initialised", "type", "in-memory", "ttl", "2h",
@@ -91,7 +98,7 @@ func main() {
 	// ── Auth store (shares the MySQL DB, no-op when in-memory) ───────────────
 	if ms, ok := store.(*jobstore.MySQL); ok {
 		db := ms.DB()
-		authStore, err := auth.NewStore(db)
+		authStore, err := auth.NewStore(db, cfg.Auth.SessionTTL)
 		if err != nil {
 			slog.Error("auth store: init failed", "error", err)
 			os.Exit(1)

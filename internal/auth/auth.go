@@ -1,16 +1,12 @@
 // Package auth implements user registration/login, server-side sessions,
 // and HTTP middleware for the Genpic platform.
 //
-// Password storage: PBKDF2-HMAC-SHA256 (100 000 iterations, 32-byte key)
-// via the Go 1.24 standard library crypto/pbkdf2 package. No external
-// dependencies are required.
+// Password storage uses PBKDF2-HMAC-SHA256 via crypto/pbkdf2 (Go 1.24+).
 //
-// Session tokens: 32-byte cryptographically random hex strings stored in
-// the user_sessions table. Each token is transmitted via an HTTP-only
-// cookie (genpic_session) with SameSite=Lax and a 30-day TTL.
+// Session tokens are random hex strings stored in user_sessions and sent as the
+// HTTP-only cookie genpic_session (SameSite=Lax).
 //
-// Schema: see db/migrations/001_auth_tables.sql. Tables are created
-// automatically by NewStore.
+// Schema: SQL embedded under internal/dbmigrate/migrations (applied by cmd/genpic).
 package auth
 
 import (
@@ -27,22 +23,20 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
-// Sentinel errors returned by Store methods.
 var (
-	ErrEmailTaken          = errors.New("auth: email already registered")
-	ErrInvalidCredentials  = errors.New("auth: invalid email or password")
-	ErrSessionNotFound     = errors.New("auth: session not found or expired")
+	ErrEmailTaken         = errors.New("auth: email already registered")
+	ErrInvalidCredentials = errors.New("auth: invalid email or password")
+	ErrSessionNotFound    = errors.New("auth: session not found or expired")
 )
 
 const (
-	pbkdf2Iter   = 100_000
-	pbkdf2Salt   = 16
-	pbkdf2Key    = 32
-	sessionTTL   = 30 * 24 * time.Hour
-	SessionCookie = "genpic_session"
+	pbkdf2Iter      = 100_000
+	pbkdf2SaltBytes = 16
+	pbkdf2KeyBytes  = 32
+	DefaultSessionTTL = 30 * 24 * time.Hour
+	SessionCookie      = "genpic_session"
 )
 
-// User is a registered platform user.
 type User struct {
 	ID          string
 	Email       string
@@ -50,61 +44,29 @@ type User struct {
 	CreatedAt   time.Time
 }
 
-// UserSettings holds per-user privacy preferences.
 type UserSettings struct {
-	UserID              string
-	CommunityAutoPublic bool
-	PromptPublic        bool
+	UserID              string `json:"user_id"`
+	CommunityAutoPublic bool   `json:"community_auto_public"`
+	PromptPublic        bool   `json:"prompt_public"`
 }
 
-// Store wraps a *sql.DB and provides all auth operations.
-// It shares the application database with the job store.
 type Store struct {
-	db *sql.DB
+	db         *sql.DB
+	sessionTTL time.Duration
 }
 
-// NewStore creates the auth tables (if absent) and returns a Store.
-// The *sql.DB must already be open and reachable (e.g. pass the same db
-// used by jobstore.NewMySQL).
-func NewStore(db *sql.DB) (*Store, error) {
-	for _, ddl := range authDDLStatements {
-		if _, err := db.Exec(ddl); err != nil {
-			return nil, fmt.Errorf("auth: apply schema: %w", err)
-		}
+func NewStore(db *sql.DB, sessionTTL time.Duration) (*Store, error) {
+	if db == nil {
+		return nil, fmt.Errorf("auth: nil db")
 	}
-	return &Store{db: db}, nil
+	if sessionTTL <= 0 {
+		sessionTTL = DefaultSessionTTL
+	}
+	return &Store{db: db, sessionTTL: sessionTTL}, nil
 }
 
-// authDDLStatements are run once on startup — idempotent CREATE TABLE IF NOT EXISTS.
-var authDDLStatements = []string{
-	`CREATE TABLE IF NOT EXISTS users (
-		id            VARCHAR(64)   NOT NULL PRIMARY KEY,
-		email         VARCHAR(254)  NOT NULL,
-		password_hash VARCHAR(256)  NOT NULL,
-		display_name  VARCHAR(128)  NOT NULL DEFAULT '',
-		created_at    DATETIME(3)   NOT NULL,
-		updated_at    DATETIME(3)   NOT NULL,
-		UNIQUE KEY uk_email (email)
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-	`CREATE TABLE IF NOT EXISTS user_sessions (
-		id         VARCHAR(128) NOT NULL PRIMARY KEY,
-		user_id    VARCHAR(64)  NOT NULL,
-		expires_at DATETIME(3)  NOT NULL,
-		created_at DATETIME(3)  NOT NULL,
-		INDEX idx_sess_user    (user_id),
-		INDEX idx_sess_expires (expires_at)
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-	`CREATE TABLE IF NOT EXISTS user_settings (
-		user_id               VARCHAR(64) NOT NULL PRIMARY KEY,
-		community_auto_public TINYINT(1)  NOT NULL DEFAULT 0,
-		prompt_public         TINYINT(1)  NOT NULL DEFAULT 0,
-		updated_at            DATETIME(3) NOT NULL
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-}
+func (s *Store) SessionTTL() time.Duration { return s.sessionTTL }
 
-// ── User operations ──────────────────────────────────────────────────────────
-
-// Register creates a new user. Returns ErrEmailTaken if the email is already used.
 func (s *Store) Register(email, password, displayName string) (*User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" {
@@ -134,7 +96,6 @@ func (s *Store) Register(email, password, displayName string) (*User, error) {
 	return &User{ID: id, Email: email, DisplayName: strings.TrimSpace(displayName), CreatedAt: now}, nil
 }
 
-// Login verifies credentials and returns the user. Returns ErrInvalidCredentials on mismatch.
 func (s *Store) Login(email, password string) (*User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var u User
@@ -154,7 +115,6 @@ func (s *Store) Login(email, password string) (*User, error) {
 	return &u, nil
 }
 
-// GetUser returns a user by ID, or (nil, false) if not found.
 func (s *Store) GetUser(id string) (*User, bool) {
 	var u User
 	err := s.db.QueryRow(
@@ -166,8 +126,6 @@ func (s *Store) GetUser(id string) (*User, bool) {
 	return &u, true
 }
 
-// GetSettings returns the privacy settings for a user. If no settings row exists,
-// returns defaults (all false).
 func (s *Store) GetSettings(userID string) (*UserSettings, error) {
 	st := &UserSettings{UserID: userID}
 	err := s.db.QueryRow(
@@ -182,7 +140,6 @@ func (s *Store) GetSettings(userID string) (*UserSettings, error) {
 	return st, nil
 }
 
-// UpdateSettings upserts privacy settings for a user.
 func (s *Store) UpdateSettings(st *UserSettings) error {
 	_, err := s.db.Exec(
 		`INSERT INTO user_settings (user_id, community_auto_public, prompt_public, updated_at)
@@ -202,9 +159,6 @@ func (s *Store) UpdateSettings(st *UserSettings) error {
 	return nil
 }
 
-// MigrateAnonymousJobs reassigns generation_jobs rows that were created under
-// sessionID (anonymous) to the now-authenticated userID. Called once on login
-// so the user sees their pre-login history.
 func (s *Store) MigrateAnonymousJobs(userID, sessionID string) {
 	if userID == "" || sessionID == "" {
 		return
@@ -216,15 +170,15 @@ func (s *Store) MigrateAnonymousJobs(userID, sessionID string) {
 	)
 }
 
-// ── Password hashing ─────────────────────────────────────────────────────────
-
-// hashPassword returns a string of the form "pbkdf2-sha256:iter:salt_b64:key_b64".
 func hashPassword(password string) (string, error) {
-	salt := make([]byte, pbkdf2Salt)
+	salt := make([]byte, pbkdf2SaltBytes)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key := pbkdf2.Key([]byte(password), salt, pbkdf2Iter, pbkdf2Key, sha256.New)
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iter, pbkdf2KeyBytes)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("pbkdf2-sha256:%d:%s:%s",
 		pbkdf2Iter,
 		base64.RawStdEncoding.EncodeToString(salt),
@@ -232,7 +186,6 @@ func hashPassword(password string) (string, error) {
 	), nil
 }
 
-// checkPassword verifies a plaintext password against a stored hash string.
 func checkPassword(password, stored string) bool {
 	parts := strings.Split(stored, ":")
 	if len(parts) != 4 || parts[0] != "pbkdf2-sha256" {
@@ -250,8 +203,10 @@ func checkPassword(password, stored string) bool {
 	if err != nil {
 		return false
 	}
-	computed := pbkdf2.Key([]byte(password), salt, iter, len(expected), sha256.New)
-	// constant-time compare
+	computed, err := pbkdf2.Key(sha256.New, password, salt, iter, len(expected))
+	if err != nil {
+		return false
+	}
 	if len(computed) != len(expected) {
 		return false
 	}
@@ -261,8 +216,6 @@ func checkPassword(password, stored string) bool {
 	}
 	return diff == 0
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 func newID() (string, error) {
 	b := make([]byte, 16)
@@ -278,3 +231,9 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// HashPassword derives a stored credential string (for tests or tooling).
+func HashPassword(password string) (string, error) { return hashPassword(password) }
+
+// CheckPassword verifies a password against a stored hash string.
+func CheckPassword(password, stored string) bool { return checkPassword(password, stored) }
