@@ -251,6 +251,43 @@ function normalizeJobDetailPayload(obj) {
   };
 }
 
+/** Same-origin artifact URL → companion JPEG preview path (lazy-generated on server). */
+function genpicArtifactThumbFromUrl(url) {
+  const u = String(url || '').trim();
+  const m = u.match(/^\/api\/artifacts\/([a-f0-9]{32})\/(\d+)\.([a-z0-9]+)$/i);
+  if (!m) return '';
+  return '/api/artifacts/' + m[1] + '/' + m[2] + '_thumb.jpg';
+}
+
+/** Small image for lists/cards (preview); falls back to full URL or data URI. */
+function genpicImgListSrc(img) {
+  if (!img) return '';
+  const t = String(img.thumb_url || '').trim();
+  if (t) return t;
+  const guess = genpicArtifactThumbFromUrl(img.url);
+  if (guess) return guess;
+  if (img.b64_json) return 'data:' + (img.mime_type || 'image/png') + ';base64,' + img.b64_json;
+  if (img.url) return String(img.url).trim();
+  return '';
+}
+
+/** Full-resolution source for modal / download. */
+function genpicImgFullSrc(img) {
+  if (!img) return '';
+  if (img.url) return String(img.url).trim();
+  if (img.b64_json) return 'data:' + (img.mime_type || 'image/png') + ';base64,' + img.b64_json;
+  return '';
+}
+
+/** If preview URL fails (e.g. webp without server-side thumb), load full image once. */
+function genpicBindPreviewImgFallback(el, img) {
+  if (!el || !img) return;
+  el.addEventListener('error', () => {
+    const u = genpicImgFullSrc(img);
+    if (u && el.src !== u) el.src = u;
+  }, { once: true });
+}
+
 function resolveProcessingMs(ctx) {
   if (ctx.processing_ms != null && Number.isFinite(Number(ctx.processing_ms))) return Number(ctx.processing_ms);
   const fs = ctx.finished_at;
@@ -303,9 +340,7 @@ function openJobDetail(raw) {
   const pr = $('job-detail-prompt');
   const meta = $('job-detail-meta');
   const im0 = (ctx.images && ctx.images[0]) ? ctx.images[0] : {};
-  let src = '';
-  if (im0.url) src = im0.url;
-  else if (im0.b64_json) src = 'data:' + (im0.mime_type || 'image/png') + ';base64,' + im0.b64_json;
+  const src = genpicImgFullSrc(im0);
   if (img) {
     img.src = src || '';
     img.hidden = !src;
@@ -569,12 +604,14 @@ function renderCommunityCard(job) {
   const card = document.createElement('div');
   card.className = 'comm-card';
   const img0 = (job.data || [])[0];
-  if (img0 && img0.url) {
+  const list0 = genpicImgListSrc(img0);
+  if (img0 && list0) {
     const im = document.createElement('img');
     im.className = 'comm-card-img';
     im.alt = '';
     im.loading = 'lazy';
-    im.src = img0.url;
+    im.src = genpicImgListSrc(img0);
+    genpicBindPreviewImgFallback(im, img0);
     im.style.cursor = 'pointer';
     im.addEventListener('click', () => {
       if (job.id) void openJobDetailFetchById(job.id);
@@ -1476,11 +1513,9 @@ function addImages(images, model, provider, prompt = '') {
     galleryCardExtras.set(card, { body: bodySnap, refs: refSnap });
 
     const image = document.createElement('img');
-    if (img.url) { image.src = img.url; }
-    else if (img.b64_json) {
-      const mt = img.mime_type || 'image/png';
-      image.src = 'data:' + mt + ';base64,' + img.b64_json;
-    }
+    const listSrc = genpicImgListSrc(img);
+    if (listSrc) { image.src = listSrc; }
+    genpicBindPreviewImgFallback(image, img);
     image.alt = model;
     image.loading = 'lazy';
     image.style.cursor = 'pointer';
@@ -1491,7 +1526,7 @@ function addImages(images, model, provider, prompt = '') {
         provider,
         prompt: pr,
         status: 'succeeded',
-        images: [{ url: img.url, mime_type: img.mime_type, b64_json: img.b64_json }],
+        images: [{ url: img.url, thumb_url: img.thumb_url, mime_type: img.mime_type, b64_json: img.b64_json }],
         params: gx?.body || {},
         created_at: Math.floor(Date.now() / 1000),
       });
@@ -1507,7 +1542,7 @@ function addImages(images, model, provider, prompt = '') {
       link = `<a href="${img.url}" target="_blank" rel="noopener">原图 ↗</a>`;
     } else if (img.b64_json) {
       const a = document.createElement('a');
-      a.href = image.src;
+      a.href = genpicImgFullSrc(img);
       a.download = 'genpic-' + Date.now() + '.png';
       a.textContent = '下载 ↓';
       link = a.outerHTML;
@@ -1539,7 +1574,7 @@ function addImages(images, model, provider, prompt = '') {
         provider,
         prompt: pr,
         status: 'succeeded',
-        images: [{ url: img.url, mime_type: img.mime_type, b64_json: img.b64_json }],
+        images: [{ url: img.url, thumb_url: img.thumb_url, mime_type: img.mime_type, b64_json: img.b64_json }],
         params: gx?.body || {},
         created_at: Math.floor(Date.now() / 1000),
       });
@@ -1699,6 +1734,7 @@ function histPush(entry) {
     source: entry.source || 'local',
     images: (entry.images || []).map(img => ({
       url: img.url || undefined,
+      thumb_url: img.thumb_url || undefined,
       mime_type: img.mime_type || undefined,
       revised_prompt: img.revised_prompt || undefined,
       b64_json: (img.b64_json && img.b64_json.length <= MAX_B64) ? img.b64_json : undefined,
@@ -1756,6 +1792,7 @@ function jobRecordToHistEntry(job) {
   if (!job || !job.id) return null;
   const images = (job.data || []).map(img => ({
     url: img.url,
+    thumb_url: img.thumb_url,
     b64_json: img.b64_json,
     mime_type: img.mime_type,
     revised_prompt: img.revised_prompt,
@@ -1899,6 +1936,7 @@ function saveToHistory(images, model, provider, prompt, serverJobId, jobPoll, re
     source: serverJobId ? 'server' : 'local',
     images: images.map(img => ({
       url: img.url,
+      thumb_url: img.thumb_url,
       b64_json: img.b64_json,
       mime_type: img.mime_type,
       revised_prompt: img.revised_prompt,
@@ -2048,16 +2086,18 @@ function renderHistoryPanel() {
       el.loading = 'lazy';
       if (img.b64_json) {
         el.src = 'data:' + (img.mime_type || 'image/png') + ';base64,' + img.b64_json;
-      } else if (img.url) {
-        el.src = img.url;
+      } else {
+        const ls = genpicImgListSrc(img);
+        if (ls) el.src = ls;
       }
+      genpicBindPreviewImgFallback(el, img);
       el.style.cursor = 'pointer';
       el.addEventListener('click', () => openHistEntryDetail(entry));
       item.appendChild(el);
 
       const a = document.createElement('a');
       if (img.b64_json) {
-        a.href = el.src;
+        a.href = genpicImgFullSrc(img);
         a.download = 'genpic-' + entry.ts + '.png';
         a.textContent = '下载';
       } else if (img.url) {

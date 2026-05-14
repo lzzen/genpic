@@ -22,6 +22,7 @@ import (
 // async job result. Promoted to package level so runJob can populate jobstore.Image.
 type imageData struct {
 	URL           string `json:"url,omitempty"`
+	ThumbURL      string `json:"thumb_url,omitempty"`
 	B64JSON       string `json:"b64_json,omitempty"`
 	MimeType      string `json:"mime_type,omitempty"`
 	RevisedPrompt string `json:"revised_prompt,omitempty"`
@@ -298,6 +299,7 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 		for _, d := range data {
 			images = append(images, jobstore.SanitizeImageForStorage(jobstore.Image{
 				URL:           d.URL,
+				ThumbURL:      d.ThumbURL,
 				B64JSON:       d.B64JSON,
 				MIMEType:      d.MimeType,
 				RevisedPrompt: d.RevisedPrompt,

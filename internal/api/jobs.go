@@ -38,6 +38,7 @@ type jobResponse struct {
 
 type jobImageData struct {
 	URL           string `json:"url,omitempty"`
+	ThumbURL      string `json:"thumb_url,omitempty"`
 	B64JSON       string `json:"b64_json,omitempty"`
 	MIMEType      string `json:"mime_type,omitempty"`
 	RevisedPrompt string `json:"revised_prompt,omitempty"`
@@ -104,6 +105,7 @@ func toJobResponse(j *jobstore.Job, scope jobstore.OwnerScope) jobResponse {
 	for _, img := range j.Images {
 		r.Data = append(r.Data, jobImageData{
 			URL:           img.URL,
+			ThumbURL:      img.ThumbURL,
 			B64JSON:       img.B64JSON,
 			MIMEType:      img.MIMEType,
 			RevisedPrompt: img.RevisedPrompt,

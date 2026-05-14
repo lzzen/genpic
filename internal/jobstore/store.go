@@ -31,6 +31,7 @@ const (
 // Image holds a single generated image result.
 type Image struct {
 	URL           string `json:"url,omitempty"`
+	ThumbURL      string `json:"thumb_url,omitempty"`
 	B64JSON       string `json:"b64_json,omitempty"`
 	MIMEType      string `json:"mime_type,omitempty"`
 	RevisedPrompt string `json:"revised_prompt,omitempty"`

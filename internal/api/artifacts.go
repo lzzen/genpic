@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	artifactsMu     sync.RWMutex
-	artifactsRoot   string // empty → materialization disabled
-	validJobID      = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	validArtifactFn = regexp.MustCompile(`^([0-9]+)\.(png|jpg|jpeg|webp|gif)$`)
+	artifactsMu          sync.RWMutex
+	artifactsRoot        string // empty → materialization disabled
+	validJobID           = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	validPrimaryArtifact = regexp.MustCompile(`^([0-9]+)\.(png|jpg|jpeg|webp|gif)$`)
+	validThumbArtifact   = regexp.MustCompile(`^([0-9]+)_thumb\.jpg$`)
 )
 
 // SetArtifactsRoot sets the on-disk directory for saved generation images.
@@ -74,10 +75,56 @@ func materializeJobImages(jobID string, out map[string]any) error {
 		}
 		next[i].URL = "/api/artifacts/" + jobID + "/" + fn
 		next[i].B64JSON = ""
+		thumbFn := fmt.Sprintf("%d_thumb.jpg", i)
+		thumbPath := filepath.Join(jobDir, thumbFn)
+		if err := writeJPEGThumbFile(b, next[i].MimeType, thumbPath); err == nil {
+			next[i].ThumbURL = "/api/artifacts/" + jobID + "/" + thumbFn
+		}
 	}
 
 	out["data"] = next
 	return nil
+}
+
+func mimeFromArtifactExt(ext string) string {
+	switch strings.ToLower(strings.TrimPrefix(ext, ".")) {
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "webp":
+		return "image/webp"
+	case "gif":
+		return "image/gif"
+	default:
+		return "image/png"
+	}
+}
+
+// ensureArtifactThumb creates {index}_thumb.jpg from the primary artifact on disk
+// when the thumbnail is missing (e.g. jobs created before previews existed).
+func ensureArtifactThumb(jobDir string, thumbNameLower string) error {
+	m := validThumbArtifact.FindStringSubmatch(thumbNameLower)
+	if m == nil {
+		return fmt.Errorf("invalid thumb filename")
+	}
+	index := m[1]
+	thumbPath := filepath.Join(jobDir, thumbNameLower)
+	if fi, err := os.Stat(thumbPath); err == nil && !fi.IsDir() {
+		return nil
+	}
+	exts := []string{"png", "jpg", "jpeg", "webp", "gif"}
+	for _, ext := range exts {
+		p := filepath.Join(jobDir, index+"."+ext)
+		fi, err := os.Stat(p)
+		if err != nil || fi.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return writeJPEGThumbFile(b, mimeFromArtifactExt(ext), thumbPath)
+	}
+	return fmt.Errorf("primary artifact not found for index %s", index)
 }
 
 func extForMIME(mime string) string {
@@ -107,7 +154,12 @@ func HandleServeArtifact(w http.ResponseWriter, r *http.Request) {
 
 	jobID := strings.TrimSpace(r.PathValue("job_id"))
 	name := strings.TrimSpace(r.PathValue("name"))
-	if !validJobID.MatchString(jobID) || !validArtifactFn.MatchString(strings.ToLower(name)) {
+	nameLower := strings.ToLower(filepath.Base(name))
+	if !validJobID.MatchString(jobID) {
+		Error(w, pkgerrors.NotFound("artifact"))
+		return
+	}
+	if !validPrimaryArtifact.MatchString(nameLower) && !validThumbArtifact.MatchString(nameLower) {
 		Error(w, pkgerrors.NotFound("artifact"))
 		return
 	}
@@ -118,14 +170,20 @@ func HandleServeArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jobDir := filepath.Join(rootAbs, jobID)
-	full := filepath.Join(jobDir, filepath.Base(name))
-
 	jobDirAbs, err := filepath.Abs(jobDir)
 	if err != nil {
 		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_path", err.Error()))
 		return
 	}
-	fullAbs, err := filepath.Abs(full)
+
+	if validThumbArtifact.MatchString(nameLower) {
+		if err := ensureArtifactThumb(jobDirAbs, nameLower); err != nil {
+			Error(w, pkgerrors.NotFound("artifact"))
+			return
+		}
+	}
+
+	fullAbs, err := filepath.Abs(filepath.Join(jobDirAbs, nameLower))
 	if err != nil {
 		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_path", err.Error()))
 		return

@@ -332,6 +332,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .img-card .provider-badge.gemini { border-color: var(--accent2); color: var(--accent2); }
 .img-card .provider-badge.wan { border-color: var(--accent3); color: var(--accent3); }
 .img-card .revised { padding: 0 13px 8px; font-size: .73rem; color: var(--muted); font-style: italic; line-height: 1.4; }
+.img-card .card-actions { padding-left: 14px; padding-bottom: 10px; }
 
 .spinner { width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
 .btn-gen .spinner {

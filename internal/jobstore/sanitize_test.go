@@ -13,6 +13,7 @@ func TestSanitizeImageForStorage_stripsLargeB64AndThoughtSignature(t *testing.T)
 		RevisedPrompt: `prefix "thoughtSignature":"` + strings.Repeat("Z", 80) + `" suffix`,
 		MIMEType:      "image/png",
 		URL:           "https://example.com/x.png",
+		ThumbURL:      "https://example.com/x_thumb.jpg",
 	}
 	out := jobstore.SanitizeImageForStorage(img)
 	if out.B64JSON != "" {
@@ -21,7 +22,7 @@ func TestSanitizeImageForStorage_stripsLargeB64AndThoughtSignature(t *testing.T)
 	if !strings.Contains(out.RevisedPrompt, "[omitted]") {
 		t.Fatalf("revised_prompt: %q", out.RevisedPrompt)
 	}
-	if out.URL != img.URL || out.MIMEType != img.MIMEType {
+	if out.URL != img.URL || out.MIMEType != img.MIMEType || out.ThumbURL != img.ThumbURL {
 		t.Fatalf("unexpected field change")
 	}
 }
