@@ -36,6 +36,14 @@ type Image struct {
 	RevisedPrompt string `json:"revised_prompt,omitempty"`
 }
 
+// JobBBox mirrors provider bounding boxes for persisted job params.
+type JobBBox struct {
+	X1 int `json:"x1"`
+	Y1 int `json:"y1"`
+	X2 int `json:"x2"`
+	Y2 int `json:"y2"`
+}
+
 // JobParams stores the generation parameters used to create the job.
 // Persisted alongside the job for "create similar" functionality (M5).
 type JobParams struct {
@@ -46,6 +54,12 @@ type JobParams struct {
 	N           int    `json:"n,omitempty"`
 	Quality     string `json:"quality,omitempty"`
 	Style       string `json:"style,omitempty"`
+
+	ResponseFormat string    `json:"response_format,omitempty"`
+	ThinkingBudget int       `json:"thinking_budget,omitempty"`
+	ThinkingMode   bool      `json:"thinking_mode,omitempty"`
+	WanEditType    string    `json:"wan_edit_type,omitempty"`
+	WanBboxList    []JobBBox `json:"wan_bbox_list,omitempty"`
 }
 
 // Job is the canonical record for one image-generation request.
@@ -60,11 +74,13 @@ type Job struct {
 	ErrorMsg   string
 	Images     []Image
 	TokensUsed int
-	Params     *JobParams
+	// UpstreamRequestID is the provider-side request id when reported (e.g. Gemini).
+	UpstreamRequestID string
+	Params            *JobParams
 
 	// Visibility controls community listing: "private" (default) or "public".
-	Visibility          string
-	CommunityListedAt   time.Time
+	Visibility        string
+	CommunityListedAt time.Time
 
 	CreatedAt  time.Time
 	StartedAt  time.Time
@@ -125,14 +141,14 @@ type Store interface {
 // ─── Memory implementation ────────────────────────────────────────────────────
 
 const (
-	defaultTTL   = 2 * time.Hour
-	evictPeriod  = 1 * time.Minute
+	defaultTTL  = 2 * time.Hour
+	evictPeriod = 1 * time.Minute
 )
 
 // Memory is a goroutine-safe in-memory job store.
 type Memory struct {
 	mu      sync.Mutex
-	ordered []*Job   // insertion order (newest appended; list is reversed)
+	ordered []*Job // insertion order (newest appended; list is reversed)
 	index   map[string]*Job
 	ttl     time.Duration
 }

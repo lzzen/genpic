@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   error_msg            TEXT          NOT NULL,
   images               MEDIUMTEXT,
   tokens_used          INT           NOT NULL DEFAULT 0,
+  upstream_request_id  VARCHAR(128)  NOT NULL DEFAULT '',
   key_id               VARCHAR(64)   NOT NULL DEFAULT '',
   user_id              VARCHAR(128)  NOT NULL DEFAULT '',
   session_id           VARCHAR(128)  NOT NULL DEFAULT '',
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 `
 
 const mysqlCols = `id, model, provider, prompt, status, error_code, error_msg,
-  images, tokens_used, key_id, user_id, session_id, visibility, community_listed_at, params,
+  images, tokens_used, upstream_request_id, key_id, user_id, session_id, visibility, community_listed_at, params,
   created_at, started_at, finished_at`
 
 // MySQL is a MySQL-backed job store satisfying the Store interface.
@@ -101,6 +102,7 @@ func migrateMySQLSchema(db *sql.DB) error {
 		`ALTER TABLE generation_jobs ADD COLUMN community_listed_at DATETIME(3) NULL`,
 		`ALTER TABLE generation_jobs ADD COLUMN params TEXT NULL`,
 		`ALTER TABLE generation_jobs ADD INDEX idx_visibility_created (visibility, created_at, id)`,
+		`ALTER TABLE generation_jobs ADD COLUMN upstream_request_id VARCHAR(128) NOT NULL DEFAULT ''`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {
@@ -150,13 +152,13 @@ func (s *MySQL) Create(job *Job) (string, error) {
 	_, err = s.db.Exec(`
 		INSERT INTO generation_jobs
 		  (id, model, provider, prompt, status, error_code, error_msg,
-		   images, tokens_used, key_id, user_id, session_id,
+		   images, tokens_used, upstream_request_id, key_id, user_id, session_id,
 		   visibility, community_listed_at, params,
 		   created_at, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Model, job.Provider, job.Prompt,
 		string(job.Status), job.ErrorCode, job.ErrorMsg,
-		imagesJSON, job.TokensUsed, job.KeyID, job.UserID, job.SessionID,
+		imagesJSON, job.TokensUsed, job.UpstreamRequestID, job.KeyID, job.UserID, job.SessionID,
 		vis, nullTime(job.CommunityListedAt), paramsJSON,
 		job.CreatedAt, nullTime(job.StartedAt), nullTime(job.FinishedAt),
 	)
@@ -206,10 +208,10 @@ func (s *MySQL) Update(id string, fn func(*Job)) bool {
 	_, err = tx.Exec(`
 		UPDATE generation_jobs SET
 		  status = ?, error_code = ?, error_msg = ?,
-		  images = ?, tokens_used = ?, started_at = ?, finished_at = ?
+		  images = ?, tokens_used = ?, upstream_request_id = ?, started_at = ?, finished_at = ?
 		WHERE id = ?`,
 		string(j.Status), j.ErrorCode, j.ErrorMsg,
-		imagesJSON, j.TokensUsed,
+		imagesJSON, j.TokensUsed, j.UpstreamRequestID,
 		nullTime(j.StartedAt), nullTime(j.FinishedAt),
 		id,
 	)
@@ -362,18 +364,18 @@ func scanJobRows(r *sql.Rows) (*Job, error) {
 
 func doScan(s rowScanner) (*Job, error) {
 	var (
-		j                  Job
-		status             string
-		imgData            []byte
-		paramsData         []byte
-		communityListedAt  sql.NullTime
-		startedAt          sql.NullTime
-		finishedAt         sql.NullTime
+		j                 Job
+		status            string
+		imgData           []byte
+		paramsData        []byte
+		communityListedAt sql.NullTime
+		startedAt         sql.NullTime
+		finishedAt        sql.NullTime
 	)
 	if err := s.Scan(
 		&j.ID, &j.Model, &j.Provider, &j.Prompt,
 		&status, &j.ErrorCode, &j.ErrorMsg,
-		&imgData, &j.TokensUsed, &j.KeyID, &j.UserID, &j.SessionID,
+		&imgData, &j.TokensUsed, &j.UpstreamRequestID, &j.KeyID, &j.UserID, &j.SessionID,
 		&j.Visibility, &communityListedAt, &paramsData,
 		&j.CreatedAt, &startedAt, &finishedAt,
 	); err != nil {

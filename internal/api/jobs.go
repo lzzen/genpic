@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"genpic/internal/jobstore"
 	pkgerrors "genpic/pkg/errors"
@@ -17,19 +18,22 @@ func SetJobStore(s jobstore.Store) { jobStoreInstance = s }
 
 // jobResponse is the JSON shape returned for a single job.
 type jobResponse struct {
-	ID         string              `json:"id"`
-	Object     string              `json:"object"`
-	Model      string              `json:"model"`
-	Provider   string              `json:"provider,omitempty"`
-	Prompt     string              `json:"prompt,omitempty"`
-	Status     string              `json:"status"`
-	Visibility string              `json:"visibility,omitempty"`
-	CreatedAt  int64               `json:"created_at"`
-	StartedAt  *int64              `json:"started_at,omitempty"`
-	FinishedAt *int64              `json:"finished_at,omitempty"`
-	Data       []jobImageData      `json:"data,omitempty"`
-	Error      *jobErrorData       `json:"error,omitempty"`
-	Params     *jobstore.JobParams `json:"params,omitempty"`
+	ID                string              `json:"id"`
+	Object            string              `json:"object"`
+	Model             string              `json:"model"`
+	Provider          string              `json:"provider,omitempty"`
+	Prompt            string              `json:"prompt,omitempty"`
+	Status            string              `json:"status"`
+	Visibility        string              `json:"visibility,omitempty"`
+	CreatedAt         int64               `json:"created_at"`
+	StartedAt         *int64              `json:"started_at,omitempty"`
+	FinishedAt        *int64              `json:"finished_at,omitempty"`
+	ProcessingMs      *int64              `json:"processing_ms,omitempty"`
+	TokensUsed        *int                `json:"tokens_used,omitempty"`
+	UpstreamRequestID string              `json:"upstream_request_id,omitempty"`
+	Data              []jobImageData      `json:"data,omitempty"`
+	Error             *jobErrorData       `json:"error,omitempty"`
+	Params            *jobstore.JobParams `json:"params,omitempty"`
 }
 
 type jobImageData struct {
@@ -71,6 +75,17 @@ func toJobResponse(j *jobstore.Job, scope jobstore.OwnerScope) jobResponse {
 		Status:     string(j.Status),
 		Visibility: j.Visibility,
 		CreatedAt:  j.CreatedAt.Unix(),
+	}
+	if !j.StartedAt.IsZero() && !j.FinishedAt.IsZero() && !j.FinishedAt.Before(j.StartedAt) {
+		ms := j.FinishedAt.Sub(j.StartedAt).Milliseconds()
+		r.ProcessingMs = &ms
+	}
+	if j.TokensUsed > 0 {
+		tu := j.TokensUsed
+		r.TokensUsed = &tu
+	}
+	if tid := strings.TrimSpace(j.UpstreamRequestID); tid != "" {
+		r.UpstreamRequestID = tid
 	}
 	if showPrompt {
 		r.Prompt = j.Prompt

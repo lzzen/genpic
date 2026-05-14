@@ -156,6 +156,208 @@ function genpicEscape(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+let jobDetailCtx = null;
+
+async function copyTextToClipboard(text) {
+  const t = String(text || '');
+  if (!t) return false;
+  try {
+    await navigator.clipboard.writeText(t);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function statusZh(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'succeeded') return '成功';
+  if (s === 'failed') return '失败';
+  if (s === 'running') return '运行中';
+  if (s === 'queued') return '排队中';
+  return status || '未知';
+}
+
+function formatMsHuman(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + ' 秒';
+  const m = Math.floor(s / 60);
+  return m + ' 分 ' + (s % 60) + ' 秒';
+}
+
+function normalizeJobDetailPayload(obj) {
+  if (!obj) return {};
+  const p = obj.params || {};
+  const imgs = obj.images || obj.data || [];
+  return {
+    id: obj.id || '',
+    model: obj.model || p.model || '',
+    provider: obj.provider || '',
+    prompt: obj.prompt || '',
+    status: obj.status || '',
+    errorMessage: obj.errorMessage || (obj.error && obj.error.message) || '',
+    images: imgs,
+    params: p,
+    tokens_used: obj.tokens_used,
+    upstream_request_id: obj.upstream_request_id || '',
+    processing_ms: obj.processing_ms,
+    created_at: obj.created_at,
+    started_at: obj.started_at,
+    finished_at: obj.finished_at,
+    ts: obj.ts,
+    reference_images: obj.reference_images,
+  };
+}
+
+function resolveProcessingMs(ctx) {
+  if (ctx.processing_ms != null && Number.isFinite(Number(ctx.processing_ms))) return Number(ctx.processing_ms);
+  const fs = ctx.finished_at;
+  const st = ctx.started_at;
+  if (typeof fs === 'number' && typeof st === 'number' && fs > st) return (fs - st) * 1000;
+  return null;
+}
+
+function buildJobDetailMetaHTML(ctx) {
+  const proc = resolveProcessingMs(ctx);
+  const procStr = proc != null ? formatMsHuman(proc) : '';
+  const tokens = ctx.tokens_used;
+  let computeStr = '未知';
+  if (tokens != null && Number.isFinite(Number(tokens)) && Number(tokens) > 0) {
+    computeStr = String(tokens) + '（上游 tokens；聚合站若按算力计费以控制台为准）';
+  }
+  const upstreamReq = String(ctx.upstream_request_id || '').trim();
+  const jobId = String(ctx.id || '').trim();
+
+  let createdStr = '';
+  if (typeof ctx.created_at === 'number' && ctx.created_at > 0) {
+    try { createdStr = new Date(ctx.created_at * 1000).toLocaleString(); } catch { createdStr = ''; }
+  }
+  if (!createdStr && ctx.ts) {
+    try { createdStr = new Date(ctx.ts).toLocaleString(); } catch { createdStr = ''; }
+  }
+
+  const st = ctx.status || '';
+  let stClass = 'run';
+  if (st === 'succeeded') stClass = 'ok';
+  if (st === 'failed') stClass = 'fail';
+
+  const idHtml = jobId
+    ? `<code>${genpicEscape(jobId)}</code> <button type="button" class="job-detail-copy-id">复制任务ID</button>`
+    : '未知';
+
+  const rows = [];
+  rows.push(['状态', `<span class="status-tag ${stClass}">${genpicEscape(statusZh(st))}</span>`]);
+  rows.push(['使用模型', genpicEscape(ctx.model || '未知')]);
+  rows.push(['任务ID', idHtml]);
+  rows.push(['处理耗时', genpicEscape(procStr || '未知')]);
+  rows.push(['消耗算力', genpicEscape(computeStr)]);
+  rows.push(['上游请求ID', genpicEscape(upstreamReq || '未知')]);
+  rows.push(['创作时间', genpicEscape(createdStr || '未知')]);
+
+  return rows.map(([k, v]) => `<div><dt>${genpicEscape(k)}</dt><dd>${v}</dd></div>`).join('');
+}
+
+function openJobDetail(raw) {
+  const ctx = normalizeJobDetailPayload(raw);
+  jobDetailCtx = ctx;
+  const mod = $('job-detail-modal');
+  const img = $('job-detail-img');
+  const pr = $('job-detail-prompt');
+  const meta = $('job-detail-meta');
+  const im0 = (ctx.images && ctx.images[0]) ? ctx.images[0] : {};
+  let src = '';
+  if (im0.url) src = im0.url;
+  else if (im0.b64_json) src = 'data:' + (im0.mime_type || 'image/png') + ';base64,' + im0.b64_json;
+  if (img) {
+    img.src = src || '';
+    img.hidden = !src;
+  }
+  if (pr) pr.textContent = ctx.prompt || '（无提示词）';
+  if (meta) meta.innerHTML = buildJobDetailMetaHTML(ctx);
+  if (mod) mod.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeJobDetail() {
+  const mod = $('job-detail-modal');
+  if (mod) mod.hidden = true;
+  jobDetailCtx = null;
+  document.body.style.overflow = '';
+}
+
+async function openJobDetailFetchById(jobId) {
+  if (!jobId) return;
+  try {
+    const r = await genpicFetch('/jobs/' + encodeURIComponent(jobId));
+    const raw = await r.text();
+    let j = {};
+    if (raw) {
+      try { j = JSON.parse(raw); } catch (_) {}
+    }
+    if (!r.ok) {
+      setStatus('error', j?.error?.message || '无法加载任务详情');
+      return;
+    }
+    openJobDetail(j);
+  } catch (_) {
+    setStatus('error', '网络错误');
+  }
+}
+
+function histEntryToDetailPayload(entry) {
+  if (!entry) return {};
+  const ca = entry.created_at;
+  return {
+    id: entry.id,
+    model: entry.model,
+    provider: entry.provider,
+    prompt: entry.prompt,
+    status: entry.status || 'succeeded',
+    errorMessage: entry.errorMessage,
+    images: entry.images,
+    params: entry.params,
+    tokens_used: entry.tokens_used,
+    upstream_request_id: entry.upstream_request_id,
+    processing_ms: entry.processing_ms,
+    created_at: typeof ca === 'number' ? ca : (entry.ts ? Math.floor(entry.ts / 1000) : undefined),
+    started_at: entry.started_at,
+    finished_at: entry.finished_at,
+    ts: entry.ts,
+    reference_images: entry.reference_images,
+  };
+}
+
+function loadReferenceImagesForSimilar(refs) {
+  referenceEntries = [];
+  if (!refs || !Array.isArray(refs)) {
+    renderRefPreviews();
+    return;
+  }
+  let n = 0;
+  for (const r of refs) {
+    if (n >= 6) break;
+    const mime = (r.mime_type || 'image/png').trim();
+    const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
+    if (!b64) continue;
+    referenceEntries.push({ mime, b64, thumb: 'data:' + mime + ';base64,' + b64 });
+    n++;
+  }
+  renderRefPreviews();
+}
+
 async function genpicFetch(url, opts = {}) {
   const next = { credentials: 'same-origin', ...opts };
   next.headers = { 'X-Genpic-Session': getOrCreateGenpicSessionId(), ...(opts.headers || {}) };
@@ -285,8 +487,8 @@ async function pollJobUntilDone(jobId, meta) {
         const images = j.data || [];
         const prompt = meta.prompt || '';
         if (images.length) {
-          addImages(images, meta.model || effectiveModelId(), meta.provider || activeProvider);
-          saveToHistory(images, meta.model || effectiveModelId(), meta.provider || activeProvider, prompt, jobId);
+          addImages(images, meta.model || effectiveModelId(), meta.provider || activeProvider, meta.prompt || '');
+          saveToHistory(images, meta.model || effectiveModelId(), meta.provider || activeProvider, prompt, jobId, j);
         }
       }
       void mergeAndPersistHistory({ reset: true }).catch(() => {});
@@ -348,6 +550,11 @@ function renderCommunityCard(job) {
     im.alt = '';
     im.loading = 'lazy';
     im.src = img0.url;
+    im.style.cursor = 'pointer';
+    im.addEventListener('click', () => {
+      if (job.id) void openJobDetailFetchById(job.id);
+      else openJobDetail(job);
+    });
     card.appendChild(im);
   }
   const body = document.createElement('div');
@@ -362,22 +569,31 @@ function renderCommunityCard(job) {
   body.appendChild(pr);
   const act = document.createElement('div');
   act.className = 'comm-card-actions';
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = '创作同款';
-  b.addEventListener('click', () => applyCreateSimilar(job));
-  act.appendChild(b);
+  const mkBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  act.appendChild(mkBtn('复制描述', () => void copyTextToClipboard(job.prompt || '')));
+  act.appendChild(mkBtn('详情', () => {
+    if (job.id) void openJobDetailFetchById(job.id);
+    else openJobDetail(job);
+  }));
+  act.appendChild(mkBtn('创作同款', () => applyCreateSimilar(job)));
   body.appendChild(act);
   card.appendChild(body);
   return card;
 }
 
-function applyCreateSimilar(job) {
+function applyCreateSimilar(source) {
   if (!authUser) {
     alert('登录后可查看完整提示词并创作同款');
     openAuthModal('login');
     return;
   }
+  const job = normalizeJobDetailPayload(source);
   const p = job.params || {};
   const modelId = p.model || job.model || '';
   const prov = modelToProvider(modelId || 'openai/gpt-image-2');
@@ -401,6 +617,38 @@ function applyCreateSimilar(job) {
   }
   if (p.image_size && $('gem-image-size')) $('gem-image-size').value = p.image_size;
   if (p.size && $('gpt-size')) $('gpt-size').value = p.size;
+  if (p.quality && $('gpt-quality')) $('gpt-quality').value = p.quality;
+  if (p.style && $('gpt-style')) $('gpt-style').value = p.style;
+  if (p.response_format && $('gpt-format')) $('gpt-format').value = p.response_format;
+  if (activeProvider === 'gemini' && $('gem-thinking')) {
+    const g = $('gem-thinking');
+    if (p.thinking_budget !== undefined && p.thinking_budget !== null && !Number.isNaN(Number(p.thinking_budget))) {
+      g.value = String(Number(p.thinking_budget));
+      g.dispatchEvent(new Event('input'));
+    }
+  }
+  if (activeProvider === 'wan' && $('wan-edit-type')) {
+    $('wan-edit-type').value = p.wan_edit_type || '';
+    $('wan-edit-type').dispatchEvent(new Event('change'));
+    const bboxSec = $('wan-bbox-section');
+    if (bboxSec) bboxSec.style.display = ($('wan-edit-type').value === 'inpaint') ? 'block' : 'none';
+    const list = $('wan-bbox-list');
+    if (list && Array.isArray(p.wan_bbox_list) && p.wan_bbox_list.length) {
+      list.innerHTML = '';
+      for (const b of p.wan_bbox_list) {
+        addWanBboxRow();
+        const rows = list.querySelectorAll('.bbox-row');
+        const row = rows[rows.length - 1];
+        const nums = row.querySelectorAll('input[type=number]');
+        if (nums[0]) nums[0].value = b.x1 != null ? String(b.x1) : '';
+        if (nums[1]) nums[1].value = b.y1 != null ? String(b.y1) : '';
+        if (nums[2]) nums[2].value = b.x2 != null ? String(b.x2) : '';
+        if (nums[3]) nums[3].value = b.y2 != null ? String(b.y2) : '';
+      }
+    }
+    if ($('wan-thinking')) $('wan-thinking').checked = !!p.thinking_mode;
+  }
+  loadReferenceImagesForSimilar(source.reference_images || p.reference_images);
   $('prompt').value = job.prompt || '';
   $('prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('prompt').focus();
@@ -464,6 +712,7 @@ let activeVendorId = 'openai';
 
 /** Reference images for image-to-image (max 6). */
 let referenceEntries = [];
+const galleryCardExtras = new WeakMap();
 
 function setActiveModel(modelId, provider) {
   activeModel = modelId;
@@ -545,11 +794,12 @@ function load(k, def) { try { return localStorage.getItem('genpic:' + k) ?? def;
 function syncVendorRailToggleUI() {
   const app = $('app');
   const btn = $('btn-vendor-rail-toggle');
+  const icon = btn?.querySelector('.vendor-rail-toggle-icon');
   if (!btn || !app) return;
   const hidden = app.classList.contains('vendor-rail-hidden');
-  btn.textContent = hidden ? '⟩' : '⟨';
   btn.title = hidden ? '展开厂商栏' : '收起厂商栏';
   btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  if (icon) icon.classList.toggle('vendor-rail-toggle-icon--collapsed', hidden);
 }
 
 function applyVendorRailHiddenFromStorage() {
@@ -597,7 +847,7 @@ async function loadUICatalog() {
 }
 
 function applyVendorRail() {
-  const rail = $('vendor-rail');
+  const rail = $('vendor-rail-buttons');
   if (!rail) return;
   rail.innerHTML = '';
   (uiCatalog?.vendors || []).forEach((v) => {
@@ -760,7 +1010,16 @@ document.addEventListener('click', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeCredDialog();
+  if (e.key !== 'Escape') return;
+  if (!$('job-detail-modal')?.hidden) {
+    closeJobDetail();
+    return;
+  }
+  if (!$('hist-drawer')?.hidden) {
+    closeHistDrawer();
+    return;
+  }
+  closeCredDialog();
 });
 
 // ── More-settings toggle ─────────────────────────────────
@@ -806,8 +1065,23 @@ $('btn-hist-drawer')?.addEventListener('click', () => openHistDrawer());
 $('hist-drawer-close')?.addEventListener('click', () => closeHistDrawer());
 $('hist-drawer-backdrop')?.addEventListener('click', () => closeHistDrawer());
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('hist-drawer')?.hidden) closeHistDrawer();
+$('job-detail-close')?.addEventListener('click', () => closeJobDetail());
+$('job-detail-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'job-detail-modal') closeJobDetail();
+});
+$('job-detail-copy-prompt')?.addEventListener('click', () => {
+  if (!jobDetailCtx) return;
+  void copyTextToClipboard(jobDetailCtx.prompt || '');
+});
+$('job-detail-meta')?.addEventListener('click', (e) => {
+  if (e.target.closest('.job-detail-copy-id') && jobDetailCtx?.id) {
+    void copyTextToClipboard(jobDetailCtx.id);
+  }
+});
+$('job-detail-create-similar')?.addEventListener('click', () => {
+  if (!jobDetailCtx) return;
+  closeJobDetail();
+  applyCreateSimilar(jobDetailCtx);
 });
 
 $('eye-btn')?.addEventListener('click', () => {
@@ -966,6 +1240,22 @@ function onGptCustomDimsInput() {
   if (est && w && h) est.textContent = '分辨率 ' + w + '×' + h;
 }
 
+function addWanBboxRow() {
+  const list = $('wan-bbox-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'bbox-row';
+  row.innerHTML = `
+      <input type="number" placeholder="x1" min="0" title="左边缘 x" />
+      <input type="number" placeholder="y1" min="0" title="上边缘 y" />
+      <input type="number" placeholder="x2" min="0" title="右边缘 x" />
+      <input type="number" placeholder="y2" min="0" title="下边缘 y" />
+      <button class="bbox-del" type="button" title="删除">✕</button>
+    `;
+  row.querySelector('.bbox-del').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
 function wireRefAndGpt() {
   $('gpt-ratio-grid')?.addEventListener('click', (ev) => {
     const btn = ev.target.closest('.ratio-btn');
@@ -1040,21 +1330,6 @@ function wireRefAndGpt() {
   });
 
   // ── Wan bbox add/remove ──
-  function addWanBboxRow() {
-    const list = $('wan-bbox-list');
-    if (!list) return;
-    const row = document.createElement('div');
-    row.className = 'bbox-row';
-    row.innerHTML = `
-      <input type="number" placeholder="x1" min="0" title="左边缘 x" />
-      <input type="number" placeholder="y1" min="0" title="上边缘 y" />
-      <input type="number" placeholder="x2" min="0" title="右边缘 x" />
-      <input type="number" placeholder="y2" min="0" title="下边缘 y" />
-      <button class="bbox-del" type="button" title="删除">✕</button>
-    `;
-    row.querySelector('.bbox-del').addEventListener('click', () => row.remove());
-    list.appendChild(row);
-  }
   $('wan-bbox-add')?.addEventListener('click', addWanBboxRow);
 
   const pick = () => $('ref-input')?.click();
@@ -1155,13 +1430,18 @@ function buildBody() {
 }
 
 // ── Add images to gallery ───────────────────────────────
-function addImages(images, model, provider) {
+function addImages(images, model, provider, prompt = '') {
   $('empty').style.display = 'none';
   const gallery = $('gallery');
+  const pr = (prompt || '').trim();
+  let bodySnap = null;
+  try { bodySnap = buildBody(); } catch (_) { bodySnap = null; }
+  const refSnap = captureRefSnapshotForHistory();
 
   images.forEach(img => {
     const card = document.createElement('div');
     card.className = 'img-card';
+    galleryCardExtras.set(card, { body: bodySnap, refs: refSnap });
 
     const image = document.createElement('img');
     if (img.url) { image.src = img.url; }
@@ -1171,6 +1451,19 @@ function addImages(images, model, provider) {
     }
     image.alt = model;
     image.loading = 'lazy';
+    image.style.cursor = 'pointer';
+    image.addEventListener('click', () => {
+      const gx = galleryCardExtras.get(card);
+      openJobDetail({
+        model,
+        provider,
+        prompt: pr,
+        status: 'succeeded',
+        images: [{ url: img.url, mime_type: img.mime_type, b64_json: img.b64_json }],
+        params: gx?.body || {},
+        created_at: Math.floor(Date.now() / 1000),
+      });
+    });
     card.appendChild(image);
 
     const meta = document.createElement('div');
@@ -1196,6 +1489,40 @@ function addImages(images, model, provider) {
       rp.textContent = '修订: ' + img.revised_prompt;
       card.appendChild(rp);
     }
+
+    const act = document.createElement('div');
+    act.className = 'card-actions';
+    const mkBtn = (label, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    act.appendChild(mkBtn('复制描述', () => void copyTextToClipboard(pr)));
+    act.appendChild(mkBtn('详情', () => {
+      const gx = galleryCardExtras.get(card);
+      openJobDetail({
+        model,
+        provider,
+        prompt: pr,
+        status: 'succeeded',
+        images: [{ url: img.url, mime_type: img.mime_type, b64_json: img.b64_json }],
+        params: gx?.body || {},
+        created_at: Math.floor(Date.now() / 1000),
+      });
+    }));
+    act.appendChild(mkBtn('创作同款', () => {
+      const gx = galleryCardExtras.get(card);
+      applyCreateSimilar({
+        model,
+        provider,
+        prompt: pr,
+        params: gx?.body || { model },
+        reference_images: gx?.refs,
+      });
+    }));
+    card.appendChild(act);
 
     gallery.insertBefore(card, gallery.firstChild);
   });
@@ -1279,8 +1606,8 @@ $('btn-gen').addEventListener('click', async () => {
     }
 
     setStatus('success', `✓ 生成 ${images.length} 张图片（${effectiveModelId()}）`);
-    addImages(images, effectiveModelId(), activeProvider);
-    saveToHistory(images, effectiveModelId(), activeProvider, prompt);
+    addImages(images, effectiveModelId(), activeProvider, prompt);
+    saveToHistory(images, effectiveModelId(), activeProvider, prompt, null, null, captureRefSnapshotForHistory());
   } catch (err) {
     setStatus('error', '网络错误：' + err.message);
   } finally {
@@ -1345,6 +1672,12 @@ function histPush(entry) {
       b64_json: (img.b64_json && img.b64_json.length <= MAX_B64) ? img.b64_json : undefined,
     })),
   };
+  if (entry.reference_images && Array.isArray(entry.reference_images)) {
+    safe.reference_images = entry.reference_images.map((r) => ({
+      mime_type: r.mime_type,
+      b64_json: (r.b64_json && r.b64_json.length <= MAX_B64) ? r.b64_json : undefined,
+    })).filter((r) => r.b64_json);
+  }
   let arr = histLoad();
   arr.unshift(safe);
   if (arr.length > HIST_MAX) arr = arr.slice(0, HIST_MAX);
@@ -1398,7 +1731,7 @@ function jobRecordToHistEntry(job) {
   const ts = (typeof job.created_at === 'number' ? job.created_at : 0) * 1000;
   let errorMessage = '';
   if (job.error && job.error.message) errorMessage = job.error.message;
-  return {
+  const out = {
     id: job.id,
     ts: ts || Date.now(),
     model: job.model || '',
@@ -1409,7 +1742,15 @@ function jobRecordToHistEntry(job) {
     errorMessage,
     images,
     source: 'server',
+    params: job.params,
   };
+  if (typeof job.created_at === 'number') out.created_at = job.created_at;
+  if (job.started_at != null) out.started_at = job.started_at;
+  if (job.finished_at != null) out.finished_at = job.finished_at;
+  if (job.processing_ms != null) out.processing_ms = job.processing_ms;
+  if (job.tokens_used != null) out.tokens_used = job.tokens_used;
+  if (job.upstream_request_id) out.upstream_request_id = job.upstream_request_id;
+  return out;
 }
 
 /** Merge first page of DB jobs with local cache; set histViewEntries + histNextCursor. */
@@ -1507,12 +1848,17 @@ function updateHistLoadMoreUI() {
   btn.textContent = histLoadMoreBusy ? '加载中…' : '加载更多';
 }
 
-function saveToHistory(images, model, provider, prompt, serverJobId) {
+function captureRefSnapshotForHistory() {
+  if (!referenceEntries.length) return undefined;
+  return referenceEntries.map((e) => ({ mime_type: e.mime, b64_json: e.b64 }));
+}
+
+function saveToHistory(images, model, provider, prompt, serverJobId, jobPoll, refSnapOverride) {
   if (!images || !images.length) return;
   const id = (serverJobId && String(serverJobId).trim())
     ? String(serverJobId).trim()
     : (Date.now() + '-' + Math.random().toString(36).slice(2, 7));
-  histPush({
+  const entry = {
     id,
     ts: Date.now(),
     model,
@@ -1525,12 +1871,34 @@ function saveToHistory(images, model, provider, prompt, serverJobId) {
       mime_type: img.mime_type,
       revised_prompt: img.revised_prompt,
     })),
-  });
+  };
+  if (jobPoll) {
+    if (jobPoll.params) entry.params = jobPoll.params;
+    if (jobPoll.tokens_used != null) entry.tokens_used = jobPoll.tokens_used;
+    if (jobPoll.upstream_request_id) entry.upstream_request_id = jobPoll.upstream_request_id;
+    if (jobPoll.processing_ms != null) entry.processing_ms = jobPoll.processing_ms;
+    if (jobPoll.started_at != null) entry.started_at = jobPoll.started_at;
+    if (jobPoll.finished_at != null) entry.finished_at = jobPoll.finished_at;
+    if (jobPoll.created_at != null) entry.created_at = jobPoll.created_at;
+  }
+  const snap = refSnapOverride !== undefined ? refSnapOverride : captureRefSnapshotForHistory();
+  if (snap && snap.length) entry.reference_images = snap;
+  histPush(entry);
   void mergeAndPersistHistory({ reset: true }).catch(() => {});
 }
 
 function fmtHistTime(ts) {
   try { return new Date(ts).toLocaleString(); } catch { return ''; }
+}
+
+function openHistEntryDetail(entry) {
+  if (!entry) return;
+  const id = entry.id;
+  if (entry.source === 'server' && /^[0-9a-f]{32}$/i.test(String(id))) {
+    void openJobDetailFetchById(id);
+    return;
+  }
+  openJobDetail(histEntryToDetailPayload(entry));
 }
 
 function renderHistoryPanel() {
@@ -1566,7 +1934,9 @@ function renderHistoryPanel() {
 
     const modelSpan = document.createElement('span');
     modelSpan.className = 'hist-model';
-    modelSpan.textContent = entry.model || '';
+    const fullModel = (entry.model || '').trim();
+    modelSpan.textContent = fullModel;
+    if (fullModel) modelSpan.title = fullModel;
 
     const delBtn = document.createElement('button');
     delBtn.className = 'hist-del';
@@ -1649,6 +2019,8 @@ function renderHistoryPanel() {
       } else if (img.url) {
         el.src = img.url;
       }
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => openHistEntryDetail(entry));
       item.appendChild(el);
 
       const a = document.createElement('a');
@@ -1667,6 +2039,20 @@ function renderHistoryPanel() {
       imgsEl.appendChild(item);
     });
     card.appendChild(imgsEl);
+
+    const actRow = document.createElement('div');
+    actRow.className = 'card-actions';
+    const mkH = (label, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    actRow.appendChild(mkH('复制描述', () => void copyTextToClipboard(entry.prompt || '')));
+    actRow.appendChild(mkH('详情', () => openHistEntryDetail(entry)));
+    actRow.appendChild(mkH('创作同款', () => applyCreateSimilar(histEntryToDetailPayload(entry))));
+    card.appendChild(actRow);
 
     listEl.appendChild(card);
   });

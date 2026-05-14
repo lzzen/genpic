@@ -216,10 +216,20 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	}
 
 	return map[string]any{
-		"created":    time.Now().Unix(),
-		"data":       data,
-		"x_provider": prov.Name(),
+		"created":               time.Now().Unix(),
+		"data":                  data,
+		"x_provider":            prov.Name(),
+		"x_tokens_used":         resp.TokensUsed,
+		"x_upstream_request_id": strings.TrimSpace(resp.UpstreamRequestID),
 	}, nil
+}
+
+func jobBBoxesFromProvider(in []provider.WanBbox) []jobstore.JobBBox {
+	out := make([]jobstore.JobBBox, 0, len(in))
+	for _, b := range in {
+		out = append(out, jobstore.JobBBox{X1: b.X1, Y1: b.Y1, X2: b.X2, Y2: b.Y2})
+	}
+	return out
 }
 
 // jobFromGenerateRequest builds a queued job record (provider name resolved when known).
@@ -246,13 +256,18 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 		UserID:    uid,
 		SessionID: sid,
 		Params: &jobstore.JobParams{
-			Model:       req.Model,
-			AspectRatio: req.AspectRatio,
-			ImageSize:   req.ImageSize,
-			Size:        req.Size,
-			N:           n,
-			Quality:     req.Quality,
-			Style:       req.Style,
+			Model:          req.Model,
+			AspectRatio:    req.AspectRatio,
+			ImageSize:      req.ImageSize,
+			Size:           req.Size,
+			N:              n,
+			Quality:        req.Quality,
+			Style:          req.Style,
+			ResponseFormat: req.ResponseFormat,
+			ThinkingBudget: req.ThinkingBudget,
+			ThinkingMode:   req.ThinkingMode,
+			WanEditType:    req.WanEditType,
+			WanBboxList:    jobBBoxesFromProvider(req.WanBboxList),
 		},
 	}
 }
@@ -282,11 +297,24 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 			}))
 		}
 	}
+	tokens := 0
+	switch v := out["x_tokens_used"].(type) {
+	case int:
+		tokens = v
+	case float64:
+		tokens = int(v)
+	}
+	upstreamID := ""
+	if v, ok := out["x_upstream_request_id"].(string); ok {
+		upstreamID = strings.TrimSpace(v)
+	}
 	jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
 		j.Status = jobstore.StatusSucceeded
 		j.Prompt = jobstore.StripThoughtSignatureFromJSON(j.Prompt)
 		j.Images = images
 		j.FinishedAt = finished
+		j.TokensUsed = tokens
+		j.UpstreamRequestID = upstreamID
 	})
 	maybeCommunityAutoPublic(jobID)
 }

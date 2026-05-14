@@ -12,7 +12,6 @@
   <div class="header-left">
     <div class="logo">Gen<span>pic</span></div>
     <div class="logo-sub">视觉工厂</div>
-    <button type="button" class="toolbar-btn toolbar-btn-rail" id="btn-vendor-rail-toggle" title="收起厂商栏" aria-expanded="true" aria-controls="vendor-rail">⟨</button>
   </div>
   <div class="header-actions">
     <button type="button" class="toolbar-btn" id="btn-community" title="社区精选" aria-label="社区精选">🌐</button>
@@ -31,7 +30,17 @@
 
 <div class="layout" id="app">
 
-  <nav class="vendor-rail" id="vendor-rail" aria-label="厂商"></nav>
+  <nav class="vendor-rail" id="vendor-rail" aria-label="厂商">
+    <div class="vendor-rail-top">
+      <button type="button" class="vendor-rail-toggle" id="btn-vendor-rail-toggle" title="收起厂商栏" aria-expanded="true" aria-controls="vendor-rail-buttons">
+        <svg class="vendor-rail-toggle-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.75" y="1.75" width="12.5" height="12.5" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.35" />
+          <line x1="5.25" y1="2.5" x2="5.25" y2="13.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+    <div class="vendor-rail-buttons" id="vendor-rail-buttons"></div>
+  </nav>
 
   <aside class="config-panel" id="sidebar">
 
@@ -324,6 +333,34 @@
     <div class="modal-actions">
       <button type="button" id="privacy-modal-close">关闭</button>
       <button type="button" class="primary" id="privacy-modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="job-detail-modal" class="job-detail-backdrop" hidden>
+  <div class="job-detail-panel" role="dialog" aria-modal="true" aria-labelledby="job-detail-title">
+    <button type="button" class="job-detail-close" id="job-detail-close" aria-label="关闭">×</button>
+    <div class="job-detail-grid">
+      <div class="job-detail-left">
+        <img id="job-detail-img" class="job-detail-img" alt="" />
+      </div>
+      <div class="job-detail-right">
+        <h2 id="job-detail-title" class="job-detail-title">生成详情</h2>
+        <div class="job-detail-section">
+          <div class="job-detail-sec-head">
+            <span class="job-detail-label">创作描述</span>
+            <button type="button" class="btn-inline" id="job-detail-copy-prompt">复制描述</button>
+          </div>
+          <p id="job-detail-prompt" class="job-detail-prompt"></p>
+        </div>
+        <div class="job-detail-section">
+          <div class="job-detail-sec-title">创作信息</div>
+          <div class="job-detail-dl" id="job-detail-meta"></div>
+        </div>
+        <div class="job-detail-footer">
+          <button type="button" class="primary" id="job-detail-create-similar">创作同款</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
