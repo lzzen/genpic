@@ -67,6 +67,7 @@ func main() {
 	}
 
 	api.SetModelIDMap(cfg.ModelIDMap)
+	api.SetGeminiImageSize4KModelMap(cfg.GeminiImageSize4KModelMap)
 	registerProviders(log, cfg)
 
 	// ── Job store ────────────────────────────────────────────────────────────

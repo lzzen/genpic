@@ -757,10 +757,11 @@ function setActiveModel(modelId, provider) {
     $('more-extra-' + p)?.classList.toggle('show', p === provider);
   });
 
-  // Show thinking field only for thinking-capable Gemini models
+  // Show thinking field only for thinking-capable Gemini models (including 4K alias models).
   const thinkingCapable = ['gemini/gemini-3.1-flash-image-preview', 'gemini/gemini-3-pro-image-preview'];
+  const logicalForThinking = geminiLogicalModelIdForGemUI(modelId);
   const gemThinking = $('gem-thinking-field');
-  if (gemThinking) gemThinking.style.display = thinkingCapable.includes(modelId) ? 'block' : 'none';
+  if (gemThinking) gemThinking.style.display = thinkingCapable.includes(logicalForThinking) ? 'block' : 'none';
 
   // Show wan thinking mode only for pro
   const wanThinking = $('wan-thinking-row');
@@ -774,6 +775,9 @@ function setActiveModel(modelId, provider) {
   save('active-vendor', provider);
 
   if (provider === 'gemini') syncGemImageSizeUI(modelId);
+  if (!_insideGemini4KResolutionSync) {
+    syncGeminiModelWithImageSizeResolution();
+  }
 }
 
 /** Gemini imageSize options depend on catalog model (see model constraints). */
@@ -786,7 +790,9 @@ function syncGemImageSizeUI(modelId) {
   const prev = sel.value;
   sel.innerHTML = '';
 
-  if (modelId === 'gemini/gemini-2.5-flash-image') {
+  const logicalId = geminiLogicalModelIdForGemUI(modelId);
+
+  if (logicalId === 'gemini/gemini-2.5-flash-image') {
     wrap.style.display = 'none';
     return;
   }
@@ -795,7 +801,7 @@ function syncGemImageSizeUI(modelId) {
   if (label) label.textContent = '分辨率档位';
   let rows;
   let defVal;
-  if (modelId === 'gemini/gemini-3-pro-image-preview') {
+  if (logicalId === 'gemini/gemini-3-pro-image-preview') {
     rows = [['1K', '1K'], ['2K', '2K'], ['4K', '4K']];
     defVal = '1K';
   } else {
@@ -836,6 +842,71 @@ function applyVendorRailHiddenFromStorage() {
 }
 
 let uiCatalog = null;
+/** @type {Record<string, string>|null} base catalog model -> 4K catalog model */
+let geminiImageSize4kModelMap = null;
+/** @type {Record<string, string>|null} 4K catalog model -> base catalog model */
+let geminiImageSize4kInverseMap = null;
+let _insideGemini4KResolutionSync = false;
+
+function ingestGemini4KCatalogPayload(catalog) {
+  const raw = catalog?.gemini_image_size_4k_model_map;
+  if (!raw || typeof raw !== 'object') {
+    geminiImageSize4kModelMap = null;
+    geminiImageSize4kInverseMap = null;
+    return;
+  }
+  const fwd = Object.create(null);
+  const inv = Object.create(null);
+  for (const [k, v] of Object.entries(raw)) {
+    const kk = String(k || '').trim();
+    const vv = String(v || '').trim();
+    if (!kk || !vv) continue;
+    fwd[kk] = vv;
+    inv[vv] = kk;
+  }
+  geminiImageSize4kModelMap = Object.keys(fwd).length ? fwd : null;
+  geminiImageSize4kInverseMap = Object.keys(inv).length ? inv : null;
+}
+
+function geminiLogicalModelIdForGemUI(modelId) {
+  const m = String(modelId || '').trim();
+  return (geminiImageSize4kInverseMap && geminiImageSize4kInverseMap[m]) || m;
+}
+
+/** When Gemini image_size is 4K, swap to configured 4K wire/catalog model; otherwise swap back to base. */
+function syncGeminiModelWithImageSizeResolution() {
+  if (!geminiImageSize4kModelMap) return;
+  if (activeProvider !== 'gemini') return;
+  const wrap = $('gem-image-size-wrap');
+  if (wrap && wrap.style.display === 'none') return;
+  const gisz = $('gem-image-size');
+  if (!gisz) return;
+  const size = String(gisz.value || '').trim();
+  const sel = $('model-select');
+  const m = String((sel && sel.value) || activeModel || '').trim();
+  if (!m) return;
+
+  _insideGemini4KResolutionSync = true;
+  try {
+    if (size === '4K') {
+      const target = geminiImageSize4kModelMap[m];
+      if (target && target !== m) {
+        setActiveModel(target, 'gemini');
+        const g2 = $('gem-image-size');
+        if (g2 && [...g2.options].some((o) => o.value === '4K')) g2.value = '4K';
+      }
+    } else if (size && size !== '4K') {
+      const base = geminiImageSize4kInverseMap?.[m];
+      if (base && base !== m) {
+        setActiveModel(base, 'gemini');
+        const g2 = $('gem-image-size');
+        if (g2 && [...g2.options].some((o) => o.value === size)) g2.value = size;
+      }
+    }
+  } finally {
+    _insideGemini4KResolutionSync = false;
+  }
+}
 
 const FALLBACK_UI_CATALOG = {
   vendors: [
@@ -946,6 +1017,7 @@ async function initCatalogAndModels() {
   if (!uiCatalog || !Array.isArray(uiCatalog.vendors) || uiCatalog.vendors.length === 0) {
     uiCatalog = FALLBACK_UI_CATALOG;
   }
+  ingestGemini4KCatalogPayload(uiCatalog);
   applyVendorRail();
   const vids = uiCatalog.vendors.map((v) => v.id);
   let vend = load('active-vendor', null);
@@ -960,6 +1032,7 @@ async function initCatalogAndModels() {
     $('model-select').value = sm;
     setActiveModel(sm, modelToProvider(sm));
   }
+  syncGeminiModelWithImageSizeResolution();
 }
 
 // Restore persisted values
@@ -991,7 +1064,11 @@ bootstrapCredentials()
     if (gisz && gisz.options.length) {
       const v = load('gem-image-size', null);
       if (v !== null && [...gisz.options].some((o) => o.value === v)) gisz.value = v;
-      gisz.addEventListener('change', () => save('gem-image-size', gisz.value));
+      gisz.addEventListener('change', () => {
+        save('gem-image-size', gisz.value);
+        syncGeminiModelWithImageSizeResolution();
+      });
+      syncGeminiModelWithImageSizeResolution();
     }
     wireRefAndGpt();
     const sz = ($('gpt-size')?.value || '').trim();

@@ -46,3 +46,32 @@ model_id_map:
 		t.Fatalf("model_id_map: %#v", cfg.ModelIDMap)
 	}
 }
+
+func TestReadGeminiImageSize4KModelMap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+gemini:
+  base_url: "https://g.example"
+  image_size_4k_model_map:
+    "gemini/gemini-3.1-flash-image-preview": "banana-2-4K"
+    gemini-3-pro-image-preview: "gemini/banana-pro-4K"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil || !cfg.Found {
+		t.Fatalf("err=%v found=%v", err, cfg.Found)
+	}
+	m := cfg.GeminiImageSize4KModelMap
+	if len(m) != 2 {
+		t.Fatalf("map len: %#v", m)
+	}
+	if m["gemini/gemini-3.1-flash-image-preview"] != "gemini/banana-2-4K" {
+		t.Fatalf("flash: %#v", m)
+	}
+	if m["gemini/gemini-3-pro-image-preview"] != "gemini/banana-pro-4K" {
+		t.Fatalf("pro: %#v", m)
+	}
+}

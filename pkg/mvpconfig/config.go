@@ -36,6 +36,15 @@ type providerYAML struct {
 	MaxRetries int    `yaml:"max_retries"`
 }
 
+// geminiYAML extends the Gemini provider block with SPA / routing hints.
+type geminiYAML struct {
+	BaseURL             string            `yaml:"base_url"`
+	APIKey              string            `yaml:"api_key"`
+	Timeout             string            `yaml:"timeout"`
+	MaxRetries          int               `yaml:"max_retries"`
+	ImageSize4KModelMap map[string]string `yaml:"image_size_4k_model_map"`
+}
+
 // rateLimitYAML configures the in-process rate limiter.
 type rateLimitYAML struct {
 	GlobalRPM int `yaml:"global_rpm"`
@@ -59,7 +68,7 @@ type rootYAML struct {
 	MvpLite    mvpLiteYAML       `yaml:"mvp_lite"`
 	ModelIDMap map[string]string `yaml:"model_id_map"`
 	OpenAI     providerYAML      `yaml:"openai"`
-	Gemini     providerYAML      `yaml:"gemini"`
+	Gemini     geminiYAML        `yaml:"gemini"`
 	Wan        providerYAML      `yaml:"wan"`
 	RateLimit  rateLimitYAML     `yaml:"rate_limit"`
 	Database   databaseYAML      `yaml:"database"`
@@ -110,6 +119,10 @@ type Config struct {
 	// Resolved in cmd/genpic with GENPIC_ARTIFACTS_DIR override; "-" means disabled.
 	ArtifactsDir string
 
+	// GeminiImageSize4KModelMap maps catalog model id -> alternate catalog model id when the SPA
+	// selects Gemini image_size "4K" (see gemini.image_size_4k_model_map in config.yaml).
+	GeminiImageSize4KModelMap map[string]string
+
 	// Auth configures cookie-backed sessions (cmd/genpic; requires database).
 	Auth AuthConfig
 }
@@ -141,12 +154,18 @@ func Read(path string) (Config, error) {
 		DefaultBaseURL: strings.TrimSpace(root.MvpLite.DefaultBaseURL),
 		ModelIDMap:     stringMapOrNil(root.ModelIDMap),
 		OpenAI:         resolveProvider(root.OpenAI, "OPENAI"),
-		Gemini:         resolveProvider(root.Gemini, "GEMINI"),
-		Wan:            resolveProvider(root.Wan, "WAN"),
-		GlobalRPM:      root.RateLimit.GlobalRPM,
-		Database:       resolveDatabase(root.Database),
-		ArtifactsDir:   strings.TrimSpace(root.Server.ArtifactsDir),
-		Auth:           resolveAuth(root.Auth),
+		Gemini: resolveProvider(providerYAML{
+			BaseURL:    root.Gemini.BaseURL,
+			APIKey:     root.Gemini.APIKey,
+			Timeout:    root.Gemini.Timeout,
+			MaxRetries: root.Gemini.MaxRetries,
+		}, "GEMINI"),
+		GeminiImageSize4KModelMap: normalizeGeminiImageSize4KModelMap(root.Gemini.ImageSize4KModelMap),
+		Wan:                       resolveProvider(root.Wan, "WAN"),
+		GlobalRPM:                 root.RateLimit.GlobalRPM,
+		Database:                  resolveDatabase(root.Database),
+		ArtifactsDir:              strings.TrimSpace(root.Server.ArtifactsDir),
+		Auth:                      resolveAuth(root.Auth),
 	}
 
 	return c, nil
@@ -222,6 +241,37 @@ func stringMapOrNil(in map[string]string) map[string]string {
 			continue
 		}
 		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeGeminiCatalogModelID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if strings.Contains(s, "/") {
+		return s
+	}
+	return "gemini/" + s
+}
+
+// normalizeGeminiImageSize4KModelMap normalizes YAML map keys/values to catalog-style ids (gemini/...).
+func normalizeGeminiImageSize4KModelMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		nk := normalizeGeminiCatalogModelID(k)
+		nv := normalizeGeminiCatalogModelID(v)
+		if nk == "" || nv == "" {
+			continue
+		}
+		out[nk] = nv
 	}
 	if len(out) == 0 {
 		return nil

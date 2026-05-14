@@ -57,6 +57,11 @@ gemini:
   # api_key: loaded from GEMINI_API_KEY env var
   timeout: "180s"
   max_retries: 1
+  # When the SPA selects Gemini resolution "4K", switch the request model to the given catalog id
+  # (keys/values may omit the "gemini/" prefix; they are normalized on load).
+  # image_size_4k_model_map:
+  #   "gemini/gemini-3.1-flash-image-preview": "gemini/banana-2-4K"
+  #   "gemini/gemini-3-pro-image-preview": "gemini/banana-pro-4K"
 
 wan:
   # base_url for DashScope (CN or AP endpoint; key region must match):
