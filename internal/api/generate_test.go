@@ -2,23 +2,6 @@ package api
 
 import "testing"
 
-func TestResolveGeminiImageSize4KMappedCatalogID(t *testing.T) {
-	SetGeminiImageSize4KModelMap(nil)
-	if got := ResolveGeminiImageSize4KMappedCatalogID("gemini-3.1-flash-image-preview", "4K"); got != "" {
-		t.Fatalf("no map: got %q", got)
-	}
-	SetGeminiImageSize4KModelMap(map[string]string{
-		"gemini/gemini-3.1-flash-image-preview": "gemini/banana-2-4K",
-	})
-	defer SetGeminiImageSize4KModelMap(nil)
-	if got := ResolveGeminiImageSize4KMappedCatalogID("gemini-3.1-flash-image-preview", "4K"); got != "gemini/banana-2-4K" {
-		t.Fatalf("4K rewrite: got %q", got)
-	}
-	if got := ResolveGeminiImageSize4KMappedCatalogID("gemini-3.1-flash-image-preview", "1K"); got != "" {
-		t.Fatalf("non-4K: want empty, got %q", got)
-	}
-}
-
 func TestNormalizeModelID(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"gemini/gemini-3.1-flash-image-preview", "gemini-3.1-flash-image-preview"},

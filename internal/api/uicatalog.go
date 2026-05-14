@@ -1,152 +1,21 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
-	"strings"
-	"sync"
+
+	"genpic/internal/geminiconfig"
 )
 
 // HandleUICatalog serves GET /api/ui/catalog — vendor + model list for the embedded SPA.
-// When gemini_image_size_4k_model_map is configured (see config.yaml), the JSON also
-// includes that map and appends any missing target model ids to the Gemini vendor list.
+// Optional gemini_image_size_4k_model_map is merged in by [geminiconfig.MergeUICatalogPayload]
+// (map only; 4K route targets are never added to the vendor model list).
 func HandleUICatalog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	uiCatalogMu.RLock()
-	g4 := uiCatalogGeminiImageSize4KModelMap
-	uiCatalogMu.RUnlock()
-	JSON(w, http.StatusOK, buildUICatalogResponse(g4))
-}
-
-var (
-	uiCatalogMu                        sync.RWMutex
-	uiCatalogGeminiImageSize4KModelMap map[string]string
-)
-
-// SetGeminiImageSize4KModelMap installs gemini.image_size_4k_model_map from config (nil clears).
-func SetGeminiImageSize4KModelMap(m map[string]string) {
-	uiCatalogMu.Lock()
-	defer uiCatalogMu.Unlock()
-	if len(m) == 0 {
-		uiCatalogGeminiImageSize4KModelMap = nil
-		return
-	}
-	c := make(map[string]string, len(m))
-	for k, v := range m {
-		k = strings.TrimSpace(k)
-		v = strings.TrimSpace(v)
-		if k == "" || v == "" {
-			continue
-		}
-		c[k] = v
-	}
-	if len(c) == 0 {
-		uiCatalogGeminiImageSize4KModelMap = nil
-		return
-	}
-	uiCatalogGeminiImageSize4KModelMap = c
-}
-
-// ResolveGeminiImageSize4KMappedCatalogID returns the configured catalog model id
-// (e.g. gemini/banana-2-4K) when image_size is exactly "4K" and modelNormalized matches a
-// map key; modelNormalized is the wire id after [normalizeModelID] (no gemini/ prefix).
-// Returns "" when no rewrite applies.
-func ResolveGeminiImageSize4KMappedCatalogID(modelNormalized, imageSize string) string {
-	if strings.TrimSpace(imageSize) != "4K" {
-		return ""
-	}
-	w := strings.TrimSpace(modelNormalized)
-	if w == "" {
-		return ""
-	}
-	uiCatalogMu.RLock()
-	m := uiCatalogGeminiImageSize4KModelMap
-	uiCatalogMu.RUnlock()
-	if len(m) == 0 {
-		return ""
-	}
-	for _, k := range []string{"gemini/" + w, w} {
-		if v, ok := m[k]; ok {
-			v = strings.TrimSpace(v)
-			if v != "" {
-				return v
-			}
-		}
-	}
-	return ""
-}
-
-func buildUICatalogResponse(g4 map[string]string) map[string]any {
-	raw, err := json.Marshal(uiCatalogPayload)
-	if err != nil {
-		return uiCatalogPayload
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return uiCatalogPayload
-	}
-	if len(g4) == 0 {
-		return out
-	}
-	out["gemini_image_size_4k_model_map"] = g4
-	vendorsAny, ok := out["vendors"].([]any)
-	if !ok {
-		return out
-	}
-	for i, v := range vendorsAny {
-		vm, ok := v.(map[string]any)
-		if !ok || vm["id"] != "gemini" {
-			continue
-		}
-		modelsAny, ok := vm["models"].([]any)
-		if !ok {
-			continue
-		}
-		seen := map[string]struct{}{}
-		for _, m := range modelsAny {
-			mm, ok := m.(map[string]any)
-			if !ok {
-				continue
-			}
-			id, _ := mm["id"].(string)
-			id = strings.TrimSpace(id)
-			if id != "" {
-				seen[id] = struct{}{}
-			}
-		}
-		for _, target := range g4 {
-			t := strings.TrimSpace(target)
-			if t == "" {
-				continue
-			}
-			if _, ok := seen[t]; ok {
-				continue
-			}
-			seen[t] = struct{}{}
-			modelsAny = append(modelsAny, map[string]any{
-				"id":    t,
-				"label": geminiAutoModelLabel(t),
-			})
-		}
-		vm["models"] = modelsAny
-		vendorsAny[i] = vm
-		break
-	}
-	out["vendors"] = vendorsAny
-	return out
-}
-
-func geminiAutoModelLabel(catalogID string) string {
-	s := strings.TrimSpace(catalogID)
-	s = strings.TrimPrefix(s, "gemini/")
-	if s == "" {
-		return catalogID
-	}
-	return s + " (4K)"
+	JSON(w, http.StatusOK, geminiconfig.MergeUICatalogPayload(uiCatalogPayload))
 }
 
 // uiCatalogPayload mirrors the SPA's vendor rail + model dropdown.

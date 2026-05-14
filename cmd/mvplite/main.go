@@ -33,6 +33,7 @@ import (
 
 	genpic "genpic"
 	"genpic/internal/api"
+	"genpic/internal/geminiconfig"
 	"genpic/pkg/modelmap"
 	"genpic/pkg/mvpconfig"
 	"genpic/pkg/openaiimg"
@@ -118,7 +119,7 @@ func main() {
 	}
 	mvpState.DefaultBaseURL = cfg.DefaultBaseURL
 	fileModelIDMap = cfg.ModelIDMap
-	api.SetGeminiImageSize4KModelMap(cfg.GeminiImageSize4KModelMap)
+	geminiconfig.Install(cfg.GeminiImageSize4KModelMap)
 
 	port := strings.TrimSpace(cfg.MvpLitePort)
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {

@@ -40,6 +40,7 @@ import (
 	"genpic/internal/api"
 	"genpic/internal/auth"
 	"genpic/internal/dbmigrate"
+	"genpic/internal/geminiconfig"
 	"genpic/internal/jobstore"
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
@@ -67,7 +68,7 @@ func main() {
 	}
 
 	api.SetModelIDMap(cfg.ModelIDMap)
-	api.SetGeminiImageSize4KModelMap(cfg.GeminiImageSize4KModelMap)
+	geminiconfig.Install(cfg.GeminiImageSize4KModelMap)
 	registerProviders(log, cfg)
 
 	// ── Job store ────────────────────────────────────────────────────────────
@@ -236,33 +237,6 @@ func main() {
 	}
 }
 
-// geminiExtraImageWireModelsFrom4KMap collects unique upstream wire model names from
-// gemini.image_size_4k_model_map values so the Gemini provider registry accepts them.
-func geminiExtraImageWireModelsFrom4KMap(m map[string]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{})
-	var out []string
-	for _, v := range m {
-		w := strings.TrimSpace(v)
-		if w == "" {
-			continue
-		}
-		w = strings.TrimPrefix(w, "gemini/")
-		w = strings.TrimSpace(w)
-		if w == "" {
-			continue
-		}
-		if _, ok := seen[w]; ok {
-			continue
-		}
-		seen[w] = struct{}{}
-		out = append(out, w)
-	}
-	return out
-}
-
 // registerProviders wires all provider adapters using server-side credentials
 // from config.yaml (with env var fallback). The embedded SPA overrides these
 // per request via compatctx (JSON base_url + api_key on POST /api/generate).
@@ -278,7 +252,7 @@ func registerProviders(log *slog.Logger, cfg mvpconfig.Config) {
 	provider.Register(gemini.New(gemini.Config{
 		BaseURL:              cfg.Gemini.BaseURL,
 		APIKey:               cfg.Gemini.APIKey,
-		ExtraImageWireModels: geminiExtraImageWireModelsFrom4KMap(cfg.GeminiImageSize4KModelMap),
+		ExtraImageWireModels: geminiconfig.ExtraUpstreamWireModels(),
 	}))
 	log.Info("registered provider", "name", "gemini",
 		"base_url_set", cfg.Gemini.BaseURL != "",
