@@ -51,6 +51,35 @@ func SetGeminiImageSize4KModelMap(m map[string]string) {
 	uiCatalogGeminiImageSize4KModelMap = c
 }
 
+// ResolveGeminiImageSize4KMappedCatalogID returns the configured catalog model id
+// (e.g. gemini/banana-2-4K) when image_size is exactly "4K" and modelNormalized matches a
+// map key; modelNormalized is the wire id after [normalizeModelID] (no gemini/ prefix).
+// Returns "" when no rewrite applies.
+func ResolveGeminiImageSize4KMappedCatalogID(modelNormalized, imageSize string) string {
+	if strings.TrimSpace(imageSize) != "4K" {
+		return ""
+	}
+	w := strings.TrimSpace(modelNormalized)
+	if w == "" {
+		return ""
+	}
+	uiCatalogMu.RLock()
+	m := uiCatalogGeminiImageSize4KModelMap
+	uiCatalogMu.RUnlock()
+	if len(m) == 0 {
+		return ""
+	}
+	for _, k := range []string{"gemini/" + w, w} {
+		if v, ok := m[k]; ok {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func buildUICatalogResponse(g4 map[string]string) map[string]any {
 	raw, err := json.Marshal(uiCatalogPayload)
 	if err != nil {

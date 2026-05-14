@@ -29,6 +29,9 @@ import (
 type Config struct {
 	BaseURL string
 	APIKey  string
+	// ExtraImageWireModels registers additional UpstreamModel names for generateContent
+	// (e.g. aggregator 4K route ids from config gemini.image_size_4k_model_map values).
+	ExtraImageWireModels []string
 }
 
 // Provider implements provider.Provider for Gemini image models.
@@ -49,32 +52,60 @@ func New(cfg Config) *Provider {
 		}
 		return append(base, extra...)
 	}
+	models := []provider.ModelInfo{
+		{
+			ID:             "gemini/gemini-2.5-flash-image",
+			DisplayName:    "Gemini 2.5 Flash Image",
+			UpstreamModel:  "gemini-2.5-flash-image",
+			TimeoutSeconds: 90,
+			Capabilities:   caps(),
+		},
+		{
+			ID:             "gemini/gemini-3.1-flash-image-preview",
+			DisplayName:    "Gemini 3.1 Flash Image (Preview)",
+			UpstreamModel:  "gemini-3.1-flash-image-preview",
+			TimeoutSeconds: 120,
+			Capabilities:   caps(provider.CapThinking),
+		},
+		{
+			ID:             "gemini/gemini-3-pro-image-preview",
+			DisplayName:    "Gemini 3 Pro Image (Preview)",
+			UpstreamModel:  "gemini-3-pro-image-preview",
+			TimeoutSeconds: 180,
+			Capabilities:   caps(provider.CapThinking),
+		},
+	}
+	seen := make(map[string]struct{})
+	for _, m := range models {
+		seen[m.UpstreamModel] = struct{}{}
+		seen[strings.TrimPrefix(m.ID, "gemini/")] = struct{}{}
+	}
+	for _, raw := range cfg.ExtraImageWireModels {
+		wire := strings.TrimSpace(raw)
+		if wire == "" {
+			continue
+		}
+		wire = strings.TrimPrefix(wire, "gemini/")
+		wire = strings.TrimSpace(wire)
+		if wire == "" {
+			continue
+		}
+		if _, dup := seen[wire]; dup {
+			continue
+		}
+		seen[wire] = struct{}{}
+		models = append(models, provider.ModelInfo{
+			ID:             "gemini/" + wire,
+			DisplayName:    wire + " (image)",
+			UpstreamModel:  wire,
+			TimeoutSeconds: 150,
+			Capabilities:   caps(provider.CapThinking),
+		})
+	}
 	return &Provider{
 		cfg:    cfg,
 		client: httpclient.New(httpclient.WithMaxRetries(1)),
-		models: []provider.ModelInfo{
-			{
-				ID:             "gemini/gemini-2.5-flash-image",
-				DisplayName:    "Gemini 2.5 Flash Image",
-				UpstreamModel:  "gemini-2.5-flash-image",
-				TimeoutSeconds: 90,
-				Capabilities:   caps(),
-			},
-			{
-				ID:             "gemini/gemini-3.1-flash-image-preview",
-				DisplayName:    "Gemini 3.1 Flash Image (Preview)",
-				UpstreamModel:  "gemini-3.1-flash-image-preview",
-				TimeoutSeconds: 120,
-				Capabilities:   caps(provider.CapThinking),
-			},
-			{
-				ID:             "gemini/gemini-3-pro-image-preview",
-				DisplayName:    "Gemini 3 Pro Image (Preview)",
-				UpstreamModel:  "gemini-3-pro-image-preview",
-				TimeoutSeconds: 180,
-				Capabilities:   caps(provider.CapThinking),
-			},
-		},
+		models: models,
 	}
 }
 

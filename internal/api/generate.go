@@ -118,6 +118,12 @@ type compatGenerateBody struct {
 func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[string]any, error) {
 	log := logger.FromContext(ctx)
 	req.Model = normalizeModelID(req.Model)
+	if alt := ResolveGeminiImageSize4KMappedCatalogID(req.Model, req.ImageSize); alt != "" {
+		req.Model = normalizeModelID(alt)
+		if logger.DevMode() {
+			log.Info("gemini_image_size_4k_model_rewrite", "effective_model", req.Model, "image_size", req.ImageSize)
+		}
+	}
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
