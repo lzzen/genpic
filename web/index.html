@@ -1030,7 +1030,7 @@ function syncGemImageSizeUI(modelId) {
     defVal = '1K';
   } else {
     rows = [['512', '512'], ['1K', '1K'], ['2K', '2K'], ['4K', '4K']];
-    defVal = '512';
+    defVal = '1K';
   }
   rows.forEach(([v, t]) => {
     const o = document.createElement('option');
@@ -1055,9 +1055,9 @@ const FALLBACK_UI_CATALOG = {
       id: 'gemini',
       name: 'Banana',
       models: [
-        { id: 'gemini/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash' },
         { id: 'gemini/gemini-3.1-flash-image-preview', label: 'Gemini 3.1' },
         { id: 'gemini/gemini-3-pro-image-preview', label: 'Gemini 3 Pro' },
+        { id: 'gemini/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash' },
       ],
     },
     {

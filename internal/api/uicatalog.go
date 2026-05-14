@@ -28,9 +28,9 @@ var uiCatalogPayload = map[string]any{
 			"id":   "gemini",
 			"name": "Banana",
 			"models": []any{
-				map[string]string{"id": "gemini/gemini-2.5-flash-image", "label": "Gemini 2.5 Flash"},
 				map[string]string{"id": "gemini/gemini-3.1-flash-image-preview", "label": "Gemini 3.1"},
 				map[string]string{"id": "gemini/gemini-3-pro-image-preview", "label": "Gemini 3 Pro"},
+				map[string]string{"id": "gemini/gemini-2.5-flash-image", "label": "Gemini 2.5 Flash"},
 			},
 		},
 		map[string]any{
