@@ -38,11 +38,28 @@ type GenerateRequest struct {
 	ThinkingBudget int
 	// ThinkingMode enables slow-think on Wan Pro.
 	ThinkingMode bool
+	// WanEditType specifies the Wan editing mode for image-editing tasks.
+	// Valid values: "" (auto/text_to_image), "image_edit", "inpaint".
+	// Ignored by non-Wan providers.
+	WanEditType string
+	// WanBboxList is the list of bounding boxes for region-specific Wan editing.
+	// Each entry is [x1,y1,x2,y2] in pixel coordinates.
+	// Ignored by non-Wan providers and when WanEditType does not require bboxes.
+	WanBboxList []WanBbox
 	// RawParams carries any provider-specific parameters not captured above.
 	// The adapter reads what it understands and ignores the rest.
 	RawParams map[string]any
 	// ReferenceImages optional inputs for image-to-image / style reference flows.
 	ReferenceImages []ReferenceImage
+}
+
+// WanBbox is a bounding box for region-specific Wan image editing.
+// Coordinates are pixel-space [x1, y1, x2, y2] relative to the source image.
+type WanBbox struct {
+	X1 int `json:"x1"`
+	Y1 int `json:"y1"`
+	X2 int `json:"x2"`
+	Y2 int `json:"y2"`
 }
 
 // ReferenceImage is one client-supplied reference image (raw base64, no data: prefix).
@@ -140,6 +157,15 @@ func Register(p Provider) {
 		panic(fmt.Sprintf("provider %q already registered", name))
 	}
 	registry[name] = p
+}
+
+// Unregister removes a provider from the global registry by name.
+// It is a no-op when no provider is registered under name.
+// Primarily used in tests to clean up after registering a Fake.
+func Unregister(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(registry, name)
 }
 
 // Get returns the provider registered under name, or (nil, false) if absent.

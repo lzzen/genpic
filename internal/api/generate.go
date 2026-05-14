@@ -46,8 +46,10 @@ type GenerateRequest struct {
 	ThinkingBudget int    `json:"thinking_budget,omitempty"`
 
 	// Wan-specific
-	Watermark    *bool `json:"watermark,omitempty"`
-	ThinkingMode bool  `json:"thinking_mode,omitempty"`
+	Watermark    *bool              `json:"watermark,omitempty"`
+	ThinkingMode bool               `json:"thinking_mode,omitempty"`
+	WanEditType  string             `json:"wan_edit_type,omitempty"`
+	WanBboxList  []provider.WanBbox `json:"wan_bbox_list,omitempty"`
 
 	// Reference images (图生图 / 参考); max 6; each ≤ 4 MiB decoded.
 	ReferenceImages []refimages.Input `json:"reference_images,omitempty"`
@@ -175,6 +177,8 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		ImageSize:       req.ImageSize,
 		ThinkingBudget:  req.ThinkingBudget,
 		ThinkingMode:    req.ThinkingMode,
+		WanEditType:     req.WanEditType,
+		WanBboxList:     req.WanBboxList,
 		ReferenceImages: refs,
 	}
 

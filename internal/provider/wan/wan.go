@@ -136,13 +136,19 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 }
 
 // buildDashScopeRequest constructs the DashScope multimodal-generation body.
+//
+// Edit types (wan_edit_type):
+//   - "" / "text_to_image" — standard text-to-image (default).
+//   - "image_edit"         — general image editing; requires at least one reference image.
+//   - "inpaint"            — mask-based inpainting; requires reference image + bbox_list.
+//
 // Reference: https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
 func buildDashScopeRequest(req provider.GenerateRequest) ([]byte, error) {
 	content := make([]map[string]any, 0, 1+len(req.ReferenceImages))
-	for _, ref := range req.ReferenceImages {
+	for i, ref := range req.ReferenceImages {
 		b64 := strings.TrimSpace(ref.B64)
 		if b64 == "" {
-			return nil, fmt.Errorf("reference image: empty b64_json")
+			return nil, fmt.Errorf("reference_images[%d]: empty b64_json", i)
 		}
 		mt := strings.TrimSpace(ref.MIMEType)
 		if mt == "" {
@@ -167,6 +173,39 @@ func buildDashScopeRequest(req provider.GenerateRequest) ([]byte, error) {
 	}
 	if req.ThinkingMode {
 		params["thinking_mode"] = true
+	}
+
+	// wan_edit_type controls the editing mode when reference images are provided.
+	// "image_edit" and "inpaint" require at least one reference image; the adapter
+	// validates this here to surface a clear error before hitting DashScope.
+	editType := strings.TrimSpace(req.WanEditType)
+	switch editType {
+	case "", "text_to_image":
+		// default; no extra params needed
+	case "image_edit":
+		if len(req.ReferenceImages) == 0 {
+			return nil, fmt.Errorf("wan_edit_type 'image_edit' requires at least one reference_image")
+		}
+		params["edit_type"] = "image_edit"
+	case "inpaint":
+		if len(req.ReferenceImages) == 0 {
+			return nil, fmt.Errorf("wan_edit_type 'inpaint' requires at least one reference_image")
+		}
+		if len(req.WanBboxList) == 0 {
+			return nil, fmt.Errorf("wan_edit_type 'inpaint' requires at least one wan_bbox_list entry")
+		}
+		params["edit_type"] = "inpaint"
+	default:
+		return nil, fmt.Errorf("unsupported wan_edit_type %q; valid values: text_to_image, image_edit, inpaint", editType)
+	}
+
+	// bbox_list: [[x1,y1,x2,y2], ...] as an array of integer arrays.
+	if len(req.WanBboxList) > 0 {
+		bboxes := make([][]int, 0, len(req.WanBboxList))
+		for _, b := range req.WanBboxList {
+			bboxes = append(bboxes, []int{b.X1, b.Y1, b.X2, b.Y2})
+		}
+		params["bbox_list"] = bboxes
 	}
 
 	body := map[string]any{

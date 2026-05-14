@@ -34,6 +34,8 @@ tags:
     description: List available image generation models
   - name: generate
     description: Primary image generation (POST /api/generate)
+  - name: chat
+    description: OpenAI chat completions path for image generation (POST /v1/chat/completions)
   - name: jobs
     description: Async job status (`GET /jobs`, `GET /jobs/{id}`)
   - name: community
@@ -146,6 +148,70 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+  # ── Chat completions (M2) ──────────────────────
+
+  /v1/chat/completions:
+    post:
+      operationId: chatCompletions
+      tags: [chat]
+      summary: Generate images via OpenAI-compatible chat completions
+      description: |
+        Translates a standard OpenAI chat completions request into an image generation
+        call. Intended for Cherry Studio, AI as Workspace, Lobe Chat, and any
+        OpenAI-SDK client that only speaks the chat completions surface.
+
+        **Routing**: the `model` field must identify an image-generation model
+        (e.g. `gemini/gemini-2.5-flash-image`, `openai/gpt-image-2`, `wan/wan2.7-image`).
+
+        **Credentials**:
+        - `Authorization: Bearer <token>` — forwarded as the upstream `api_key`.
+        - `X-Base-Url` header — overrides the server-configured upstream base URL.
+        - If the server already has credentials in `config.yaml`, the Bearer token
+          and header are optional (Mode A: server-side key).
+
+        **Reference images**: include `type:"image_url"` parts with `data:` URIs in
+        the last user message content to supply reference images.
+
+        **Limitations**: `stream:true` is not supported; the response is always
+        synchronous. Generation can take 30–180 s depending on the model.
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            `Bearer <upstream_api_key>` — forwarded to the upstream provider.
+            Optional when the server has credentials configured in config.yaml.
+        - name: X-Base-Url
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Override the upstream base URL for this request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionsRequest"
+      responses:
+        "200":
+          description: Synchronous chat completions response with generated image(s)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "502":
@@ -498,6 +564,129 @@ components:
           type: string
           nullable: true
           description: Opaque cursor for pagination; null when no more pages
+
+    # ── Chat completions (M2) ──
+
+    ChatCompletionsRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: Image-generation model id (e.g. "gemini/gemini-2.5-flash-image")
+          example: gemini/gemini-2.5-flash-image
+        messages:
+          type: array
+          description: |
+            Chat messages. The last `user` message provides the generation prompt.
+            Content may be a bare string or a multimodal array (text + image_url parts).
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant]
+              content:
+                description: |
+                  Bare string prompt, or array of content parts (`type:"text"` /
+                  `type:"image_url"` with `data:` URI for reference images).
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: object
+        n:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Number of images to generate (default 1)
+        stream:
+          type: boolean
+          description: Must be false or omitted; streaming is not supported.
+          enum: [false]
+        aspect_ratio:
+          type: string
+          description: "Gemini: imageConfig.aspectRatio (e.g. '16:9', '1:1')"
+          example: "16:9"
+        image_size:
+          type: string
+          description: "Gemini: imageConfig.imageSize (512 | 1K | 2K | 4K)"
+          example: 1K
+        thinking_budget:
+          type: integer
+          description: "Gemini: thinkingConfig.thinkingBudget token budget"
+        size:
+          type: string
+          description: "OpenAI / Wan size string (e.g. '1024x1024')"
+        quality:
+          type: string
+          description: "OpenAI quality hint (auto | low | medium | high)"
+
+    ChatCompletionsResponse:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+          description: Unique completion id
+          example: chatcmpl-genpic-1234567890
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+          description: Unix timestamp of response creation
+        model:
+          type: string
+          description: Model id echoed from the request
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, message, finish_reason]
+            properties:
+              index:
+                type: integer
+              message:
+                type: object
+                required: [role, content]
+                properties:
+                  role:
+                    type: string
+                    enum: [assistant]
+                  content:
+                    type: array
+                    description: Multimodal content array
+                    items:
+                      type: object
+                      required: [type]
+                      properties:
+                        type:
+                          type: string
+                          enum: [text, image_url]
+                        text:
+                          type: string
+                        image_url:
+                          type: object
+                          properties:
+                            url:
+                              type: string
+                              description: |
+                                `data:<mime>;base64,<b64>` for b64 images,
+                                or HTTPS URL for URL-based images.
+              finish_reason:
+                type: string
+                enum: [stop]
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
 
     # ── Errors ──
 

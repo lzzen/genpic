@@ -67,6 +67,15 @@ func (j *Job) IsTerminal() bool {
 	return j.Status == StatusSucceeded || j.Status == StatusFailed
 }
 
+// AdminStatsSummary is returned by Store.AdminStats for operator dashboards.
+type AdminStatsSummary struct {
+	TotalJobs     int64            `json:"total_jobs"`
+	Succeeded     int64            `json:"succeeded"`
+	Failed        int64            `json:"failed"`
+	QueuedRunning int64            `json:"queued_running"`
+	ByProvider    map[string]int64 `json:"by_provider"`
+}
+
 // Store is the interface for job persistence.
 // The in-memory implementation (Memory) satisfies this interface.
 // A DB-backed implementation can be swapped in without changing callers.
@@ -83,6 +92,11 @@ type Store interface {
 	// (empty string when there are no more results).
 	// scope restricts rows to the caller (see OwnerScope).
 	List(limit int, cursor string, scope OwnerScope) ([]*Job, string)
+	// AdminList returns jobs across all owners, newest first, for operator UIs.
+	// total is the number of jobs in the store (for pagination). Not authenticated here.
+	AdminList(limit, offset int) ([]*Job, int64)
+	// AdminStats returns aggregate counts. Not authenticated here.
+	AdminStats() AdminStatsSummary
 }
 
 // ─── Memory implementation ────────────────────────────────────────────────────
@@ -241,4 +255,64 @@ func newID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// AdminList returns all jobs newest-first (reversed insertion order).
+func (m *Memory) AdminList(limit, offset int) ([]*Job, int64) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	m.mu.Lock()
+	n := len(m.ordered)
+	need := offset + limit
+	if need > n {
+		need = n
+	}
+	rev := make([]*Job, 0, need)
+	for i := n - 1; i >= 0 && len(rev) < need; i-- {
+		j := m.ordered[i]
+		cp := new(Job)
+		*cp = *j
+		rev = append(rev, cp)
+	}
+	total := int64(n)
+	m.mu.Unlock()
+	if offset >= len(rev) {
+		return nil, total
+	}
+	end := limit
+	if offset+end > len(rev) {
+		end = len(rev) - offset
+	}
+	return rev[offset : offset+end], total
+}
+
+// AdminStats scans all in-memory jobs.
+func (m *Memory) AdminStats() AdminStatsSummary {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := AdminStatsSummary{ByProvider: map[string]int64{}}
+	for _, j := range m.ordered {
+		s.TotalJobs++
+		switch j.Status {
+		case StatusSucceeded:
+			s.Succeeded++
+		case StatusFailed:
+			s.Failed++
+		case StatusQueued, StatusRunning:
+			s.QueuedRunning++
+		}
+		p := j.Provider
+		if p == "" {
+			p = "(unknown)"
+		}
+		s.ByProvider[p]++
+	}
+	return s
 }

@@ -11,6 +11,10 @@
 //   - GET  /health                  — liveness check
 //   - GET  /api/public-config       — non-secret defaults for the SPA
 //   - GET  /api/ui/catalog          — vendor + model list for the embedded SPA (DB-backed later)
+//   - GET  /integrate               — integration wizard (HTML; protect in production)
+//   - GET  /admin                   — operator dashboard (HTML; protect in production)
+//   - GET  /admin/jobs              — list all jobs (offset/limit; protect in production)
+//   - GET  /admin/stats             — aggregate job stats (protect in production)
 //   - POST /api/generate            — enqueue generation (202 + job); poll GET /jobs/{id}
 //
 // Rate limiting:
@@ -128,10 +132,20 @@ func main() {
 	mux.HandleFunc("GET /api/ui/catalog", api.HandleUICatalog)
 	mux.HandleFunc("GET /api/artifacts/{job_id}/{name}", api.HandleServeArtifact)
 	mux.HandleFunc("POST /api/generate", rateMiddleware(globalLimiter, api.HandleCompatGenerate))
+	mux.HandleFunc("POST /v1/chat/completions", rateMiddleware(globalLimiter, api.HandleChatCompletions))
 
 	mux.HandleFunc("GET /models", api.HandleListModels)
 	mux.HandleFunc("GET /jobs/{job_id}", api.HandleGetJob)
 	mux.HandleFunc("GET /jobs", api.HandleListJobs)
+
+	mux.HandleFunc("GET /admin/jobs", api.HandleAdminJobs)
+	mux.HandleFunc("GET /admin/stats", api.HandleAdminStats)
+	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedHTML(w, webRoot, "admin.html")
+	})
+	mux.HandleFunc("GET /integrate", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbeddedHTML(w, webRoot, "integrate.html")
+	})
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -238,6 +252,16 @@ var _ = logger.FromContext // ensure logger package side-effects are applied
 // resolveGenpicArtifactsDir picks the on-disk directory for materialized images.
 // GENPIC_ARTIFACTS_DIR overrides server.artifacts_dir from YAML. "-" disables writes.
 // When unset, defaults to data/genpic-artifacts.
+func serveEmbeddedHTML(w http.ResponseWriter, fsys fs.FS, name string) {
+	b, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(b)
+}
+
 func resolveGenpicArtifactsDir(cfg mvpconfig.Config) string {
 	d := strings.TrimSpace(cfg.ArtifactsDir)
 	if v := strings.TrimSpace(os.Getenv("GENPIC_ARTIFACTS_DIR")); v != "" {

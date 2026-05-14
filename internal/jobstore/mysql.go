@@ -249,6 +249,77 @@ func (s *MySQL) List(limit int, cursor string, scope OwnerScope) ([]*Job, string
 	return jobs[:limit], nextCursor
 }
 
+// AdminList returns jobs globally, newest first.
+func (s *MySQL) AdminList(limit, offset int) ([]*Job, int64) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var total int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM generation_jobs`).Scan(&total); err != nil {
+		return nil, 0
+	}
+	rows, err := s.db.Query(
+		`SELECT `+mysqlCols+` FROM generation_jobs
+		ORDER BY created_at DESC, id DESC
+		LIMIT ? OFFSET ?`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var jobs []*Job
+	for rows.Next() {
+		j, err := scanJobRows(rows)
+		if err != nil {
+			continue
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, total
+}
+
+// AdminStats returns aggregate counts from the database.
+func (s *MySQL) AdminStats() AdminStatsSummary {
+	out := AdminStatsSummary{ByProvider: map[string]int64{}}
+	row := s.db.QueryRow(`
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status IN ('queued','running') THEN 1 ELSE 0 END), 0)
+		FROM generation_jobs`)
+	var q int64
+	if err := row.Scan(&out.TotalJobs, &out.Succeeded, &out.Failed, &q); err != nil {
+		return out
+	}
+	out.QueuedRunning = q
+
+	rows, err := s.db.Query(`
+		SELECT COALESCE(NULLIF(TRIM(provider), ''), '(unknown)'), COUNT(*)
+		FROM generation_jobs GROUP BY COALESCE(NULLIF(TRIM(provider), ''), '(unknown)')`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		var c int64
+		if err := rows.Scan(&p, &c); err != nil {
+			continue
+		}
+		out.ByProvider[p] = c
+	}
+	return out
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 type rowScanner interface {

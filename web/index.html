@@ -183,6 +183,11 @@
     [data-active-provider="wan"] .btn-gen:hover:not(:disabled) { background: #fb923c; }
 
     .note { font-size: .72rem; color: var(--muted); line-height: 1.5; padding: 8px 10px; background: var(--surface2); border-radius: 7px; border: 1px solid var(--border); }
+    .btn-secondary { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 7px; cursor: pointer; font-family: var(--font); transition: border-color .15s; }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .bbox-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 4px; align-items: center; margin-bottom: 6px; }
+    .bbox-row input { font-size: .78rem; padding: 4px 7px; }
+    .bbox-row .bbox-del { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1rem; padding: 0 4px; }
 
     .cred-warn {
       display: none;
@@ -662,6 +667,19 @@
                 <option value="4">4</option>
               </select>
             </div>
+            <div class="field">
+              <label for="wan-edit-type">编辑类型</label>
+              <select id="wan-edit-type">
+                <option value="">文生图（默认）</option>
+                <option value="image_edit">图像编辑（需参考图）</option>
+                <option value="inpaint">局部重绘（需参考图 + bbox）</option>
+              </select>
+            </div>
+          </div>
+          <div id="wan-bbox-section" style="display:none">
+            <div class="note" style="margin-bottom:6px">局部重绘区域 — 像素坐标（相对原图）</div>
+            <div id="wan-bbox-list"></div>
+            <button type="button" id="wan-bbox-add" class="btn-secondary" style="margin-top:6px;font-size:.78rem;padding:4px 10px">＋ 添加区域</button>
           </div>
           <div class="toggle-row" id="wan-thinking-row" style="display:none">
             <span class="toggle-label">思考模式（高质量，较慢）</span>
@@ -1467,6 +1485,31 @@ function wireRefAndGpt() {
     }
   })();
 
+  // ── Wan edit type — show/hide bbox section ──
+  $('wan-edit-type')?.addEventListener('change', () => {
+    const val = $('wan-edit-type').value;
+    const bboxSec = $('wan-bbox-section');
+    if (bboxSec) bboxSec.style.display = val === 'inpaint' ? 'block' : 'none';
+  });
+
+  // ── Wan bbox add/remove ──
+  function addWanBboxRow() {
+    const list = $('wan-bbox-list');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'bbox-row';
+    row.innerHTML = `
+      <input type="number" placeholder="x1" min="0" title="左边缘 x" />
+      <input type="number" placeholder="y1" min="0" title="上边缘 y" />
+      <input type="number" placeholder="x2" min="0" title="右边缘 x" />
+      <input type="number" placeholder="y2" min="0" title="下边缘 y" />
+      <button class="bbox-del" type="button" title="删除">✕</button>
+    `;
+    row.querySelector('.bbox-del').addEventListener('click', () => row.remove());
+    list.appendChild(row);
+  }
+  $('wan-bbox-add')?.addEventListener('click', addWanBboxRow);
+
   const pick = () => $('ref-input')?.click();
   $('ref-pick')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1542,6 +1585,20 @@ function buildBody() {
     base.n = parseInt($('wan-n').value) || 1;
     if (activeModel === 'wan/wan2.7-image-pro') {
       base.thinking_mode = $('wan-thinking')?.checked ?? false;
+    }
+    const editType = $('wan-edit-type')?.value || '';
+    if (editType) base.wan_edit_type = editType;
+    if (editType === 'inpaint') {
+      const bboxRows = document.querySelectorAll('#wan-bbox-list .bbox-row');
+      const bboxes = [];
+      bboxRows.forEach((row) => {
+        const inputs = row.querySelectorAll('input[type=number]');
+        if (inputs.length === 4) {
+          bboxes.push({ x1: parseInt(inputs[0].value)||0, y1: parseInt(inputs[1].value)||0,
+                        x2: parseInt(inputs[2].value)||0, y2: parseInt(inputs[3].value)||0 });
+        }
+      });
+      if (bboxes.length) base.wan_bbox_list = bboxes;
     }
   }
   if (referenceEntries.length) {
