@@ -80,6 +80,8 @@ func New(cfg Config) *Provider {
 		seen[m.UpstreamModel] = struct{}{}
 		seen[strings.TrimPrefix(m.ID, "gemini/")] = struct{}{}
 	}
+	// Config-driven 4K route models (image_size_4k_model_map targets) are often far slower than 1K/2K.
+	const extraRouteModelTimeoutSec = 600 // 10m — bounds api.executeImageGeneration upstream context
 	for _, raw := range cfg.ExtraImageWireModels {
 		wire := strings.TrimSpace(raw)
 		if wire == "" {
@@ -98,7 +100,7 @@ func New(cfg Config) *Provider {
 			ID:             "gemini/" + wire,
 			DisplayName:    wire + " (image)",
 			UpstreamModel:  wire,
-			TimeoutSeconds: 150,
+			TimeoutSeconds: extraRouteModelTimeoutSec,
 			Capabilities:   caps(provider.CapThinking),
 		})
 	}
