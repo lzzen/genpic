@@ -399,7 +399,15 @@
     <button type="button" class="tpl-preview-close" id="template-preview-close" aria-label="关闭">×</button>
     <div class="tpl-preview-grid">
       <div class="tpl-preview-left">
-        <img id="template-preview-img" class="tpl-preview-img" alt="" />
+        <div class="tpl-preview-img-wrap" id="template-preview-img-wrap" role="button" aria-label="在新窗口打开大图" hidden>
+          <img id="template-preview-img" class="tpl-preview-img" alt="" />
+          <span class="tpl-preview-zoom-ico" aria-hidden="true">
+            <svg class="tpl-preview-zoom-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="10" cy="10" r="6" />
+              <path d="M14.5 14.5L20 20" />
+            </svg>
+          </span>
+        </div>
       </div>
       <div class="tpl-preview-right">
         <div class="tpl-preview-kicker">AI 提示词详情</div>

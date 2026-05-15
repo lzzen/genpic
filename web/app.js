@@ -502,6 +502,7 @@ function openTemplatePreview(t) {
   if (!t) return;
   templatePreviewCtx = t;
   const mod = $('template-preview-modal');
+  const wrap = $('template-preview-img-wrap');
   const img = $('template-preview-img');
   const titleEl = $('template-preview-title');
   const visStrip = $('template-preview-visibility');
@@ -526,6 +527,10 @@ function openTemplatePreview(t) {
       img.src = '';
       img.hidden = true;
     }
+  }
+  if (wrap) {
+    wrap.hidden = !fullSrc;
+    wrap.tabIndex = fullSrc ? 0 : -1;
   }
   const title = String(t.title || '').trim();
   if (titleEl) titleEl.textContent = title || '模板预览';
@@ -602,12 +607,17 @@ function openTemplatePreview(t) {
 
 function closeTemplatePreview() {
   const mod = $('template-preview-modal');
+  const wrap = $('template-preview-img-wrap');
   const img = $('template-preview-img');
   if (img) {
     img.onload = null;
     img.onerror = null;
     img.removeAttribute('data-full-src');
     img.title = '';
+  }
+  if (wrap) {
+    wrap.hidden = true;
+    wrap.tabIndex = -1;
   }
   if (mod) mod.hidden = true;
   templatePreviewCtx = null;
@@ -1508,10 +1518,17 @@ $('template-rail')?.addEventListener('scroll', () => updateTemplateMoreVisibilit
 $('template-preview-close')?.addEventListener('click', () => closeTemplatePreview());
 $('template-preview-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'template-preview-modal') closeTemplatePreview();
-  else if (e.target.id === 'template-preview-img') {
-    const u = e.target.getAttribute('data-full-src');
+  else if (e.target.closest('#template-preview-img-wrap')) {
+    const u = $('template-preview-img')?.getAttribute('data-full-src');
     if (u) window.open(u, '_blank', 'noopener,noreferrer');
   }
+});
+$('template-preview-img-wrap')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  e.stopPropagation();
+  const u = $('template-preview-img')?.getAttribute('data-full-src');
+  if (u) window.open(u, '_blank', 'noopener,noreferrer');
 });
 $('template-preview-copy')?.addEventListener('click', () => {
   if (!templatePreviewCtx) return;
