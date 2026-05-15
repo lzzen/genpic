@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>视觉工厂 — Genpic</title>
+  <title>光影视界 — Genpic</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -11,7 +12,7 @@
 <header>
   <div class="header-left">
     <div class="logo">Gen<span>pic</span></div>
-    <div class="logo-sub">视觉工厂</div>
+    <div class="logo-sub">光影视界</div>
   </div>
   <div class="header-actions">
     <button type="button" class="toolbar-btn" id="btn-community" title="社区精选" aria-label="社区精选">🌐</button>
@@ -361,7 +362,15 @@
     <button type="button" class="job-detail-close" id="job-detail-close" aria-label="关闭">×</button>
     <div class="job-detail-grid">
       <div class="job-detail-left">
-        <img id="job-detail-img" class="job-detail-img" alt="" />
+        <div class="job-detail-img-wrap" id="job-detail-img-wrap" role="button" aria-label="在新窗口打开大图" hidden>
+          <img id="job-detail-img" class="job-detail-img" alt="" />
+          <span class="job-detail-zoom-ico" aria-hidden="true">
+            <svg class="job-detail-zoom-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="10" cy="10" r="6" />
+              <path d="M14.5 14.5L20 20" />
+            </svg>
+          </span>
+        </div>
       </div>
       <div class="job-detail-right">
         <h2 id="job-detail-title" class="job-detail-title">生成详情</h2>
@@ -379,7 +388,6 @@
         <div class="job-detail-footer job-detail-footer-row">
           <button type="button" class="primary" id="job-detail-create-similar">创作同款</button>
           <button type="button" class="secondary" id="job-detail-save-template" hidden>保存为模板</button>
-          <button type="button" class="secondary job-detail-admin-only" id="job-detail-save-template-public" hidden>保存为公用模板</button>
         </div>
       </div>
     </div>

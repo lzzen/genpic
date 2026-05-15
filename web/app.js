@@ -337,6 +337,7 @@ function openJobDetail(raw) {
   const ctx = normalizeJobDetailPayload(raw);
   jobDetailCtx = ctx;
   const mod = $('job-detail-modal');
+  const wrap = $('job-detail-img-wrap');
   const img = $('job-detail-img');
   const pr = $('job-detail-prompt');
   const meta = $('job-detail-meta');
@@ -345,21 +346,38 @@ function openJobDetail(raw) {
   if (img) {
     img.src = src || '';
     img.hidden = !src;
+    if (src) {
+      img.dataset.fullSrc = src;
+      img.removeAttribute('title');
+    } else {
+      img.removeAttribute('data-full-src');
+    }
+  }
+  if (wrap) {
+    wrap.hidden = !src;
+    wrap.tabIndex = src ? 0 : -1;
   }
   if (pr) pr.textContent = ctx.prompt || '（无提示词）';
   if (meta) meta.innerHTML = buildJobDetailMetaHTML(ctx);
   const jobIdOk = typeof ctx.id === 'string' && /^[a-f0-9]{32}$/i.test(ctx.id);
   const canSave = !!(authUser && ctx.status === 'succeeded' && jobIdOk);
   const savePr = $('job-detail-save-template');
-  const savePub = $('job-detail-save-template-public');
   if (savePr) savePr.hidden = !canSave;
-  if (savePub) savePub.hidden = !canSave || !authUser.is_admin;
   if (mod) mod.hidden = false;
   document.body.style.overflow = 'hidden';
 }
 
 function closeJobDetail() {
   const mod = $('job-detail-modal');
+  const img = $('job-detail-img');
+  const wrap = $('job-detail-img-wrap');
+  if (img) {
+    img.removeAttribute('data-full-src');
+  }
+  if (wrap) {
+    wrap.hidden = true;
+    wrap.tabIndex = -1;
+  }
   if (mod) mod.hidden = true;
   jobDetailCtx = null;
   document.body.style.overflow = '';
@@ -495,8 +513,19 @@ function openTemplatePreview(t) {
   const tagsEl = $('template-preview-tags');
   const fullSrc = genpicImgFullSrc({ url: String(t.result_image_url || '').trim() });
   if (img) {
-    img.src = fullSrc || '';
-    img.hidden = !fullSrc;
+    img.onload = null;
+    img.onerror = null;
+    if (fullSrc) {
+      img.dataset.fullSrc = fullSrc;
+      img.title = '在新窗口打开大图';
+      img.hidden = false;
+      img.src = fullSrc;
+    } else {
+      img.removeAttribute('data-full-src');
+      img.title = '';
+      img.src = '';
+      img.hidden = true;
+    }
   }
   const title = String(t.title || '').trim();
   if (titleEl) titleEl.textContent = title || '模板预览';
@@ -573,6 +602,13 @@ function openTemplatePreview(t) {
 
 function closeTemplatePreview() {
   const mod = $('template-preview-modal');
+  const img = $('template-preview-img');
+  if (img) {
+    img.onload = null;
+    img.onerror = null;
+    img.removeAttribute('data-full-src');
+    img.title = '';
+  }
   if (mod) mod.hidden = true;
   templatePreviewCtx = null;
   document.body.style.overflow = '';
@@ -620,11 +656,16 @@ async function refreshTemplateStrip() {
       const hit = document.createElement('button');
       hit.type = 'button';
       hit.className = 'template-card-preview-hit';
-      hit.setAttribute('aria-label', '点击预览模板');
+      hit.setAttribute('aria-label', '点击预览模板；Ctrl 或 ⌘ 点击在新窗口打开原图');
       hit.innerHTML = TPL_PREVIEW_EYE_SVG + '<span class="tpl-hit-txt">点击预览</span>';
       hit.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (ev.ctrlKey || ev.metaKey) {
+          const fu = genpicImgFullSrc({ url: u });
+          if (fu) window.open(fu, '_blank', 'noopener,noreferrer');
+          return;
+        }
         openTemplatePreview(t);
       });
       wrap.appendChild(hit);
@@ -1426,6 +1467,20 @@ $('job-detail-close')?.addEventListener('click', () => closeJobDetail());
 $('job-detail-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'job-detail-modal') closeJobDetail();
 });
+function openJobDetailImageNewTab() {
+  const u = $('job-detail-img')?.getAttribute('data-full-src');
+  if (u) window.open(u, '_blank', 'noopener,noreferrer');
+}
+$('job-detail-img-wrap')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openJobDetailImageNewTab();
+});
+$('job-detail-img-wrap')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  e.stopPropagation();
+  openJobDetailImageNewTab();
+});
 $('job-detail-copy-prompt')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
   void copyDescriptionWithToast(jobDetailCtx.prompt || '');
@@ -1438,10 +1493,6 @@ $('job-detail-create-similar')?.addEventListener('click', () => {
 $('job-detail-save-template')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
   void saveJobAsTemplatePayload(jobDetailCtx, 'private');
-});
-$('job-detail-save-template-public')?.addEventListener('click', () => {
-  if (!jobDetailCtx) return;
-  void saveJobAsTemplatePayload(jobDetailCtx, 'public');
 });
 
 $('template-rail-next')?.addEventListener('click', () => {
@@ -1457,6 +1508,10 @@ $('template-rail')?.addEventListener('scroll', () => updateTemplateMoreVisibilit
 $('template-preview-close')?.addEventListener('click', () => closeTemplatePreview());
 $('template-preview-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'template-preview-modal') closeTemplatePreview();
+  else if (e.target.id === 'template-preview-img') {
+    const u = e.target.getAttribute('data-full-src');
+    if (u) window.open(u, '_blank', 'noopener,noreferrer');
+  }
 });
 $('template-preview-copy')?.addEventListener('click', () => {
   if (!templatePreviewCtx) return;
@@ -2287,6 +2342,73 @@ function openHistEntryDetail(entry) {
   openJobDetail(histEntryToDetailPayload(entry));
 }
 
+function buildHistListImageItem(imgRec, entry, itemClassExtra) {
+  const item = document.createElement('div');
+  item.className = 'hist-img-item' + (itemClassExtra ? ' ' + itemClassExtra : '');
+  const el = document.createElement('img');
+  el.alt = '';
+  el.loading = 'lazy';
+  if (imgRec.b64_json) {
+    el.src = 'data:' + (imgRec.mime_type || 'image/png') + ';base64,' + imgRec.b64_json;
+  } else {
+    const ls = genpicImgListSrc(imgRec);
+    if (ls) el.src = ls;
+  }
+  genpicBindPreviewImgFallback(el, imgRec);
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => openHistEntryDetail(entry));
+  item.appendChild(el);
+  const a = document.createElement('a');
+  if (imgRec.b64_json) {
+    a.href = genpicImgFullSrc(imgRec);
+    a.download = 'genpic-' + entry.ts + '.png';
+    a.textContent = '下载';
+  } else if (imgRec.url) {
+    a.href = imgRec.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '原图 ↗';
+  }
+  if (a.href) item.appendChild(a);
+  return item;
+}
+
+/** History list: prompt longer than this shows 展开 / 收起. */
+const HIST_PROMPT_EXPAND_THRESHOLD = 100;
+
+function appendHistExpandablePrompt(parent, promptText, compact) {
+  if (!parent || !promptText) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'hist-prompt-expand' + (compact ? ' hist-prompt-expand--compact' : '');
+  const inner = document.createElement('div');
+  inner.className = 'hist-prompt-inner';
+  inner.textContent = promptText;
+  const long = promptText.length > HIST_PROMPT_EXPAND_THRESHOLD;
+  if (long) inner.classList.add('hist-prompt-inner--clamped');
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'hist-prompt-expand-btn';
+  btn.textContent = '展开';
+  btn.hidden = !long;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const on = wrap.dataset.expanded === '1';
+    if (on) {
+      wrap.removeAttribute('data-expanded');
+      btn.textContent = '展开';
+    } else {
+      wrap.dataset.expanded = '1';
+      btn.textContent = '收起';
+    }
+  });
+
+  wrap.appendChild(inner);
+  wrap.appendChild(btn);
+  parent.appendChild(wrap);
+}
+
 function renderHistoryPanel() {
   const arr = histViewEntries !== null ? histViewEntries : histLoad();
   const emptyEl = $('hist-empty');
@@ -2368,65 +2490,60 @@ function renderHistoryPanel() {
     hdr.appendChild(delBtn);
     card.appendChild(hdr);
 
-    if (entry.prompt) {
-      const p = document.createElement('div');
-      p.className = 'hist-prompt';
-      p.textContent = entry.prompt;
-      card.appendChild(p);
-    } else if (entry.source === 'server') {
-      const p = document.createElement('div');
-      p.className = 'hist-prompt hist-prompt-locked';
-      p.textContent = '登录后可见完整提示词';
-      card.appendChild(p);
+    const imgs = entry.images || [];
+    const isCompact = entry.status === 'succeeded' && imgs.length > 0;
+    if (isCompact) card.classList.add('hist-entry--compact');
+
+    const appendPromptSection = (parent, compact) => {
+      if (entry.prompt) {
+        appendHistExpandablePrompt(parent, entry.prompt, compact);
+      } else if (entry.source === 'server') {
+        const p = document.createElement('div');
+        p.className = compact ? 'hist-row-prompt hist-prompt-locked' : 'hist-prompt hist-prompt-locked';
+        p.textContent = '登录后可见完整提示词';
+        parent.appendChild(p);
+      }
+    };
+
+    if (isCompact) {
+      const mainRow = document.createElement('div');
+      mainRow.className = 'hist-main-row';
+      const thumbCol = document.createElement('div');
+      thumbCol.className = 'hist-row-thumb';
+      thumbCol.appendChild(buildHistListImageItem(imgs[0], entry, 'hist-img-item--inline'));
+      mainRow.appendChild(thumbCol);
+      const promptWrap = document.createElement('div');
+      promptWrap.className = 'hist-row-prompt-wrap';
+      appendPromptSection(promptWrap, true);
+      mainRow.appendChild(promptWrap);
+      card.appendChild(mainRow);
+      if (imgs.length > 1) {
+        const extra = document.createElement('div');
+        extra.className = 'hist-images hist-images--extra';
+        for (let i = 1; i < imgs.length; i++) {
+          extra.appendChild(buildHistListImageItem(imgs[i], entry, 'hist-img-item--extra'));
+        }
+        card.appendChild(extra);
+      }
+    } else {
+      appendPromptSection(card, false);
+      if (entry.status && entry.status !== 'succeeded') {
+        const st = document.createElement('div');
+        st.className = 'hist-status' + (entry.status === 'failed' ? ' hist-status-fail' : '');
+        if (entry.status === 'failed') {
+          st.textContent = '失败：' + (entry.errorMessage || '未知错误');
+        } else {
+          st.textContent = '状态：' + entry.status;
+        }
+        card.appendChild(st);
+      }
+      const imgsEl = document.createElement('div');
+      imgsEl.className = 'hist-images';
+      imgs.forEach((imgRec) => {
+        imgsEl.appendChild(buildHistListImageItem(imgRec, entry, ''));
+      });
+      card.appendChild(imgsEl);
     }
-
-    if (entry.status && entry.status !== 'succeeded') {
-      const st = document.createElement('div');
-      st.className = 'hist-status' + (entry.status === 'failed' ? ' hist-status-fail' : '');
-      if (entry.status === 'failed') {
-        st.textContent = '失败：' + (entry.errorMessage || '未知错误');
-      } else {
-        st.textContent = '状态：' + entry.status;
-      }
-      card.appendChild(st);
-    }
-
-    const imgsEl = document.createElement('div');
-    imgsEl.className = 'hist-images';
-    (entry.images || []).forEach(img => {
-      const item = document.createElement('div');
-      item.className = 'hist-img-item';
-
-      const el = document.createElement('img');
-      el.alt = '';
-      el.loading = 'lazy';
-      if (img.b64_json) {
-        el.src = 'data:' + (img.mime_type || 'image/png') + ';base64,' + img.b64_json;
-      } else {
-        const ls = genpicImgListSrc(img);
-        if (ls) el.src = ls;
-      }
-      genpicBindPreviewImgFallback(el, img);
-      el.style.cursor = 'pointer';
-      el.addEventListener('click', () => openHistEntryDetail(entry));
-      item.appendChild(el);
-
-      const a = document.createElement('a');
-      if (img.b64_json) {
-        a.href = genpicImgFullSrc(img);
-        a.download = 'genpic-' + entry.ts + '.png';
-        a.textContent = '下载';
-      } else if (img.url) {
-        a.href = img.url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.textContent = '原图 ↗';
-      }
-      if (a.href) item.appendChild(a);
-
-      imgsEl.appendChild(item);
-    });
-    card.appendChild(imgsEl);
 
     const actRow = document.createElement('div');
     actRow.className = 'card-actions';
@@ -2443,9 +2560,6 @@ function renderHistoryPanel() {
     const hid = String(entry.id || '').trim();
     if (authUser && entry.status === 'succeeded' && /^[a-f0-9]{32}$/i.test(hid)) {
       actRow.appendChild(mkH('存为模板', () => void saveJobAsTemplatePayload(histEntryToDetailPayload(entry), 'private')));
-      if (authUser.is_admin) {
-        actRow.appendChild(mkH('公用模板', () => void saveJobAsTemplatePayload(histEntryToDetailPayload(entry), 'public')));
-      }
     }
     card.appendChild(actRow);
 
