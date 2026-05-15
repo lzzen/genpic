@@ -1659,6 +1659,67 @@ function addReferenceFromFile(file) {
   reader.readAsDataURL(file);
 }
 
+function clipboardDataHasPlainOrHtmlText(dataTransfer) {
+  if (!dataTransfer?.items) return false;
+  for (const it of dataTransfer.items) {
+    if (it.type === 'text/plain' || it.type === 'text/html') return true;
+  }
+  return false;
+}
+
+function collectClipboardImageFiles(dataTransfer) {
+  const out = [];
+  if (!dataTransfer) return out;
+  if (dataTransfer.items?.length) {
+    for (const it of dataTransfer.items) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        const f = it.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+  }
+  if (!out.length && dataTransfer.files?.length) {
+    for (const f of dataTransfer.files) {
+      if (f.type.startsWith('image/')) out.push(f);
+    }
+  }
+  return out;
+}
+
+/** True when paste-to-reference should run (not in modals / text fields where paste means text). */
+function shouldPasteClipboardImagesToRefs(activeEl) {
+  if (!activeEl) return true;
+  if (activeEl.closest?.('#job-detail-modal, #auth-modal, #cred-panel, #hist-drawer, #template-preview-modal, #privacy-modal')) {
+    return false;
+  }
+  if (activeEl.isContentEditable || activeEl.closest?.('[contenteditable="true"]')) {
+    return false;
+  }
+  const tag = activeEl.tagName;
+  if (tag === 'SELECT') return false;
+  if (tag === 'TEXTAREA') return activeEl.id === 'prompt';
+  if (tag === 'INPUT') {
+    const t = (activeEl.type || '').toLowerCase();
+    if (['text', 'url', 'password', 'email', 'search', 'tel'].includes(t)) return false;
+  }
+  return true;
+}
+
+function onDocumentPasteReferenceImages(e) {
+  const cd = e.clipboardData;
+  if (!cd) return;
+  const el = document.activeElement;
+  if (!shouldPasteClipboardImagesToRefs(el)) return;
+  const files = collectClipboardImageFiles(cd);
+  if (!files.length) return;
+  if (el?.id === 'prompt' && clipboardDataHasPlainOrHtmlText(cd)) return;
+  e.preventDefault();
+  for (const f of files) {
+    addReferenceFromFile(f);
+  }
+  showGenpicToast('已从剪贴板添加参考图');
+}
+
 function updateGptResEst() {
   const est = $('gpt-res-est');
   const sel = $('gpt-size');
@@ -1804,6 +1865,8 @@ function wireRefAndGpt() {
       for (const f of dt.files) addReferenceFromFile(f);
     });
   }
+
+  document.addEventListener('paste', onDocumentPasteReferenceImages);
   updateGptResEst();
 }
 
