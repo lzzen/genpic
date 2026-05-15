@@ -533,6 +533,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: A template for this job id already exists (`code` template_exists_for_job)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
         "503":
           description: Templates disabled (no database) or job store unavailable
 

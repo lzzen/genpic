@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,10 +14,14 @@ import (
 	"genpic/internal/jobstore"
 )
 
+// ErrDuplicateSourceJob is returned when a template for this generation job already exists.
+var ErrDuplicateSourceJob = errors.New("templatestore: template already exists for this job")
+
 // Template is one saved preset (prompt + params + optional reference images + preview URL).
 type Template struct {
 	ID              string
 	UserID          string
+	SourceJobID     string // generation_jobs.id; at most one template row per job (unique when set)
 	Visibility      string // "private" | "public"
 	Title           string
 	PrimaryModel    string
@@ -31,7 +36,9 @@ type Template struct {
 
 // Store lists and mutates templates.
 type Store interface {
-	ListForModel(ctx context.Context, primaryModel, viewerUserID string, limit int) ([]Template, error)
+	// ListForModel returns templates whose primary_model equals primaryModelCatalog OR primaryModelAlt
+	// (catalog id vs wire-style id) so listing matches how rows were stored.
+	ListForModel(ctx context.Context, primaryModelCatalog, primaryModelAlt, viewerUserID string, limit int) ([]Template, error)
 	Create(ctx context.Context, t *Template) error
 	Delete(ctx context.Context, id, actorUserID string, actorIsAdmin bool) (bool, error)
 }

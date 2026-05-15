@@ -44,6 +44,7 @@
 - [x] `internal/templatestore`（MySQL）
 - [x] Handlers + 路由 + OpenAPI + `config.example.yaml` 说明
 - [x] Web UI 模板区与保存入口
+- [x] 修复：`primary_model` 与侧栏 `model` 查询一致（存完整 catalog id）；列表 `OR` 兼容历史「去前缀」行；`source_job_id` 唯一约束防同一任务重复保存（409）
 
 ---
 

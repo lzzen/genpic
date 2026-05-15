@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -86,7 +87,7 @@ func HandleListTemplates(w http.ResponseWriter, r *http.Request) {
 		uid = u.ID
 	}
 	ctx := r.Context()
-	list, err := templateStoreInstance.ListForModel(ctx, model, uid, 50)
+	list, err := templateStoreInstance.ListForModel(ctx, model, normalizeModelID(model), uid, 50)
 	if err != nil {
 		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "template_list_error", err.Error()))
 		return
@@ -216,12 +217,16 @@ func HandleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	models := []string{normalizeModelID(j.Model)}
+	// Use the same catalog model id as the job / SPA model selector (do not strip openai/… prefix),
+	// otherwise GET /api/templates?model=openai/… would not match stored primary_model.
+	catalogModel := strings.TrimSpace(j.Model)
+	models := []string{catalogModel}
 	tpl := &templatestore.Template{
 		UserID:          user.ID,
+		SourceJobID:     jobID,
 		Visibility:      vis,
 		Title:           title,
-		PrimaryModel:    normalizeModelID(j.Model),
+		PrimaryModel:    catalogModel,
 		Models:          models,
 		Prompt:          j.Prompt,
 		Params:          cloneJobParams(j.Params),
@@ -229,6 +234,10 @@ func HandleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		ResultImageURL:  resultURL,
 	}
 	if err := templateStoreInstance.Create(r.Context(), tpl); err != nil {
+		if errors.Is(err, templatestore.ErrDuplicateSourceJob) {
+			Error(w, pkgerrors.New(http.StatusConflict, pkgerrors.TypeValidation, "template_exists_for_job", "该作品已保存为模板，无需重复保存"))
+			return
+		}
 		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "template_create_error", err.Error()))
 		return
 	}

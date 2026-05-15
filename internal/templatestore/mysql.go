@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"genpic/internal/jobstore"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
 // MySQL implements Store against generation_templates.
@@ -16,37 +19,70 @@ type MySQL struct {
 }
 
 // NewMySQL returns a template store using the shared application DB pool.
-func NewMySQL(db *sql.DB) *MySQL {
+// It applies idempotent schema tweaks (e.g. source_job_id + unique index) once per process start.
+func NewMySQL(db *sql.DB) (*MySQL, error) {
 	if db == nil {
-		return nil
+		return nil, fmt.Errorf("templatestore: nil db")
 	}
-	return &MySQL{db: db}
+	if err := migrateTemplateSchema(db); err != nil {
+		return nil, err
+	}
+	return &MySQL{db: db}, nil
+}
+
+// migrateTemplateSchema adds columns/indexes expected by this package (idempotent).
+// MySQL 1060 = duplicate column, 1061 = duplicate index — ignored. 1146 = no such table — ignored.
+func migrateTemplateSchema(db *sql.DB) error {
+	stmts := []string{
+		`ALTER TABLE generation_templates ADD COLUMN source_job_id VARCHAR(64) NULL AFTER user_id`,
+		`ALTER TABLE generation_templates ADD UNIQUE KEY uk_generation_templates_source_job (source_job_id)`,
+	}
+	for _, q := range stmts {
+		if _, err := db.Exec(q); err != nil {
+			var me *mysqldriver.MySQLError
+			if errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061) {
+				continue
+			}
+			if errors.As(err, &me) && me.Number == 1146 {
+				return nil
+			}
+			return fmt.Errorf("templatestore: migrate: %w", err)
+		}
+	}
+	return nil
 }
 
 const listSQL = `
 SELECT id, user_id, visibility, title, primary_model, models_json, prompt, params_json,
        reference_images_json, result_image_url, created_at, updated_at
   FROM generation_templates
- WHERE primary_model = ?
+ WHERE (primary_model = ? OR primary_model = ?)
    AND (visibility = 'public' OR (visibility = 'private' AND user_id = ?))
  ORDER BY visibility = 'public' DESC, created_at DESC
  LIMIT ?`
 
 // ListForModel returns public templates for the model plus the viewer's private templates.
 // viewerUserID empty → only public rows match the OR branch for private (none).
-func (s *MySQL) ListForModel(ctx context.Context, primaryModel, viewerUserID string, limit int) ([]Template, error) {
+func (s *MySQL) ListForModel(ctx context.Context, primaryModelCatalog, primaryModelAlt, viewerUserID string, limit int) ([]Template, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("templatestore: nil db")
 	}
-	pm := strings.TrimSpace(primaryModel)
-	if pm == "" {
+	m1 := strings.TrimSpace(primaryModelCatalog)
+	m2 := strings.TrimSpace(primaryModelAlt)
+	if m1 == "" && m2 == "" {
 		return nil, nil
+	}
+	if m2 == "" {
+		m2 = m1
+	}
+	if m1 == "" {
+		m1 = m2
 	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	uid := strings.TrimSpace(viewerUserID)
-	rows, err := s.db.QueryContext(ctx, listSQL, pm, uid, limit)
+	rows, err := s.db.QueryContext(ctx, listSQL, m1, m2, uid, limit)
 	if err != nil {
 		return nil, fmt.Errorf("templatestore: list: %w", err)
 	}
@@ -94,9 +130,9 @@ func scanTemplateRow(sc interface {
 
 const insertSQL = `
 INSERT INTO generation_templates
-  (id, user_id, visibility, title, primary_model, models_json, prompt, params_json,
+  (id, user_id, source_job_id, visibility, title, primary_model, models_json, prompt, params_json,
    reference_images_json, result_image_url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // Create inserts a new template row. t.ID must be empty — a new id is assigned.
 func (s *MySQL) Create(ctx context.Context, t *Template) error {
@@ -139,11 +175,22 @@ func (s *MySQL) Create(ctx context.Context, t *Template) error {
 		}
 		refJSON = sql.NullString{String: string(b), Valid: true}
 	}
+	sjid := strings.TrimSpace(t.SourceJobID)
+	var srcArg any
+	if sjid != "" {
+		srcArg = sjid
+	} else {
+		srcArg = nil
+	}
 	_, err = s.db.ExecContext(ctx, insertSQL,
-		t.ID, t.UserID, t.Visibility, t.Title, t.PrimaryModel, mj, t.Prompt,
+		t.ID, t.UserID, srcArg, t.Visibility, t.Title, t.PrimaryModel, mj, t.Prompt,
 		paramsJSON, refJSON, t.ResultImageURL, t.CreatedAt, t.UpdatedAt,
 	)
 	if err != nil {
+		var me *mysqldriver.MySQLError
+		if errors.As(err, &me) && me.Number == 1062 {
+			return ErrDuplicateSourceJob
+		}
 		return fmt.Errorf("templatestore: insert: %w", err)
 	}
 	return nil

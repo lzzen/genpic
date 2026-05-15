@@ -94,7 +94,12 @@ func main() {
 			os.Exit(1)
 		}
 		log.Info("database migrations applied")
-		api.SetTemplateStore(templatestore.NewMySQL(ms.DB()))
+		ts, err := templatestore.NewMySQL(ms.DB())
+		if err != nil {
+			slog.Error("template store: init failed", "error", err)
+			os.Exit(1)
+		}
+		api.SetTemplateStore(ts)
 	} else {
 		store = jobstore.NewMemory(ctx, 2*time.Hour)
 		log.Info("job store initialised", "type", "in-memory", "ttl", "2h",
