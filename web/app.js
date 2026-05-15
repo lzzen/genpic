@@ -486,6 +486,7 @@ function openTemplatePreview(t) {
   const mod = $('template-preview-modal');
   const img = $('template-preview-img');
   const titleEl = $('template-preview-title');
+  const visStrip = $('template-preview-visibility');
   const modelRow = $('template-preview-model-row');
   const prodLine = $('template-preview-product-line');
   const promptBox = $('template-preview-prompt-box');
@@ -499,6 +500,11 @@ function openTemplatePreview(t) {
   }
   const title = String(t.title || '').trim();
   if (titleEl) titleEl.textContent = title || '模板预览';
+  if (visStrip) {
+    const pub = String(t.visibility || '').toLowerCase() === 'public';
+    visStrip.textContent = pub ? '公用模板 · 全站用户可见' : '我的模板 · 仅自己可见';
+    visStrip.className = 'tpl-preview-visibility' + (pub ? ' tpl-preview-visibility--public' : ' tpl-preview-visibility--private');
+  }
   if (modelRow) modelRow.innerHTML = templatePreviewModelChipsHTML(t);
   const refs = Array.isArray(t.reference_images) ? t.reference_images : [];
   const modelsArr = Array.isArray(t.models) ? t.models : [];
@@ -626,6 +632,11 @@ async function refreshTemplateStrip() {
         const b = document.createElement('span');
         b.className = 'template-card-badge';
         b.textContent = '公用';
+        wrap.appendChild(b);
+      } else {
+        const b = document.createElement('span');
+        b.className = 'template-card-badge template-card-badge-mine';
+        b.textContent = '我的';
         wrap.appendChild(b);
       }
       card.appendChild(wrap);
