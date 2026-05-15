@@ -47,6 +47,8 @@ tags:
     description: User registration, login, session cookie, and privacy settings
   - name: community
     description: Public artwork feed and visibility controls
+  - name: templates
+    description: Per-model presets saved from succeeded jobs
   - name: health
     description: Service health and liveness
 
@@ -474,6 +476,102 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/templates:
+    get:
+      operationId: listTemplates
+      tags: [templates]
+      summary: List templates for a catalog model
+      description: |
+        Returns public templates for the model, plus the caller's private templates when
+        authenticated via `genpic_session`. Anonymous callers see only public rows.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Catalog model id (must match the SPA model selector value)
+      responses:
+        "200":
+          description: Template list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createTemplate
+      tags: [templates]
+      summary: Save a succeeded job as a template
+      description: |
+        Owner-only. Optional `reference_images` should be supplied from the client when
+        reference inputs were not persisted on the job record. Administrators may set
+        `visibility` to `public` to publish a shared preset (requires `auth.admin_emails`
+        / `GENPIC_ADMIN_EMAILS` configuration server-side).
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "201":
+          description: Created template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Templates disabled (no database) or job store unavailable
+
+  /api/templates/{id}:
+    delete:
+      operationId: deleteTemplate
+      tags: [templates]
+      summary: Delete a template
+      description: |
+        Deletes a private template owned by the caller. Administrators may also delete
+        any public template.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, id]
+                properties:
+                  status:
+                    type: string
+                    enum: [deleted]
+                  id:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Templates disabled
+
   /api/community/feed:
     get:
       operationId: communityFeed
@@ -829,7 +927,7 @@ components:
 
     UserPublic:
       type: object
-      required: [id, email, display_name]
+      required: [id, email, display_name, is_admin]
       properties:
         id:
           type: string
@@ -837,6 +935,9 @@ components:
           type: string
         display_name:
           type: string
+        is_admin:
+          type: boolean
+          description: True when the user's email is listed in `auth.admin_emails` or `GENPIC_ADMIN_EMAILS`.
 
     UserSettings:
       type: object
@@ -884,6 +985,88 @@ components:
           type: string
         style:
           type: string
+
+    TemplateListResponse:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [template.list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationTemplate"
+
+    GenerationTemplate:
+      type: object
+      required:
+        - id
+        - object
+        - user_id
+        - visibility
+        - title
+        - primary_model
+        - models
+        - prompt
+        - result_image_url
+        - created_at
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [generation.template]
+        user_id:
+          type: string
+        visibility:
+          type: string
+          enum: [private, public]
+        title:
+          type: string
+        primary_model:
+          type: string
+        models:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+        params:
+          $ref: "#/components/schemas/JobParams"
+        reference_images:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        result_image_url:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+          description: Unix seconds (UTC)
+
+    CreateTemplateRequest:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+        visibility:
+          type: string
+          enum: [private, public]
+          default: private
+        title:
+          type: string
+        reference_images:
+          type: array
+          items:
+            type: object
+            properties:
+              mime_type:
+                type: string
+              b64_json:
+                type: string
 
     CommunityFeed:
       type: object
@@ -1055,6 +1238,12 @@ components:
             $ref: "#/components/schemas/APIError"
     Unauthorized:
       description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Forbidden:
+      description: Caller lacks permission for this resource or action
       content:
         application/json:
           schema:

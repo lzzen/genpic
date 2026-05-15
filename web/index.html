@@ -67,6 +67,23 @@
       <textarea id="prompt" placeholder="描述你想要生成的图片…" rows="5"></textarea>
     </div>
 
+    <div class="field template-field" id="template-field">
+      <div class="template-section-head">
+        <div class="template-section-title">
+          <span class="template-spark" aria-hidden="true">✦</span>
+          <span>快速选择模板</span>
+        </div>
+        <div class="template-section-meta">
+          <span id="template-count" class="template-count">0 个模板</span>
+          <button type="button" class="template-more-btn" id="btn-template-more" title="横向滚动查看更多">查看更多 &gt;</button>
+        </div>
+      </div>
+      <div class="template-rail-outer">
+        <div class="template-rail" id="template-rail" aria-label="模板列表"></div>
+        <button type="button" class="template-rail-next" id="template-rail-next" aria-label="向右滚动" title="向右">›</button>
+      </div>
+    </div>
+
     <!-- ── OpenAI: 主区仅比例 ── -->
     <div class="param-section show" id="params-openai">
       <div class="section-title">图片比例</div>
@@ -358,8 +375,10 @@
           <div class="job-detail-sec-title">创作信息</div>
           <div class="job-detail-dl" id="job-detail-meta"></div>
         </div>
-        <div class="job-detail-footer">
+        <div class="job-detail-footer job-detail-footer-row">
           <button type="button" class="primary" id="job-detail-create-similar">创作同款</button>
+          <button type="button" class="secondary" id="job-detail-save-template" hidden>保存为模板</button>
+          <button type="button" class="secondary job-detail-admin-only" id="job-detail-save-template-public" hidden>保存为公用模板</button>
         </div>
       </div>
     </div>

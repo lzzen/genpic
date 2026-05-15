@@ -113,5 +113,10 @@ idempotency:
 
 # ── Auth (cookie sessions; requires database.dsn / MySQL) ────────────────────
 # Session cookie TTL for POST /api/auth/register and /api/auth/login (Go duration).
+# admin_emails — optional list of operator emails (lowercased on load). Those users
+# receive `is_admin: true` from GET /api/auth/me and may publish or delete public templates.
+# Override / extend with comma-separated GENPIC_ADMIN_EMAILS.
 # auth:
 #   session_ttl: "720h"
+#   admin_emails:
+#     - "ops@example.com"

@@ -347,6 +347,12 @@ function openJobDetail(raw) {
   }
   if (pr) pr.textContent = ctx.prompt || '（无提示词）';
   if (meta) meta.innerHTML = buildJobDetailMetaHTML(ctx);
+  const jobIdOk = typeof ctx.id === 'string' && /^[a-f0-9]{32}$/i.test(ctx.id);
+  const canSave = !!(authUser && ctx.status === 'succeeded' && jobIdOk);
+  const savePr = $('job-detail-save-template');
+  const savePub = $('job-detail-save-template-public');
+  if (savePr) savePr.hidden = !canSave;
+  if (savePub) savePub.hidden = !canSave || !authUser.is_admin;
   if (mod) mod.hidden = false;
   document.body.style.overflow = 'hidden';
 }
@@ -416,6 +422,128 @@ function loadReferenceImagesForSimilar(refs) {
     n++;
   }
   renderRefPreviews();
+}
+
+function applyGenpicTemplate(t) {
+  if (!t) return;
+  const src = {
+    id: t.id,
+    model: t.primary_model || (t.params && t.params.model) || '',
+    prompt: t.prompt || '',
+    status: 'succeeded',
+    params: t.params || {},
+    reference_images: t.reference_images,
+  };
+  applyCreateSimilar(src);
+}
+
+function updateTemplateMoreVisibility() {
+  const rail = $('template-rail');
+  const more = $('btn-template-more');
+  if (!rail || !more) return;
+  const overflow = rail.scrollWidth > rail.clientWidth + 8;
+  more.hidden = !overflow;
+}
+
+async function refreshTemplateStrip() {
+  const rail = $('template-rail');
+  const cntEl = $('template-count');
+  if (!rail) return;
+  const model = ($('model-select') && $('model-select').value) || activeModel || '';
+  if (!model) {
+    rail.innerHTML = '<div class="template-rail-empty">请选择模型后查看模板</div>';
+    if (cntEl) cntEl.textContent = '0 个模板';
+    return;
+  }
+  try {
+    const r = await genpicFetch('/api/templates?' + new URLSearchParams({ model }));
+    const j = await r.json().catch(() => ({}));
+    const list = (j && Array.isArray(j.data)) ? j.data : [];
+    if (!r.ok) {
+      rail.innerHTML = '<div class="template-rail-empty">模板加载失败</div>';
+      if (cntEl) cntEl.textContent = '0 个模板';
+      return;
+    }
+    if (cntEl) cntEl.textContent = list.length + ' 个模板';
+    rail.innerHTML = '';
+    if (!list.length) {
+      rail.innerHTML = '<div class="template-rail-empty">暂无模板 · 在生成详情中可将成功作品保存为模板</div>';
+      updateTemplateMoreVisibility();
+      return;
+    }
+    for (const t of list) {
+      const card = document.createElement('div');
+      card.className = 'template-card';
+      const wrap = document.createElement('div');
+      wrap.className = 'template-card-img-wrap';
+      const im = document.createElement('img');
+      im.className = 'template-card-img';
+      im.alt = '';
+      const u = String(t.result_image_url || '').trim();
+      const thumb = genpicArtifactThumbFromUrl(u) || u;
+      im.src = thumb || u;
+      genpicBindPreviewImgFallback(im, { url: u, thumb_url: thumb, mime_type: 'image/png' });
+      wrap.appendChild(im);
+      if (t.visibility === 'public') {
+        const b = document.createElement('span');
+        b.className = 'template-card-badge';
+        b.textContent = '公用';
+        wrap.appendChild(b);
+      }
+      card.appendChild(wrap);
+      const title = (t.title || '').trim();
+      if (title) {
+        const te = document.createElement('div');
+        te.className = 'template-card-title';
+        te.textContent = title;
+        card.appendChild(te);
+      }
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.className = 'template-card-use';
+      use.textContent = '立即使用';
+      use.addEventListener('click', () => applyGenpicTemplate(t));
+      card.appendChild(use);
+      rail.appendChild(card);
+    }
+    requestAnimationFrame(() => updateTemplateMoreVisibility());
+  } catch (_) {
+    rail.innerHTML = '<div class="template-rail-empty">模板加载失败</div>';
+    if (cntEl) cntEl.textContent = '0 个模板';
+  }
+}
+
+async function saveJobAsTemplatePayload(payload, visibility) {
+  if (!authUser) {
+    alert('请先登录');
+    openAuthModal('login');
+    return;
+  }
+  const jobId = String(payload.id || '').trim();
+  if (!jobId || jobId.length !== 32) {
+    alert('无法保存：缺少有效任务 ID');
+    return;
+  }
+  const refs = payload.reference_images || [];
+  const body = {
+    job_id: jobId,
+    visibility: visibility === 'public' ? 'public' : 'private',
+    title: '',
+    reference_images: Array.isArray(refs) ? refs : [],
+  };
+  try {
+    const r = await genpicFetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data?.error?.message || data?.message || '保存失败');
+    showGenpicToast(visibility === 'public' ? '已保存为公用模板' : '已保存到我的模板');
+    void refreshTemplateStrip();
+  } catch (e) {
+    alert(e.message || String(e));
+  }
 }
 
 async function genpicFetch(url, opts = {}) {
@@ -811,6 +939,7 @@ function setActiveModel(modelId, provider) {
   save('active-vendor', provider);
 
   if (provider === 'gemini') syncGemImageSizeUI(modelId);
+  void refreshTemplateStrip();
 }
 
 /** Gemini imageSize options depend on catalog model (see model constraints). */
@@ -1058,6 +1187,7 @@ bootstrapCredentials()
     updateGptResEst();
   })
   .then(() => refreshAuthUser())
+  .then(() => refreshTemplateStrip())
   .then(() => mergeAndPersistHistory({ reset: true }))
   .then(() => renderHistoryPanel())
   .catch((e) => console.warn('bootstrap', e));
@@ -1152,6 +1282,24 @@ $('job-detail-create-similar')?.addEventListener('click', () => {
   closeJobDetail();
   applyCreateSimilar(jobDetailCtx);
 });
+$('job-detail-save-template')?.addEventListener('click', () => {
+  if (!jobDetailCtx) return;
+  void saveJobAsTemplatePayload(jobDetailCtx, 'private');
+});
+$('job-detail-save-template-public')?.addEventListener('click', () => {
+  if (!jobDetailCtx) return;
+  void saveJobAsTemplatePayload(jobDetailCtx, 'public');
+});
+
+$('template-rail-next')?.addEventListener('click', () => {
+  const rail = $('template-rail');
+  if (rail) rail.scrollBy({ left: 200, behavior: 'smooth' });
+});
+$('btn-template-more')?.addEventListener('click', () => {
+  const rail = $('template-rail');
+  if (rail) rail.scrollBy({ left: 260, behavior: 'smooth' });
+});
+$('template-rail')?.addEventListener('scroll', () => updateTemplateMoreVisibility(), { passive: true });
 
 $('eye-btn')?.addEventListener('click', () => {
   const inp = $('api-key');
@@ -2124,6 +2272,13 @@ function renderHistoryPanel() {
     actRow.appendChild(mkH('复制描述', () => void copyDescriptionWithToast(entry.prompt || '')));
     actRow.appendChild(mkH('详情', () => openHistEntryDetail(entry)));
     actRow.appendChild(mkH('创作同款', () => applyCreateSimilar(histEntryToDetailPayload(entry))));
+    const hid = String(entry.id || '').trim();
+    if (authUser && entry.status === 'succeeded' && /^[a-f0-9]{32}$/i.test(hid)) {
+      actRow.appendChild(mkH('存为模板', () => void saveJobAsTemplatePayload(histEntryToDetailPayload(entry), 'private')));
+      if (authUser.is_admin) {
+        actRow.appendChild(mkH('公用模板', () => void saveJobAsTemplatePayload(histEntryToDetailPayload(entry), 'public')));
+      }
+    }
     card.appendChild(actRow);
 
     listEl.appendChild(card);
@@ -2209,6 +2364,7 @@ $('auth-modal-submit')?.addEventListener('click', async () => {
     }
     $('auth-modal').hidden = true;
     await refreshAuthUser();
+    await refreshTemplateStrip();
     await mergeAndPersistHistory({ reset: true });
     renderHistoryPanel();
   } catch (err) {
@@ -2226,6 +2382,7 @@ $('btn-auth-logout')?.addEventListener('click', async () => {
   } catch (_) {}
   authUser = null;
   updateAuthChrome();
+  void refreshTemplateStrip();
 });
 
 async function openPrivacyModal() {

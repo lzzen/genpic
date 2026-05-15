@@ -1,6 +1,6 @@
 # Genpic 开发进度
 
-> 最后更新：2026-05-14
+> 最后更新：2026-05-15
 
 ## 里程碑状态
 
@@ -13,6 +13,37 @@
 | **M3 — Wan editing + multi-image** | ✅ 完成 | Wan edit_type / bbox_list + Web UI 编辑类型与 bbox 区域 |
 | **M4 — 用户系统 + 异步 UX** | ✅ 完成 | Cookie 会话注册/登录；PBKDF2 密码；匿名 jobs 登录迁移；提示词按归属隐藏；前端任务队列并行轮询 |
 | **M5 — 社区 + 创作同款** | ✅ 完成 | job visibility；GET /api/community/feed；GET job 含 params；社区 UI + 隐私开关 + 创作同款 |
+| **M6 — 生成模板** | ✅ 完成 | `generation_templates` 表；按模型列出公用/私有模板；从成功任务保存；管理员公用模板与 `is_admin` |
+
+---
+
+## M6 — 生成模板（预设）
+
+**目标**：每个模型有可选模板列表；登录用户可将**自己的成功任务**保存为私有模板；**管理员**（`auth.admin_emails` / `GENPIC_ADMIN_EMAILS`）可发布**公用模板**；侧栏表单区横向卡片 +「立即使用」套用提示词、参数与参考图（参考图由客户端随保存请求提交）。
+
+### 数据表
+
+- **`generation_templates`**：`id`，`user_id`，`visibility`（`private`|`public`），`title`，`primary_model`，`models_json`（支持的模型 id 列表，JSON 数组），`prompt`，`params_json`（与任务一致的 JobParams），`reference_images_json`（可选，与生成 API 同结构的 base64 引用图），`result_image_url`（成品预览 URL，通常 `/api/artifacts/...`），`created_at` / `updated_at`。
+- 迁移：`internal/dbmigrate/migrations/003_generation_templates.sql`（启动时自动执行）。
+
+### API
+
+- `GET /api/templates?model=` — 可选登录；未登录仅公用；已登录附加当前用户该模型的私有模板。
+- `POST /api/templates` — 需登录；`job_id` + 可选 `reference_images`；`visibility: public` 仅管理员。
+- `DELETE /api/templates/{id}` — 本人删私有；管理员可删任意公用模板。
+- `GET /api/auth/me` 增加 `is_admin`（邮箱命中管理员列表时为 `true`）。
+
+### 前端
+
+- 侧栏在「提示词」与「图片比例」之间：**快速选择模板**横滑列表、计数、「查看更多」横向滚动、**立即使用**套用（逻辑对齐「创作同款」）。
+- 生成详情 / 历史中成功任务：**保存为模板** /（管理员）**保存为公用模板**、历史卡片 **存为模板** / **公用模板**。
+
+### 进度
+
+- [x] DDL + dbmigrate
+- [x] `internal/templatestore`（MySQL）
+- [x] Handlers + 路由 + OpenAPI + `config.example.yaml` 说明
+- [x] Web UI 模板区与保存入口
 
 ---
 
@@ -82,6 +113,7 @@
 | 算力账本 / api_keys / billing | 原 PROGRESS 中「M4 账本」构想；可与当前用户系统并行演进 |
 | `pkg/objstore` | S3/OSS 工件存储 |
 | 管理后台强化 | `GET /admin` 仍为占位级 UI |
+| 模板管理后台 | 当前为侧栏 + API；无独立 CRUD 页 |
 
 ### 公共包状态
 
@@ -95,7 +127,7 @@
 | `pkg/modelmap` | ✅ | model ID 重映射 |
 | `pkg/refimages` | ✅ | 引用图片 base64 解析 + 大小限制 |
 | `pkg/compatctx` | ✅ | per-request upstream 凭证注入 |
-| `pkg/mvpconfig` | ✅ | config.yaml + env；含 `auth.session_ttl` |
+| `pkg/mvpconfig` | ✅ | config.yaml + env；含 `auth.session_ttl`、`auth.admin_emails` |
 | `pkg/objstore` | 🔲 | 对象存储抽象 |
 | `pkg/billing` | 🔲 | 计费 |
 | `pkg/idempotency` | 🔲 | 幂等 |

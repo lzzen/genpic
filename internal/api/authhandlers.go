@@ -253,8 +253,12 @@ type userResp struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
+	IsAdmin     bool   `json:"is_admin"`
 }
 
 func userResponse(u *auth.User) userResp {
-	return userResp{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName}
+	if u == nil {
+		return userResp{}
+	}
+	return userResp{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, IsAdmin: isAdminUser(u)}
 }

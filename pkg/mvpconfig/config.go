@@ -59,7 +59,8 @@ type databaseYAML struct {
 
 // authYAML holds optional auth/session tuning (cmd/genpic).
 type authYAML struct {
-	SessionTTL string `yaml:"session_ttl"`
+	SessionTTL  string   `yaml:"session_ttl"`
+	AdminEmails []string `yaml:"admin_emails"`
 }
 
 // rootYAML is the full config.yaml structure. Unknown keys are ignored.
@@ -129,7 +130,8 @@ type Config struct {
 
 // AuthConfig holds session lifetime for auth.NewStore.
 type AuthConfig struct {
-	SessionTTL time.Duration
+	SessionTTL  time.Duration
+	AdminEmails []string // lowercased emails with operator privileges (public templates, etc.)
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -191,14 +193,47 @@ func resolveDatabase(y databaseYAML) DatabaseConfig {
 func resolveAuth(y authYAML) AuthConfig {
 	def := 30 * 24 * time.Hour
 	raw := strings.TrimSpace(y.SessionTTL)
-	if raw == "" {
-		return AuthConfig{SessionTTL: def}
+	ttl := def
+	if raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			ttl = d
+		}
 	}
-	d, err := time.ParseDuration(raw)
-	if err != nil || d <= 0 {
-		return AuthConfig{SessionTTL: def}
+	emails := normalizeAdminEmails(y.AdminEmails)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_ADMIN_EMAILS")); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			emails = append(emails, strings.ToLower(strings.TrimSpace(p)))
+		}
 	}
-	return AuthConfig{SessionTTL: d}
+	return AuthConfig{SessionTTL: ttl, AdminEmails: dedupeSortedEmails(emails)}
+}
+
+func normalizeAdminEmails(in []string) []string {
+	var out []string
+	for _, e := range in {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func dedupeSortedEmails(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	var out []string
+	for _, e := range in {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e == "" {
+			continue
+		}
+		if _, ok := seen[e]; ok {
+			continue
+		}
+		seen[e] = struct{}{}
+		out = append(out, e)
+	}
+	return out
 }
 
 // resolveProvider fills base_url and api_key from env vars when not present

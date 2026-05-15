@@ -16,6 +16,9 @@
 //   - GET  /admin/jobs              — list all jobs (offset/limit; protect in production)
 //   - GET  /admin/stats             — aggregate job stats (protect in production)
 //   - POST /api/generate            — enqueue generation (202 + job); poll GET /jobs/{id}
+//   - GET  /api/community/feed      — public jobs feed (optional auth for prompt/params rules)
+//   - GET|POST /api/templates       — list presets (?model=) / save from succeeded job
+//   - DELETE /api/templates/{id}    — delete own template (admins may delete public presets)
 //
 // Rate limiting:
 //
@@ -45,6 +48,7 @@ import (
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
 	"genpic/internal/provider/wan"
+	"genpic/internal/templatestore"
 	"genpic/pkg/logger"
 	"genpic/pkg/mvpconfig"
 	"genpic/pkg/provider"
@@ -90,12 +94,14 @@ func main() {
 			os.Exit(1)
 		}
 		log.Info("database migrations applied")
+		api.SetTemplateStore(templatestore.NewMySQL(ms.DB()))
 	} else {
 		store = jobstore.NewMemory(ctx, 2*time.Hour)
 		log.Info("job store initialised", "type", "in-memory", "ttl", "2h",
 			"note", "set database.dsn (or DB_DSN) to enable persistent MySQL storage")
 	}
 	api.SetJobStore(store)
+	api.SetAdminEmails(cfg.Auth.AdminEmails)
 
 	// ── Auth store (shares the MySQL DB, no-op when in-memory) ───────────────
 	if ms, ok := store.(*jobstore.MySQL); ok {
@@ -196,6 +202,10 @@ func main() {
 
 	// Community feed (M5)
 	mux.Handle("GET /api/community/feed", optAuth(http.HandlerFunc(api.HandleCommunityFeed)))
+
+	mux.Handle("GET /api/templates", optAuth(http.HandlerFunc(api.HandleListTemplates)))
+	mux.Handle("POST /api/templates", optAuth(http.HandlerFunc(api.HandleCreateTemplate)))
+	mux.Handle("DELETE /api/templates/{id}", optAuth(http.HandlerFunc(api.HandleDeleteTemplate)))
 
 	mux.HandleFunc("GET /admin/jobs", api.HandleAdminJobs)
 	mux.HandleFunc("GET /admin/stats", api.HandleAdminStats)
