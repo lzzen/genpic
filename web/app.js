@@ -501,8 +501,11 @@ function openTemplatePreview(t) {
   if (titleEl) titleEl.textContent = title || '模板预览';
   if (modelRow) modelRow.innerHTML = templatePreviewModelChipsHTML(t);
   const refs = Array.isArray(t.reference_images) ? t.reference_images : [];
+  const modelsArr = Array.isArray(t.models) ? t.models : [];
+  let nProducts = modelsArr.filter((m) => String(m || '').trim()).length;
+  if (nProducts < 1) nProducts = 1; // 至少含原始模型自身，与 DB models_json 条数一致
   if (prodLine) {
-    prodLine.textContent = '使用产品：' + refs.length + ' 个';
+    prodLine.textContent = '使用产品：' + nProducts + ' 个';
   }
   if (promptBox) promptBox.textContent = t.prompt || '（无提示词）';
   if (refInfo) refInfo.textContent = refs.length ? (refs.length + ' 个') : '';
