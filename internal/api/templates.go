@@ -67,6 +67,9 @@ type createTemplateRequest struct {
 
 // HandleListTemplates serves GET /api/templates?model=...
 // Optional auth: logged-in users also see their private templates for the model.
+// The model query should match the SPA model selector (often catalog id like openai/…); rows are
+// keyed by wire-style primary_model (no vendor/ prefix), so the server matches both the raw
+// query and its normalised form.
 func HandleListTemplates(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -107,6 +110,7 @@ func templateToJSON(t *templatestore.Template) map[string]any {
 		"id":               t.ID,
 		"object":           "generation.template",
 		"user_id":          t.UserID,
+		"provider":         t.Provider,
 		"visibility":       t.Visibility,
 		"title":            t.Title,
 		"primary_model":    t.PrimaryModel,
@@ -217,21 +221,24 @@ func HandleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use the same catalog model id as the job / SPA model selector (do not strip openai/… prefix),
-	// otherwise GET /api/templates?model=openai/… would not match stored primary_model.
-	catalogModel := strings.TrimSpace(j.Model)
-	models := []string{catalogModel}
+	// Store wire-style model ids (no openai/… prefix) plus provider so the SPA can rebuild catalog ids.
+	wireModel := normalizeModelID(j.Model)
+	models := []string{wireModel}
 	tpl := &templatestore.Template{
 		UserID:          user.ID,
 		SourceJobID:     jobID,
+		Provider:        strings.TrimSpace(j.Provider),
 		Visibility:      vis,
 		Title:           title,
-		PrimaryModel:    catalogModel,
+		PrimaryModel:    wireModel,
 		Models:          models,
 		Prompt:          j.Prompt,
 		Params:          cloneJobParams(j.Params),
 		ReferenceImages: refs,
 		ResultImageURL:  resultURL,
+	}
+	if tpl.Params != nil {
+		tpl.Params.Model = wireModel
 	}
 	if err := templateStoreInstance.Create(r.Context(), tpl); err != nil {
 		if errors.Is(err, templatestore.ErrDuplicateSourceJob) {

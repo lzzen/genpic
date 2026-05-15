@@ -385,6 +385,46 @@
   </div>
 </div>
 
+<div id="template-preview-modal" class="tpl-preview-backdrop" hidden>
+  <div class="tpl-preview-panel" role="dialog" aria-modal="true" aria-labelledby="template-preview-title">
+    <button type="button" class="tpl-preview-close" id="template-preview-close" aria-label="关闭">×</button>
+    <div class="tpl-preview-grid">
+      <div class="tpl-preview-left">
+        <img id="template-preview-img" class="tpl-preview-img" alt="" />
+      </div>
+      <div class="tpl-preview-right">
+        <div class="tpl-preview-kicker">AI 提示词详情</div>
+        <h2 id="template-preview-title" class="tpl-preview-title">模板预览</h2>
+        <div id="template-preview-model-row" class="tpl-preview-model-row"></div>
+        <div id="template-preview-product-line" class="tpl-preview-product-line"></div>
+        <div class="tpl-preview-section">
+          <div class="tpl-preview-sec-head">
+            <span class="tpl-preview-label">完整提示词：</span>
+            <button type="button" class="btn-inline" id="template-preview-copy">复制</button>
+          </div>
+          <div id="template-preview-prompt-box" class="tpl-preview-prompt-box"></div>
+        </div>
+        <div class="tpl-preview-section">
+          <div class="tpl-preview-sec-head">
+            <span class="tpl-preview-label">输入资源</span>
+            <span id="template-preview-ref-info" class="tpl-preview-count"></span>
+          </div>
+          <div id="template-preview-refs" class="tpl-preview-refs"></div>
+        </div>
+        <div class="tpl-preview-section">
+          <div class="tpl-preview-sec-head">
+            <span class="tpl-preview-label">标签</span>
+          </div>
+          <div id="template-preview-tags" class="tpl-preview-tags"></div>
+        </div>
+        <div class="tpl-preview-footer">
+          <button type="button" class="primary tpl-preview-apply" id="template-preview-apply">使用此提示词创作</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="cred-panel" class="cred-panel" hidden>
   <div class="cred-panel-inner">
     <div class="cred-panel-title">API 配置</div>

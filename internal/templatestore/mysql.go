@@ -36,6 +36,7 @@ func migrateTemplateSchema(db *sql.DB) error {
 	stmts := []string{
 		`ALTER TABLE generation_templates ADD COLUMN source_job_id VARCHAR(64) NULL AFTER user_id`,
 		`ALTER TABLE generation_templates ADD UNIQUE KEY uk_generation_templates_source_job (source_job_id)`,
+		`ALTER TABLE generation_templates ADD COLUMN provider VARCHAR(64) NOT NULL DEFAULT '' AFTER source_job_id`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {
@@ -53,7 +54,7 @@ func migrateTemplateSchema(db *sql.DB) error {
 }
 
 const listSQL = `
-SELECT id, user_id, visibility, title, primary_model, models_json, prompt, params_json,
+SELECT id, user_id, provider, visibility, title, primary_model, models_json, prompt, params_json,
        reference_images_json, result_image_url, created_at, updated_at
   FROM generation_templates
  WHERE (primary_model = ? OR primary_model = ?)
@@ -62,13 +63,13 @@ SELECT id, user_id, visibility, title, primary_model, models_json, prompt, param
  LIMIT ?`
 
 // ListForModel returns public templates for the model plus the viewer's private templates.
-// viewerUserID empty → only public rows match the OR branch for private (none).
-func (s *MySQL) ListForModel(ctx context.Context, primaryModelCatalog, primaryModelAlt, viewerUserID string, limit int) ([]Template, error) {
+// primaryModelQuery is typically the SPA catalog id; primaryModelWire is the normalised id; rows match either.
+func (s *MySQL) ListForModel(ctx context.Context, primaryModelQuery, primaryModelWire, viewerUserID string, limit int) ([]Template, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("templatestore: nil db")
 	}
-	m1 := strings.TrimSpace(primaryModelCatalog)
-	m2 := strings.TrimSpace(primaryModelAlt)
+	m1 := strings.TrimSpace(primaryModelQuery)
+	m2 := strings.TrimSpace(primaryModelWire)
 	if m1 == "" && m2 == "" {
 		return nil, nil
 	}
@@ -107,7 +108,7 @@ func scanTemplateRow(sc interface {
 	var params sql.NullString
 	var refImgs sql.NullString
 	if err := sc.Scan(
-		&t.ID, &t.UserID, &t.Visibility, &t.Title, &t.PrimaryModel, &modelsJSON,
+		&t.ID, &t.UserID, &t.Provider, &t.Visibility, &t.Title, &t.PrimaryModel, &modelsJSON,
 		&t.Prompt, &params, &refImgs, &t.ResultImageURL, &t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
 		return Template{}, fmt.Errorf("templatestore: scan: %w", err)
@@ -130,9 +131,9 @@ func scanTemplateRow(sc interface {
 
 const insertSQL = `
 INSERT INTO generation_templates
-  (id, user_id, source_job_id, visibility, title, primary_model, models_json, prompt, params_json,
+  (id, user_id, source_job_id, provider, visibility, title, primary_model, models_json, prompt, params_json,
    reference_images_json, result_image_url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // Create inserts a new template row. t.ID must be empty — a new id is assigned.
 func (s *MySQL) Create(ctx context.Context, t *Template) error {
@@ -183,7 +184,7 @@ func (s *MySQL) Create(ctx context.Context, t *Template) error {
 		srcArg = nil
 	}
 	_, err = s.db.ExecContext(ctx, insertSQL,
-		t.ID, t.UserID, srcArg, t.Visibility, t.Title, t.PrimaryModel, mj, t.Prompt,
+		t.ID, t.UserID, srcArg, strings.TrimSpace(t.Provider), t.Visibility, t.Title, t.PrimaryModel, mj, t.Prompt,
 		paramsJSON, refJSON, t.ResultImageURL, t.CreatedAt, t.UpdatedAt,
 	)
 	if err != nil {

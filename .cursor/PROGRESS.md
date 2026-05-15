@@ -23,7 +23,7 @@
 
 ### 数据表
 
-- **`generation_templates`**：`id`，`user_id`，`visibility`（`private`|`public`），`title`，`primary_model`，`models_json`（支持的模型 id 列表，JSON 数组），`prompt`，`params_json`（与任务一致的 JobParams），`reference_images_json`（可选，与生成 API 同结构的 base64 引用图），`result_image_url`（成品预览 URL，通常 `/api/artifacts/...`），`created_at` / `updated_at`。
+- **`generation_templates`**：`id`，`user_id`，`source_job_id`（唯一，防同一任务重复存），`provider`（`openai` / `gemini` / `wan`，用于把无前缀 `primary_model` 拼回侧栏 catalog id），`visibility`（`private`|`public`），`title`，`primary_model`（**无前缀 wire id**），`models_json`（JSON 数组，元素同为 wire id），`prompt`，`params_json`，`reference_images_json`，`result_image_url`，`created_at` / `updated_at`。
 - 迁移：`internal/dbmigrate/migrations/003_generation_templates.sql`（启动时自动执行）。
 
 ### API
@@ -35,7 +35,7 @@
 
 ### 前端
 
-- 侧栏在「提示词」与「图片比例」之间：**快速选择模板**横滑列表、计数、「查看更多」横向滚动、**立即使用**套用（逻辑对齐「创作同款」）。
+- 侧栏在「提示词」与「图片比例」之间：**快速选择模板**横滑列表、计数、「查看更多」横向滚动、**立即使用**套用（逻辑对齐「创作同款」）；缩略图悬停（触控设备常显）**点击预览**打开 **AI 提示词详情** 弹窗（成品大图、模型标签、完整提示词与复制、参考图、标签占位、**使用此提示词创作**）。
 - 生成详情 / 历史中成功任务：**保存为模板** /（管理员）**保存为公用模板**、历史卡片 **存为模板** / **公用模板**。
 
 ### 进度
@@ -44,7 +44,7 @@
 - [x] `internal/templatestore`（MySQL）
 - [x] Handlers + 路由 + OpenAPI + `config.example.yaml` 说明
 - [x] Web UI 模板区与保存入口
-- [x] 修复：`primary_model` 与侧栏 `model` 查询一致（存完整 catalog id）；列表 `OR` 兼容历史「去前缀」行；`source_job_id` 唯一约束防同一任务重复保存（409）
+- [x] 存储无前缀 `primary_model` + `provider`；`GET ?model=` 同时匹配 catalog 与 wire；`source_job_id` 唯一（409）；前端「立即使用」用 `provider`+`primary_model` 还原 catalog id
 
 ---
 

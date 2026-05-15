@@ -157,6 +157,7 @@ function genpicEscape(s) {
 }
 
 let jobDetailCtx = null;
+let templatePreviewCtx = null;
 
 async function copyTextToClipboard(text) {
   const t = String(text || '');
@@ -424,14 +425,30 @@ function loadReferenceImagesForSimilar(refs) {
   renderRefPreviews();
 }
 
+/** Rebuild catalog model id (e.g. openai/gpt-image-2) from template API row (wire primary_model + provider). */
+function genpicTemplateCatalogModelId(t) {
+  if (!t) return '';
+  const m = String(t.primary_model || '').trim();
+  if (!m) return '';
+  if (m.includes('/')) return m;
+  const p = String(t.provider || '').trim().toLowerCase();
+  if (p === 'openai' || p === 'gemini' || p === 'wan') return p + '/' + m;
+  const fromParams = t.params && String(t.params.model || '').trim();
+  if (fromParams && fromParams.includes('/')) return fromParams;
+  return m;
+}
+
 function applyGenpicTemplate(t) {
   if (!t) return;
+  const catalog = genpicTemplateCatalogModelId(t);
+  const p = { ...(t.params || {}) };
+  if (catalog) p.model = catalog;
   const src = {
     id: t.id,
-    model: t.primary_model || (t.params && t.params.model) || '',
+    model: catalog || (t.params && t.params.model) || '',
     prompt: t.prompt || '',
     status: 'succeeded',
-    params: t.params || {},
+    params: p,
     reference_images: t.reference_images,
   };
   applyCreateSimilar(src);
@@ -443,6 +460,113 @@ function updateTemplateMoreVisibility() {
   if (!rail || !more) return;
   const overflow = rail.scrollWidth > rail.clientWidth + 8;
   more.hidden = !overflow;
+}
+
+const TPL_PREVIEW_EYE_SVG = '<svg class="tpl-hit-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s4.5-7 10-7 10 7 10 7-4.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+
+function templatePreviewModelChipsHTML(t) {
+  if (!t) return '';
+  const cat = genpicTemplateCatalogModelId(t);
+  const wire = String(t.primary_model || '').trim();
+  const chips = [];
+  if (cat && cat.includes('/')) {
+    const short = cat.split('/').pop();
+    if (short) chips.push('<span class="tpl-preview-chip tpl-preview-chip-a">' + genpicEscape(short) + '</span>');
+  }
+  if (wire && (!cat || !cat.endsWith(wire))) {
+    chips.push('<span class="tpl-preview-chip tpl-preview-chip-b">' + genpicEscape(wire) + '</span>');
+  }
+  if (!chips.length && cat) chips.push('<span class="tpl-preview-chip tpl-preview-chip-a">' + genpicEscape(cat) + '</span>');
+  return chips.join('');
+}
+
+function openTemplatePreview(t) {
+  if (!t) return;
+  templatePreviewCtx = t;
+  const mod = $('template-preview-modal');
+  const img = $('template-preview-img');
+  const titleEl = $('template-preview-title');
+  const modelRow = $('template-preview-model-row');
+  const prodLine = $('template-preview-product-line');
+  const promptBox = $('template-preview-prompt-box');
+  const refInfo = $('template-preview-ref-info');
+  const refsEl = $('template-preview-refs');
+  const tagsEl = $('template-preview-tags');
+  const fullSrc = genpicImgFullSrc({ url: String(t.result_image_url || '').trim() });
+  if (img) {
+    img.src = fullSrc || '';
+    img.hidden = !fullSrc;
+  }
+  const title = String(t.title || '').trim();
+  if (titleEl) titleEl.textContent = title || '模板预览';
+  if (modelRow) modelRow.innerHTML = templatePreviewModelChipsHTML(t);
+  const refs = Array.isArray(t.reference_images) ? t.reference_images : [];
+  if (prodLine) {
+    prodLine.textContent = '使用产品：' + refs.length + ' 个';
+  }
+  if (promptBox) promptBox.textContent = t.prompt || '（无提示词）';
+  if (refInfo) refInfo.textContent = refs.length ? (refs.length + ' 个') : '';
+  if (refsEl) {
+    refsEl.innerHTML = '';
+    if (!refs.length) {
+      const p = document.createElement('p');
+      p.className = 'tpl-preview-refs-empty';
+      p.style.margin = '0';
+      p.textContent = '无参考图';
+      refsEl.appendChild(p);
+    } else {
+      let n = 0;
+      for (const r of refs) {
+        if (n >= 6) break;
+        const mime = (r.mime_type || 'image/png').trim();
+        const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
+        if (!b64) continue;
+        const im = document.createElement('img');
+        im.className = 'tpl-preview-ref-thumb';
+        im.alt = '参考图';
+        im.loading = 'lazy';
+        im.src = 'data:' + mime + ';base64,' + b64;
+        refsEl.appendChild(im);
+        n++;
+      }
+      if (!refsEl.querySelector('img')) {
+        const p2 = document.createElement('p');
+        p2.className = 'tpl-preview-refs-empty';
+        p2.style.margin = '0';
+        p2.textContent = '无参考图';
+        refsEl.appendChild(p2);
+      }
+    }
+  }
+  if (tagsEl) {
+    tagsEl.innerHTML = '';
+    const rawTags = t.tags;
+    if (Array.isArray(rawTags) && rawTags.length) {
+      for (const tag of rawTags) {
+        const s = String(tag || '').trim();
+        if (!s) continue;
+        const pill = document.createElement('span');
+        pill.className = 'tpl-preview-tag-pill';
+        pill.textContent = s;
+        tagsEl.appendChild(pill);
+      }
+    }
+    if (!tagsEl.childElementCount) {
+      const em = document.createElement('span');
+      em.className = 'tpl-preview-tags-empty';
+      em.textContent = '暂无标签';
+      tagsEl.appendChild(em);
+    }
+  }
+  if (mod) mod.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeTemplatePreview() {
+  const mod = $('template-preview-modal');
+  if (mod) mod.hidden = true;
+  templatePreviewCtx = null;
+  document.body.style.overflow = '';
 }
 
 async function refreshTemplateStrip() {
@@ -484,6 +608,17 @@ async function refreshTemplateStrip() {
       im.src = thumb || u;
       genpicBindPreviewImgFallback(im, { url: u, thumb_url: thumb, mime_type: 'image/png' });
       wrap.appendChild(im);
+      const hit = document.createElement('button');
+      hit.type = 'button';
+      hit.className = 'template-card-preview-hit';
+      hit.setAttribute('aria-label', '点击预览模板');
+      hit.innerHTML = TPL_PREVIEW_EYE_SVG + '<span class="tpl-hit-txt">点击预览</span>';
+      hit.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openTemplatePreview(t);
+      });
+      wrap.appendChild(hit);
       if (t.visibility === 'public') {
         const b = document.createElement('span');
         b.className = 'template-card-badge';
@@ -1215,6 +1350,10 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (!$('template-preview-modal')?.hidden) {
+    closeTemplatePreview();
+    return;
+  }
   if (!$('job-detail-modal')?.hidden) {
     closeJobDetail();
     return;
@@ -1300,6 +1439,21 @@ $('btn-template-more')?.addEventListener('click', () => {
   if (rail) rail.scrollBy({ left: 260, behavior: 'smooth' });
 });
 $('template-rail')?.addEventListener('scroll', () => updateTemplateMoreVisibility(), { passive: true });
+
+$('template-preview-close')?.addEventListener('click', () => closeTemplatePreview());
+$('template-preview-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'template-preview-modal') closeTemplatePreview();
+});
+$('template-preview-copy')?.addEventListener('click', () => {
+  if (!templatePreviewCtx) return;
+  void copyDescriptionWithToast(templatePreviewCtx.prompt || '');
+});
+$('template-preview-apply')?.addEventListener('click', () => {
+  if (!templatePreviewCtx) return;
+  const t = templatePreviewCtx;
+  closeTemplatePreview();
+  applyGenpicTemplate(t);
+});
 
 $('eye-btn')?.addEventListener('click', () => {
   const inp = $('api-key');

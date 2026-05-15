@@ -480,10 +480,13 @@ paths:
     get:
       operationId: listTemplates
       tags: [templates]
-      summary: List templates for a catalog model
+      summary: List templates for a model
       description: |
         Returns public templates for the model, plus the caller's private templates when
         authenticated via `genpic_session`. Anonymous callers see only public rows.
+        Templates are stored with wire-style `primary_model` (no `openai/`… prefix); pass the
+        same `model` value as the SPA model selector (catalog id) and the server matches both
+        forms.
       parameters:
         - $ref: "#/components/parameters/GenpicSessionCookie"
         - name: model
@@ -491,7 +494,7 @@ paths:
           required: true
           schema:
             type: string
-          description: Catalog model id (must match the SPA model selector value)
+          description: SPA model selector value (catalog id like `openai/gpt-image-2` or wire id); matched against stored wire-style `primary_model` and the original string
       responses:
         "200":
           description: Template list
@@ -1010,6 +1013,7 @@ components:
         - id
         - object
         - user_id
+        - provider
         - visibility
         - title
         - primary_model
@@ -1025,6 +1029,9 @@ components:
           enum: [generation.template]
         user_id:
           type: string
+        provider:
+          type: string
+          description: Upstream provider key (`openai`, `gemini`, `wan`) used with `primary_model` to rebuild catalog ids in clients
         visibility:
           type: string
           enum: [private, public]
@@ -1032,6 +1039,7 @@ components:
           type: string
         primary_model:
           type: string
+          description: Wire-style model id without the `vendor/` prefix (same convention as upstream dispatch)
         models:
           type: array
           items:
