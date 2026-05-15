@@ -617,8 +617,9 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 }
 .auth-dropdown button:hover { background: var(--surface2); }
 
+/* 必须高于 .hist-drawer-backdrop(200) / .hist-drawer(210)，否则抽屉打开时登录弹窗会被挡住、按钮点击无响应 */
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(28,35,51,.45); z-index: 100;
+  position: fixed; inset: 0; background: rgba(28,35,51,.45); z-index: 320;
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .modal-backdrop[hidden] { display: none !important; }

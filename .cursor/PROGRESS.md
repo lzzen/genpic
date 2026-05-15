@@ -14,6 +14,32 @@
 | **M4 — 用户系统 + 异步 UX** | ✅ 完成 | Cookie 会话注册/登录；PBKDF2 密码；匿名 jobs 登录迁移；提示词按归属隐藏；前端任务队列并行轮询 |
 | **M5 — 社区 + 创作同款** | ✅ 完成 | job visibility；GET /api/community/feed；GET job 含 params；社区 UI + 隐私开关 + 创作同款 |
 | **M6 — 生成模板** | ✅ 完成 | `generation_templates` 表；按模型列出公用/私有模板；从成功任务保存；管理员公用模板与 `is_admin` |
+| **M7 — 管理后台** | ✅ 完成 | 管理员重置用户密码；全站模板列表与公用/私有切换；`/admin` + `web/admin.html` |
+
+---
+
+## M7 — 管理后台（密码 + 模板）
+
+**目标**：管理员在登录态下通过 API 与 `/admin` 页面：为用户重置密码（并使其会话全部失效）；分页查看全部模板并将任意模板设为公用或私有。
+
+### API
+
+- `POST /api/admin/users/reset-password` — body：`new_password` + 恰好其一：`user_id` 或 `email`。
+- `GET /api/admin/templates` — 查询参数 `limit` / `offset` / `visibility`（可选 `public`|`private`）。
+- `PUT /api/admin/templates/{id}/visibility` — body：`{ "visibility": "public" | "private" }`。
+
+以上均需 Cookie 会话，且 `GET /api/auth/me` 中 `is_admin: true`（邮箱命中 `auth.admin_emails`）。
+
+### 前端
+
+- `web/admin.html`：重置密码表单；模板表格、筛选、分页、设为公用/私有按钮。
+
+### 进度
+
+- [x] `auth`：`ResolveAdminTargetUser`、`AdminSetPassword`、`DeleteAllSessionsForUser`
+- [x] `templatestore`：`ListAllForAdmin`、`AdminSetTemplateVisibility`
+- [x] `internal/api/admin_api.go` + 路由 + OpenAPI
+- [x] 嵌入页 `admin.html`
 
 ---
 

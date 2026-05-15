@@ -2457,6 +2457,7 @@ function renderHistoryPanel() {
 function openAuthModal(tab) {
   const modal = $('auth-modal');
   if (!modal) return;
+  closeHistDrawer();
   modal.hidden = false;
   const err = $('auth-modal-error');
   if (err) err.style.display = 'none';
@@ -2502,15 +2503,33 @@ $('auth-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'auth-modal') e.currentTarget.hidden = true;
 });
 
-$('auth-modal-submit')?.addEventListener('click', async () => {
+/** 在邮箱/密码框内按 Enter 提交（未使用 <form> 时部分浏览器/输入法下用户会误以为无响应） */
+$('auth-modal')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const t = e.target;
+  if (!t || t.tagName !== 'INPUT') return;
+  const id = t.getAttribute('id') || '';
+  if (!id.startsWith('auth-')) return;
+  e.preventDefault();
+  $('auth-modal-submit')?.click();
+});
+
+async function submitAuthModal() {
+  const submitBtn = $('auth-modal-submit');
+  if (submitBtn?.disabled) return;
   const activeTab = document.querySelector('#auth-tabs .modal-tab.active');
   const mode = activeTab?.dataset.tab === 'register' ? 'register' : 'login';
   const errEl = $('auth-modal-error');
   if (errEl) errEl.style.display = 'none';
+  const prevLabel = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '处理中…';
+  }
   try {
     if (mode === 'login') {
-      const email = $('auth-email').value.trim();
-      const password = $('auth-password').value;
+      const email = ($('auth-email')?.value ?? '').trim();
+      const password = $('auth-password')?.value ?? '';
       const r = await genpicFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2519,9 +2538,9 @@ $('auth-modal-submit')?.addEventListener('click', async () => {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error?.message || data?.message || '登录失败');
     } else {
-      const email = $('auth-reg-email').value.trim();
-      const password = $('auth-reg-password').value;
-      const display_name = $('auth-reg-name').value.trim();
+      const email = ($('auth-reg-email')?.value ?? '').trim();
+      const password = $('auth-reg-password')?.value ?? '';
+      const display_name = ($('auth-reg-name')?.value ?? '').trim();
       const r = await genpicFetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2530,7 +2549,8 @@ $('auth-modal-submit')?.addEventListener('click', async () => {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data?.error?.message || data?.message || '注册失败');
     }
-    $('auth-modal').hidden = true;
+    const modal = $('auth-modal');
+    if (modal) modal.hidden = true;
     await refreshAuthUser();
     await refreshTemplateStrip();
     await mergeAndPersistHistory({ reset: true });
@@ -2540,7 +2560,16 @@ $('auth-modal-submit')?.addEventListener('click', async () => {
       errEl.textContent = err.message || String(err);
       errEl.style.display = 'block';
     }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevLabel;
+    }
   }
+}
+
+$('auth-modal-submit')?.addEventListener('click', () => {
+  void submitAuthModal();
 });
 
 $('btn-auth-logout')?.addEventListener('click', async () => {

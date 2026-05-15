@@ -17,6 +17,23 @@ import (
 // ErrDuplicateSourceJob is returned when a template for this generation job already exists.
 var ErrDuplicateSourceJob = errors.New("templatestore: template already exists for this job")
 
+// ErrTemplateNotFound is returned when no template row matches the id for an update.
+var ErrTemplateNotFound = errors.New("templatestore: template not found")
+
+// AdminTemplateSummary is a compact row for operator dashboards (no params / reference blobs).
+type AdminTemplateSummary struct {
+	ID             string
+	UserID         string
+	OwnerEmail     string
+	Visibility     string
+	Title          string
+	PrimaryModel   string
+	Provider       string
+	PromptPreview  string
+	ResultImageURL string
+	CreatedAt      time.Time
+}
+
 // Template is one saved preset (prompt + params + optional reference images + preview URL).
 type Template struct {
 	ID              string
@@ -42,6 +59,10 @@ type Store interface {
 	ListForModel(ctx context.Context, primaryModelQuery, primaryModelWire, viewerUserID string, limit int) ([]Template, error)
 	Create(ctx context.Context, t *Template) error
 	Delete(ctx context.Context, id, actorUserID string, actorIsAdmin bool) (bool, error)
+	// ListAllForAdmin returns every template (newest first). visibilityFilter is "" for all, or "public" / "private".
+	ListAllForAdmin(ctx context.Context, limit, offset int, visibilityFilter string) ([]AdminTemplateSummary, int64, error)
+	// AdminSetTemplateVisibility updates visibility for any template (admin-only at HTTP layer).
+	AdminSetTemplateVisibility(ctx context.Context, templateID, visibility string) error
 }
 
 func newID() (string, error) {

@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -52,6 +53,15 @@ func (s *Store) DeleteSession(token string) {
 		return
 	}
 	_, _ = s.db.Exec(`DELETE FROM user_sessions WHERE id = ?`, token)
+}
+
+// DeleteAllSessionsForUser removes every session row for a user (e.g. after admin password reset).
+func (s *Store) DeleteAllSessionsForUser(userID string) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || s == nil || s.db == nil {
+		return
+	}
+	_, _ = s.db.Exec(`DELETE FROM user_sessions WHERE user_id = ?`, userID)
 }
 
 // DeleteExpiredSessions removes all expired session rows. Can be called

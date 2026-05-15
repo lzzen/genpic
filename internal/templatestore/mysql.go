@@ -227,3 +227,107 @@ func (s *MySQL) Delete(ctx context.Context, id, actorUserID string, actorIsAdmin
 	n, _ := res.RowsAffected()
 	return n > 0, nil
 }
+
+func truncateRunes(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
+}
+
+const adminListPromptRunes = 200
+
+// ListAllForAdmin returns templates across all users and models (newest first).
+func (s *MySQL) ListAllForAdmin(ctx context.Context, limit, offset int, visibilityFilter string) ([]AdminTemplateSummary, int64, error) {
+	if s == nil || s.db == nil {
+		return nil, 0, fmt.Errorf("templatestore: nil db")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	vf := strings.ToLower(strings.TrimSpace(visibilityFilter))
+	where := "1=1"
+	var filterArgs []any
+	if vf == "public" || vf == "private" {
+		where = "t.visibility = ?"
+		filterArgs = append(filterArgs, vf)
+	}
+
+	var total int64
+	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM generation_templates t WHERE %s`, where)
+	if err := s.db.QueryRowContext(ctx, countQ, filterArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("templatestore: admin list count: %w", err)
+	}
+
+	args := append(append([]any{}, filterArgs...), limit, offset)
+	listQ := fmt.Sprintf(`
+SELECT t.id, t.user_id, COALESCE(u.email,''), t.visibility, t.title, t.primary_model, t.provider,
+       t.prompt, t.result_image_url, t.created_at
+  FROM generation_templates t
+  LEFT JOIN users u ON u.id = t.user_id
+ WHERE %s
+ ORDER BY t.created_at DESC
+ LIMIT ? OFFSET ?`, where)
+
+	rows, err := s.db.QueryContext(ctx, listQ, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("templatestore: admin list: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var out []AdminTemplateSummary
+	for rows.Next() {
+		var row AdminTemplateSummary
+		var prompt string
+		if err := rows.Scan(
+			&row.ID, &row.UserID, &row.OwnerEmail, &row.Visibility, &row.Title, &row.PrimaryModel, &row.Provider,
+			&prompt, &row.ResultImageURL, &row.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("templatestore: admin scan: %w", err)
+		}
+		row.PromptPreview = truncateRunes(prompt, adminListPromptRunes)
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+// AdminSetTemplateVisibility sets visibility for any template row.
+func (s *MySQL) AdminSetTemplateVisibility(ctx context.Context, templateID, visibility string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("templatestore: nil db")
+	}
+	id := strings.TrimSpace(templateID)
+	vis := strings.ToLower(strings.TrimSpace(visibility))
+	if id == "" {
+		return fmt.Errorf("templatestore: empty template id")
+	}
+	if vis != "public" && vis != "private" {
+		return fmt.Errorf("templatestore: invalid visibility %q", visibility)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE generation_templates SET visibility = ?, updated_at = ? WHERE id = ?`,
+		vis, Now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("templatestore: admin set visibility: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("templatestore: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrTemplateNotFound
+	}
+	return nil
+}

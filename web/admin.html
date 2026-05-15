@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 — Genpic</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .admin-page { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
+    .admin-page h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 8px; }
+    .admin-page .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; }
+    .admin-banner { padding: 12px 16px; border-radius: 10px; margin-bottom: 24px; border: 1px solid var(--border); background: var(--surface); }
+    .admin-banner.warn { border-color: #b45309; background: rgba(180, 83, 9, 0.08); }
+    .admin-banner.ok { border-color: var(--border); }
+    .admin-grid { display: grid; gap: 22px; }
+    @media (min-width: 900px) { .admin-grid { grid-template-columns: 1fr 1.2fr; align-items: start; } }
+    .admin-card { border: 1px solid var(--border); border-radius: 12px; padding: 18px 18px 16px; background: var(--bg-elevated); }
+    .admin-card h2 { font-size: 1rem; margin: 0 0 14px; font-weight: 600; }
+    .admin-card label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+    .admin-card input, .admin-card select { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); margin-bottom: 12px; }
+    .admin-card .row-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+    .admin-btn { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--accent); color: #fff; cursor: pointer; font-size: 0.88rem; }
+    .admin-btn.secondary { background: var(--surface); color: var(--text); }
+    .admin-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .admin-table-wrap { overflow-x: auto; margin-top: 8px; max-height: min(70vh, 640px); overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .admin-table th, .admin-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .admin-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; font-weight: 600; }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .admin-table .thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; background: var(--border); }
+    .badge-pub { font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .badge-priv { font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; background: var(--border); color: var(--muted); }
+    .admin-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .admin-toolbar select { width: auto; min-width: 120px; margin-bottom: 0; }
+    .admin-msg { font-size: 0.82rem; margin-top: 8px; color: var(--muted); }
+    .admin-msg.err { color: #f87171; }
+    .admin-msg.ok { color: #4ade80; }
+    .admin-topnav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .admin-topnav a { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+    .admin-topnav a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="admin-page">
+    <div class="admin-topnav">
+      <div>
+        <h1>管理后台</h1>
+        <p class="sub">需使用已在 <code>auth.admin_emails</code> 配置的管理员账号在主站登录（同域 Cookie）。</p>
+      </div>
+      <a href="/">← 返回主站</a>
+    </div>
+
+    <div id="banner" class="admin-banner warn" hidden></div>
+
+    <div class="admin-grid">
+      <section class="admin-card">
+        <h2>重置用户密码</h2>
+        <p class="sub" style="margin-top:-6px;margin-bottom:12px">重置后该用户所有会话将失效，需重新登录。</p>
+        <label for="reset-mode">查找方式</label>
+        <select id="reset-mode" aria-label="查找方式">
+          <option value="email">邮箱</option>
+          <option value="user_id">用户 ID</option>
+        </select>
+        <label for="reset-target" id="reset-target-label">用户邮箱</label>
+        <input type="text" id="reset-target" autocomplete="username" />
+        <label for="reset-password">新密码（至少 8 位）</label>
+        <input type="password" id="reset-password" autocomplete="new-password" />
+        <div class="row-actions">
+          <button type="button" class="admin-btn" id="btn-reset-pw">提交重置</button>
+        </div>
+        <p id="reset-msg" class="admin-msg" role="status"></p>
+      </section>
+
+      <section class="admin-card">
+        <h2>模板列表 · 公用 / 私有</h2>
+        <div class="admin-toolbar">
+          <label for="tpl-vis-filter" style="margin:0">筛选</label>
+          <select id="tpl-vis-filter" aria-label="可见性筛选">
+            <option value="">全部</option>
+            <option value="public">仅公用</option>
+            <option value="private">仅私有</option>
+          </select>
+          <button type="button" class="admin-btn secondary" id="btn-refresh-templates">刷新</button>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="tpl-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>标题 / 模型</th>
+                <th>所有者</th>
+                <th>可见性</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="tpl-tbody"></tbody>
+          </table>
+        </div>
+        <div class="row-actions" style="margin-top:12px">
+          <button type="button" class="admin-btn secondary" id="btn-tpl-prev" disabled>上一页</button>
+          <button type="button" class="admin-btn secondary" id="btn-tpl-next" disabled>下一页</button>
+          <span id="tpl-pager-meta" class="admin-msg" style="margin:0"></span>
+        </div>
+        <p id="tpl-msg" class="admin-msg" role="status"></p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  const banner = document.getElementById('banner');
+  const resetMode = document.getElementById('reset-mode');
+  const resetTargetLabel = document.getElementById('reset-target-label');
+  const resetTarget = document.getElementById('reset-target');
+  const resetPassword = document.getElementById('reset-password');
+  const resetMsg = document.getElementById('reset-msg');
+  const btnResetPw = document.getElementById('btn-reset-pw');
+
+  const tplVisFilter = document.getElementById('tpl-vis-filter');
+  const tplTbody = document.getElementById('tpl-tbody');
+  const tplMsg = document.getElementById('tpl-msg');
+  const btnRefreshTemplates = document.getElementById('btn-refresh-templates');
+  const btnTplPrev = document.getElementById('btn-tpl-prev');
+  const btnTplNext = document.getElementById('btn-tpl-next');
+  const tplPagerMeta = document.getElementById('tpl-pager-meta');
+
+  let me = null;
+  let tplOffset = 0;
+  const tplLimit = 30;
+  let tplTotal = 0;
+
+  function showBanner(text, kind) {
+    if (!text) {
+      banner.hidden = true;
+      return;
+    }
+    banner.textContent = text;
+    banner.classList.toggle('warn', kind === 'warn');
+    banner.classList.toggle('ok', kind === 'ok');
+    banner.hidden = false;
+  }
+
+  async function apiFetch(path, opts) {
+    const o = opts || {};
+    const headers = Object.assign({ Accept: 'application/json' }, o.headers || {});
+    if (o.body && typeof o.body === 'string' && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(path, Object.assign({}, o, { credentials: 'include', headers }));
+    let data = null;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { data = await res.json(); } catch (_) {}
+    }
+    return { res, data };
+  }
+
+  function errMessage(data) {
+    if (!data) return '请求失败';
+    const e = data.error || data;
+    if (typeof e === 'string') return e;
+    if (e.message) return e.message;
+    if (e.code) return String(e.code);
+    return '请求失败';
+  }
+
+  resetMode.addEventListener('change', function () {
+    const m = resetMode.value;
+    resetTargetLabel.textContent = m === 'email' ? '用户邮箱' : '用户 ID';
+    resetTarget.value = '';
+  });
+
+  async function loadMe() {
+    const { res, data } = await apiFetch('/api/auth/me');
+    if (res.status === 401) {
+      me = null;
+      showBanner('未登录：请先在主站使用管理员账号登录，再回到本页。', 'warn');
+      btnResetPw.disabled = true;
+      btnRefreshTemplates.disabled = true;
+      return;
+    }
+    if (!res.ok) {
+      me = null;
+      showBanner(errMessage(data), 'warn');
+      return;
+    }
+    me = data;
+    if (!data.is_admin) {
+      showBanner('当前账号不是管理员（邮箱未在 admin_emails 列表中）。', 'warn');
+      btnResetPw.disabled = true;
+      btnRefreshTemplates.disabled = true;
+      return;
+    }
+    showBanner('已以管理员身份登录：' + (data.email || data.id), 'ok');
+    btnResetPw.disabled = false;
+    btnRefreshTemplates.disabled = false;
+    loadTemplates(true);
+  }
+
+  btnResetPw.addEventListener('click', async function () {
+    resetMsg.textContent = '';
+    resetMsg.className = 'admin-msg';
+    const pw = resetPassword.value;
+    const target = resetTarget.value.trim();
+    if (!target) {
+      resetMsg.textContent = '请填写邮箱或用户 ID';
+      resetMsg.classList.add('err');
+      return;
+    }
+    if (!pw || pw.length < 8) {
+      resetMsg.textContent = '新密码至少 8 位';
+      resetMsg.classList.add('err');
+      return;
+    }
+    const body = { new_password: pw };
+    if (resetMode.value === 'email') body.email = target;
+    else body.user_id = target;
+
+    const { res, data } = await apiFetch('/api/admin/users/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      resetMsg.textContent = errMessage(data);
+      resetMsg.classList.add('err');
+      return;
+    }
+    resetMsg.textContent = '已重置：' + (data.email || data.user_id);
+    resetMsg.classList.add('ok');
+    resetPassword.value = '';
+  });
+
+  function renderTemplateRows(rows) {
+    tplTbody.innerHTML = '';
+    if (!rows || !rows.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="5" style="padding:16px;color:var(--muted)">暂无模板</td>';
+      tplTbody.appendChild(tr);
+      return;
+    }
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      const vis = (row.visibility || 'private') === 'public';
+      const badge = vis ? '<span class="badge-pub">公用</span>' : '<span class="badge-priv">私有</span>';
+      const thumb = row.result_image_url
+        ? '<img class="thumb" src="' + String(row.result_image_url).replace(/"/g, '') + '" alt="" loading="lazy" />'
+        : '<div class="thumb"></div>';
+      const owner = (row.owner_email || row.user_id || '—').toString();
+      const title = (row.title || '(无标题)').toString();
+      const model = [row.provider, row.primary_model].filter(Boolean).join(' · ');
+      const btns =
+        '<button type="button" class="admin-btn secondary tpl-vis" data-id="' + row.id + '" data-vis="public"' + (vis ? ' disabled' : '') + '>设为公用</button> ' +
+        '<button type="button" class="admin-btn secondary tpl-vis" data-id="' + row.id + '" data-vis="private"' + (!vis ? ' disabled' : '') + '>设为私有</button>';
+      tr.innerHTML =
+        '<td>' + thumb + '</td>' +
+        '<td><div style="font-weight:500">' + escapeHtml(title) + '</div>' +
+        '<div style="color:var(--muted);font-size:0.78rem;margin-top:4px">' + escapeHtml(model) + '</div>' +
+        '<div style="color:var(--muted);font-size:0.75rem;margin-top:4px;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escapeAttr(row.prompt_preview || '') + '">' + escapeHtml(row.prompt_preview || '') + '</div></td>' +
+        '<td style="font-size:0.78rem">' + escapeHtml(owner) + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td style="white-space:nowrap">' + btns + '</td>';
+      tplTbody.appendChild(tr);
+    }
+    tplTbody.querySelectorAll('button.tpl-vis').forEach(function (btn) {
+      btn.addEventListener('click', onTplVisClick);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/"/g, '&quot;');
+  }
+
+  async function onTplVisClick(ev) {
+    const btn = ev.currentTarget;
+    const id = btn.getAttribute('data-id');
+    const vis = btn.getAttribute('data-vis');
+    tplMsg.textContent = '';
+    tplMsg.className = 'admin-msg';
+    const { res, data } = await apiFetch('/api/admin/templates/' + encodeURIComponent(id) + '/visibility', {
+      method: 'PUT',
+      body: JSON.stringify({ visibility: vis }),
+    });
+    if (!res.ok) {
+      tplMsg.textContent = errMessage(data);
+      tplMsg.classList.add('err');
+      return;
+    }
+    tplMsg.textContent = '已更新模板 ' + id.slice(0, 8) + '…';
+    tplMsg.classList.add('ok');
+    loadTemplates(false);
+  }
+
+  async function loadTemplates(resetOffset) {
+    if (!me || !me.is_admin) return;
+    if (resetOffset) tplOffset = 0;
+    tplMsg.textContent = '';
+    const q = new URLSearchParams();
+    q.set('limit', String(tplLimit));
+    q.set('offset', String(tplOffset));
+    const vf = tplVisFilter.value.trim();
+    if (vf) q.set('visibility', vf);
+
+    const { res, data } = await apiFetch('/api/admin/templates?' + q.toString());
+    if (!res.ok) {
+      tplMsg.textContent = errMessage(data);
+      tplMsg.className = 'admin-msg err';
+      tplTbody.innerHTML = '';
+      return;
+    }
+    tplTotal = typeof data.total === 'number' ? data.total : 0;
+    renderTemplateRows(data.data || []);
+    tplPagerMeta.textContent = '第 ' + (tplOffset + 1) + '–' + Math.min(tplOffset + tplLimit, tplTotal) + ' 条，共 ' + tplTotal + ' 条';
+    btnTplPrev.disabled = tplOffset <= 0;
+    btnTplNext.disabled = tplOffset + tplLimit >= tplTotal;
+  }
+
+  btnRefreshTemplates.addEventListener('click', function () { loadTemplates(true); });
+  tplVisFilter.addEventListener('change', function () { loadTemplates(true); });
+  btnTplPrev.addEventListener('click', function () {
+    tplOffset = Math.max(0, tplOffset - tplLimit);
+    loadTemplates(false);
+  });
+  btnTplNext.addEventListener('click', function () {
+    if (tplOffset + tplLimit < tplTotal) {
+      tplOffset += tplLimit;
+      loadTemplates(false);
+    }
+  });
+
+  loadMe();
+})();
+  </script>
+</body>
+</html>

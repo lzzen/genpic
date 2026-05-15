@@ -49,6 +49,8 @@ tags:
     description: Public artwork feed and visibility controls
   - name: templates
     description: Per-model presets saved from succeeded jobs
+  - name: admin
+    description: Operator APIs (require admin session; configure auth.admin_emails)
   - name: health
     description: Service health and liveness
 
@@ -581,6 +583,116 @@ paths:
         "503":
           description: Templates disabled
 
+  /api/admin/users/reset-password:
+    post:
+      operationId: adminResetUserPassword
+      tags: [admin]
+      summary: Set a user's password (admin only)
+      description: |
+        Requires a signed-in user whose email is listed in `auth.admin_emails` / `GENPIC_ADMIN_EMAILS`.
+        Clears all active sessions for the target user so they must log in again.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminResetPasswordRequest"
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPasswordResetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Auth disabled
+
+  /api/admin/templates:
+    get:
+      operationId: adminListTemplates
+      tags: [admin]
+      summary: List all generation templates (admin only)
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: visibility
+          in: query
+          schema:
+            type: string
+            enum: [public, private]
+          description: Optional filter; omit to return all templates
+      responses:
+        "200":
+          description: Paginated template summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTemplateListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Templates disabled
+
+  /api/admin/templates/{id}/visibility:
+    put:
+      operationId: adminSetTemplateVisibility
+      tags: [admin]
+      summary: Set template visibility to public or private (admin only)
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminTemplateVisibilityBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTemplateVisibilityResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Templates disabled
+
   /api/community/feed:
     get:
       operationId: communityFeed
@@ -1059,6 +1171,109 @@ components:
           type: integer
           format: int64
           description: Unix seconds (UTC)
+
+    AdminResetPasswordRequest:
+      type: object
+      required: [new_password]
+      properties:
+        user_id:
+          type: string
+          description: Target user id (provide this or email, not both)
+        email:
+          type: string
+          format: email
+          description: Target user email (provide this or user_id, not both)
+        new_password:
+          type: string
+          minLength: 8
+
+    AdminPasswordResetResponse:
+      type: object
+      required: [object, user_id, email]
+      properties:
+        object:
+          type: string
+          enum: [admin.password_reset]
+        user_id:
+          type: string
+        email:
+          type: string
+
+    AdminTemplateSummary:
+      type: object
+      required:
+        - id
+        - user_id
+        - visibility
+        - title
+        - primary_model
+        - provider
+        - prompt_preview
+        - result_image_url
+        - created_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        owner_email:
+          type: string
+        visibility:
+          type: string
+          enum: [private, public]
+        title:
+          type: string
+        primary_model:
+          type: string
+        provider:
+          type: string
+        prompt_preview:
+          type: string
+        result_image_url:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+
+    AdminTemplateListResponse:
+      type: object
+      required: [object, data, total, limit, offset]
+      properties:
+        object:
+          type: string
+          enum: [admin.template_list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminTemplateSummary"
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AdminTemplateVisibilityBody:
+      type: object
+      required: [visibility]
+      properties:
+        visibility:
+          type: string
+          enum: [private, public]
+
+    AdminTemplateVisibilityResponse:
+      type: object
+      required: [object, id, visibility]
+      properties:
+        object:
+          type: string
+          enum: [admin.template_visibility]
+        id:
+          type: string
+        visibility:
+          type: string
+          enum: [private, public]
 
     CreateTemplateRequest:
       type: object
