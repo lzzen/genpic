@@ -53,6 +53,25 @@ func TestNewS3Compatible_OK_Minimal(t *testing.T) {
 	}
 }
 
+func TestS3Store_PublicURL_NoPrefix(t *testing.T) {
+	s, err := NewS3Compatible(context.Background(), S3Config{
+		Region:        "oss-cn-shenzhen",
+		Bucket:        "genpic",
+		AccessKey:     "a",
+		SecretKey:     "s",
+		PublicBaseURL: "https://genpic.oss-cn-shenzhen.aliyuncs.com",
+		KeyPrefix:     "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := s.PublicURL("users/u1/jobs/j1/0.png")
+	want := "https://genpic.oss-cn-shenzhen.aliyuncs.com/users/u1/jobs/j1/0.png"
+	if u != want {
+		t.Fatalf("PublicURL: got %q want %q", u, want)
+	}
+}
+
 func TestS3Store_PublicURL(t *testing.T) {
 	s, err := NewS3Compatible(context.Background(), S3Config{
 		Region:        "ap-guangzhou",

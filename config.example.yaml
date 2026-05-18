@@ -94,7 +94,8 @@ idempotency:
 #   access_key: ""
 #   secret_key: ""
 #   public_base_url: "https://your-bucket.cos.ap-guangzhou.myqcloud.com"
-#   key_prefix: "genpic"
+#   key_prefix: ""       # optional; omit or "" so objects are users/... at bucket root (recommended for Aliyun virtual-host URLs)
+#   # If set (e.g. "genpic"), public_base_url + presigned URLs include the same prefix as PutObject keys.
 #   use_path_style: false
 #   artifact_mode: "oss"   # oss | both | local  (oss: only OSS; both: disk + OSS; local: disk even if OSS configured)
 #   max_fetch_bytes: 26214400

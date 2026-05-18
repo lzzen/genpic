@@ -169,8 +169,9 @@ func main() {
 		}
 		api.SetObjectStore(s3s)
 		api.SetObjectURLResolver(func(cx context.Context, logicalKey string) (string, error) {
-			if pub := strings.TrimSpace(osCfg.PublicBaseURL); pub != "" {
-				return strings.TrimRight(pub, "/") + "/" + strings.TrimLeft(logicalKey, "/"), nil
+			if strings.TrimSpace(osCfg.PublicBaseURL) != "" {
+				// Must match S3Store.fullKey (key_prefix) used by Put — do not join logicalKey only.
+				return s3s.PublicURL(logicalKey), nil
 			}
 			return s3s.SignedURL(cx, objstore.SignedURLInput{Key: logicalKey, ExpiresIn: 7 * 24 * time.Hour})
 		})
