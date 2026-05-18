@@ -115,3 +115,94 @@ object_storage:
 		t.Fatalf("hosts: %#v", o.URLFetchHosts)
 	}
 }
+
+func TestObjectStorageDisabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+object_storage:
+  enabled: false
+  bucket: "ignored"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil || !cfg.Found {
+		t.Fatalf("read: err=%v found=%v", err, cfg.Found)
+	}
+	if cfg.ObjectStorage.Enabled {
+		t.Fatalf("want disabled, got %#v", cfg.ObjectStorage)
+	}
+}
+
+func TestObjectStorageEnabledDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+object_storage:
+  enabled: true
+  bucket: "mybucket"
+  access_key: "k"
+  secret_key: "s"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := cfg.ObjectStorage
+	if o.ArtifactMode != "oss" {
+		t.Fatalf("default artifact_mode: got %q", o.ArtifactMode)
+	}
+	if o.MaxFetchBytes != 25<<20 {
+		t.Fatalf("default max_fetch_bytes: got %d", o.MaxFetchBytes)
+	}
+	if o.FetchTimeout != 60*time.Second {
+		t.Fatalf("default fetch_timeout: got %s", o.FetchTimeout)
+	}
+	if len(o.URLFetchHosts) != 0 {
+		t.Fatalf("want empty url_fetch_hosts: %#v", o.URLFetchHosts)
+	}
+}
+
+func TestObjectStorageEnvOverrides(t *testing.T) {
+	t.Setenv("GENPIC_OBJECT_STORAGE_ACCESS_KEY", "env-ak")
+	t.Setenv("GENPIC_OBJECT_STORAGE_SECRET_KEY", "env-sk")
+	t.Setenv("GENPIC_OBJECT_STORAGE_ENDPOINT", "https://oss-env.example.com")
+	t.Setenv("GENPIC_OBJECT_STORAGE_REGION", "oss-cn-hangzhou")
+	t.Setenv("GENPIC_OBJECT_STORAGE_BUCKET", "env-bucket")
+	t.Setenv("GENPIC_OBJECT_STORAGE_PUBLIC_BASE_URL", "https://cdn-env.example.com")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+object_storage:
+  enabled: true
+  endpoint: "https://yaml-ignored.example.com"
+  region: "yaml-region"
+  bucket: "yaml-bucket"
+  access_key: "yaml-ak"
+  secret_key: "yaml-sk"
+  public_base_url: "https://yaml-cdn.example.com"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := cfg.ObjectStorage
+	if o.AccessKey != "env-ak" || o.SecretKey != "env-sk" {
+		t.Fatalf("keys: %#v", o)
+	}
+	if o.Endpoint != "https://oss-env.example.com" || o.Region != "oss-cn-hangzhou" || o.Bucket != "env-bucket" {
+		t.Fatalf("endpoint/region/bucket: %#v", o)
+	}
+	if o.PublicBaseURL != "https://cdn-env.example.com" {
+		t.Fatalf("public_base_url: got %q", o.PublicBaseURL)
+	}
+}
