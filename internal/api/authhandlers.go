@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"genpic/internal/auth"
+	"genpic/internal/userstorage"
 	pkgerrors "genpic/pkg/errors"
 )
 
@@ -87,7 +88,7 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if sess := strings.TrimSpace(r.Header.Get(hdrGenpicSession)); sess != "" {
 		authStoreInstance.MigrateAnonymousJobs(user.ID, sess)
 	}
-	JSON(w, http.StatusCreated, userResponse(user))
+	JSON(w, http.StatusCreated, userResponse(user, r))
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if sess := strings.TrimSpace(r.Header.Get(hdrGenpicSession)); sess != "" {
 		authStoreInstance.MigrateAnonymousJobs(user.ID, sess)
 	}
-	JSON(w, http.StatusOK, userResponse(user))
+	JSON(w, http.StatusOK, userResponse(user, r))
 }
 
 // ── Logout ────────────────────────────────────────────────────────────────────
@@ -153,7 +154,7 @@ func HandleMe(w http.ResponseWriter, r *http.Request) {
 		Error(w, pkgerrors.New(http.StatusUnauthorized, pkgerrors.TypeAuthentication, "unauthenticated", "not logged in"))
 		return
 	}
-	JSON(w, http.StatusOK, userResponse(user))
+	JSON(w, http.StatusOK, userResponse(user, r))
 }
 
 // ── User settings ─────────────────────────────────────────────────────────────
@@ -249,16 +250,35 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 // ── Response helpers ──────────────────────────────────────────────────────────
 
-type userResp struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
-	IsAdmin     bool   `json:"is_admin"`
+type userStorageJSON struct {
+	UsedBytes  int64 `json:"used_bytes"`
+	QuotaBytes int64 `json:"quota_bytes"`
 }
 
-func userResponse(u *auth.User) userResp {
+type userResp struct {
+	ID          string             `json:"id"`
+	Email       string             `json:"email"`
+	DisplayName string             `json:"display_name"`
+	IsAdmin     bool               `json:"is_admin"`
+	Storage     *userStorageJSON   `json:"storage,omitempty"`
+}
+
+func userResponse(u *auth.User, r *http.Request) userResp {
 	if u == nil {
 		return userResp{}
 	}
-	return userResp{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, IsAdmin: isAdminUser(u)}
+	out := userResp{
+		ID:          u.ID,
+		Email:       u.Email,
+		DisplayName: u.DisplayName,
+		IsAdmin:     isAdminUser(u),
+	}
+	if r != nil {
+		if db := getQuotaDB(); db != nil {
+			if used, quota, err := userstorage.Usage(r.Context(), db, u.ID); err == nil {
+				out.Storage = &userStorageJSON{UsedBytes: used, QuotaBytes: quota}
+			}
+		}
+	}
+	return out
 }

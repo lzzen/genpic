@@ -61,6 +61,16 @@ type JobParams struct {
 	ThinkingMode   bool      `json:"thinking_mode,omitempty"`
 	WanEditType    string    `json:"wan_edit_type,omitempty"`
 	WanBboxList    []JobBBox `json:"wan_bbox_list,omitempty"`
+
+	// ReferenceAssets are user reference images uploaded to OSS (logged-in + object storage).
+	// Each entry is a public URL plus optional mime type; not sent to upstream (request still uses b64).
+	ReferenceAssets []JobRefAsset `json:"reference_assets,omitempty"`
+}
+
+// JobRefAsset records one reference image stored in object storage.
+type JobRefAsset struct {
+	URL      string `json:"url"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // Job is the canonical record for one image-generation request.

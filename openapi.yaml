@@ -110,6 +110,10 @@ paths:
         multimodal — see provider docs in-repo.
 
         Send `X-Genpic-Session` and/or `X-Genpic-User-Id` so jobs are scoped for listing.
+
+        When **object storage** and MySQL are configured, logged-in users upload reference
+        images and generation outputs to OSS; **400** with `code: storage_quota_exceeded`
+        is returned if the request would exceed the user's quota.
       parameters:
         - $ref: "#/components/parameters/GenpicUserId"
         - $ref: "#/components/parameters/GenpicSession"
@@ -1059,6 +1063,26 @@ components:
         is_admin:
           type: boolean
           description: True when the user's email is listed in `auth.admin_emails` or `GENPIC_ADMIN_EMAILS`.
+        storage:
+          type: object
+          nullable: true
+          description: Present when MySQL is configured; object storage quota for logged-in users.
+          properties:
+            used_bytes:
+              type: integer
+              format: int64
+            quota_bytes:
+              type: integer
+              format: int64
+
+    JobRefAsset:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        mime_type:
+          type: string
 
     UserSettings:
       type: object
@@ -1106,6 +1130,23 @@ components:
           type: string
         style:
           type: string
+        response_format:
+          type: string
+        thinking_budget:
+          type: integer
+        thinking_mode:
+          type: boolean
+        wan_edit_type:
+          type: string
+        wan_bbox_list:
+          type: array
+          items:
+            type: object
+        reference_assets:
+          type: array
+          description: Server-side reference uploads (object storage URLs); present on owned jobs when configured.
+          items:
+            $ref: "#/components/schemas/JobRefAsset"
 
     TemplateListResponse:
       type: object

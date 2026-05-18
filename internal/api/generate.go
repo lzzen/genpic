@@ -241,7 +241,7 @@ func jobBBoxesFromProvider(in []provider.WanBbox) []jobstore.JobBBox {
 }
 
 // jobFromGenerateRequest builds a queued job record (provider name resolved when known).
-func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *jobstore.Job {
+func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope, refAssets []jobstore.JobRefAsset) *jobstore.Job {
 	normalised := normalizeModelID(req.Model)
 	providerName := ""
 	if prov, _, ok := provider.ProviderForModel(normalised); ok {
@@ -256,6 +256,23 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 	if n == 0 {
 		n = 1
 	}
+	params := &jobstore.JobParams{
+		Model:          req.Model,
+		AspectRatio:    req.AspectRatio,
+		ImageSize:      req.ImageSize,
+		Size:           req.Size,
+		N:              n,
+		Quality:        req.Quality,
+		Style:          req.Style,
+		ResponseFormat: req.ResponseFormat,
+		ThinkingBudget: req.ThinkingBudget,
+		ThinkingMode:   req.ThinkingMode,
+		WanEditType:    req.WanEditType,
+		WanBboxList:    jobBBoxesFromProvider(req.WanBboxList),
+	}
+	if len(refAssets) > 0 {
+		params.ReferenceAssets = append([]jobstore.JobRefAsset(nil), refAssets...)
+	}
 	return &jobstore.Job{
 		Model:     req.Model,
 		Provider:  providerName,
@@ -263,20 +280,7 @@ func jobFromGenerateRequest(req GenerateRequest, owner jobstore.OwnerScope) *job
 		Status:    jobstore.StatusQueued,
 		UserID:    uid,
 		SessionID: sid,
-		Params: &jobstore.JobParams{
-			Model:          req.Model,
-			AspectRatio:    req.AspectRatio,
-			ImageSize:      req.ImageSize,
-			Size:           req.Size,
-			N:              n,
-			Quality:        req.Quality,
-			Style:          req.Style,
-			ResponseFormat: req.ResponseFormat,
-			ThinkingBudget: req.ThinkingBudget,
-			ThinkingMode:   req.ThinkingMode,
-			WanEditType:    req.WanEditType,
-			WanBboxList:    jobBBoxesFromProvider(req.WanBboxList),
-		},
+		Params:    params,
 	}
 }
 
@@ -354,9 +358,28 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 	})
 
 	out, err := executeImageGeneration(ctx, req)
-	if err == nil {
-		if e := materializeJobImages(jobID, out); e != nil {
-			err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
+	if err == nil && jobStoreInstance != nil {
+		var uid string
+		if j, ok := jobStoreInstance.Get(jobID); ok {
+			uid = j.UserID
+		}
+		mode := ossArtifactMode()
+		st := getObjectStore()
+		if uid != "" && st != nil && mode != "local" {
+			if mode == "both" {
+				if e := materializeJobImages(jobID, out); e != nil {
+					err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
+				}
+			}
+			if err == nil {
+				if e := materializeJobOutputsOSS(ctx, jobID, uid, out); e != nil {
+					err = e
+				}
+			}
+		} else {
+			if e := materializeJobImages(jobID, out); e != nil {
+				err = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "artifact_write", e.Error())
+			}
 		}
 	}
 	finalizeJobResult(jobID, out, err)
@@ -399,7 +422,20 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 	// a detached context so closing the HTTP connection does not cancel upstream.
 	if jobStoreInstance != nil {
 		owner := callerScopeFromRequest(r)
-		job := jobFromGenerateRequest(body.GenerateRequest, owner)
+		refs, err := providerRefs(body.ReferenceImages)
+		if err != nil {
+			Error(w, err)
+			return
+		}
+		var refAssets []jobstore.JobRefAsset
+		if owner.UserID != "" && getObjectStore() != nil {
+			refAssets, err = uploadReferenceImagesToOSS(r.Context(), owner.UserID, refs)
+			if err != nil {
+				Error(w, err)
+				return
+			}
+		}
+		job := jobFromGenerateRequest(body.GenerateRequest, owner, refAssets)
 		id, err := jobStoreInstance.Create(job)
 		if err != nil {
 			Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))

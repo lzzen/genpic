@@ -82,16 +82,24 @@ idempotency:
   # TTL for dedup window; must be short enough to avoid user confusion.
   ttl: "5m"
 
-# ── Object storage ──────────────────────────────────────────────────────────
-# Uncomment and configure for Full Platform (M1+). MVP Lite does not use storage.
-# objstore:
-#   provider: s3          # s3 | oss | minio
-#   bucket: genpic-works
-#   region: ap-southeast-1
-#   # endpoint: (minio / custom S3-compatible endpoint only)
-#   # access_key_id:     loaded from OBJSTORE_ACCESS_KEY env var
-#   # secret_access_key: loaded from OBJSTORE_SECRET_KEY env var
-#   cdn_base_url: "https://cdn.example.com/works"
+# ── Object storage (S3-compatible: Tencent COS, Aliyun OSS, MinIO) ───────────
+# When enabled with bucket + keys, logged-in users upload generation outputs and
+# reference images; guests stay on local artifacts / upstream URLs only.
+# Secrets: prefer GENPIC_OBJECT_STORAGE_ACCESS_KEY / GENPIC_OBJECT_STORAGE_SECRET_KEY.
+# object_storage:
+#   enabled: true
+#   endpoint: "https://cos.ap-guangzhou.myqcloud.com"
+#   region: "ap-guangzhou"
+#   bucket: "your-bucket"
+#   access_key: ""
+#   secret_key: ""
+#   public_base_url: "https://your-bucket.cos.ap-guangzhou.myqcloud.com"
+#   key_prefix: "genpic"
+#   use_path_style: false
+#   artifact_mode: "oss"   # oss | both | local  (oss: only OSS; both: disk + OSS; local: disk even if OSS configured)
+#   max_fetch_bytes: 26214400
+#   fetch_timeout: "60s"
+#   url_fetch_hosts: []    # HTTPS hostnames allowed to re-fetch upstream image URLs; empty disables rehost
 
 # ── Database ─────────────────────────────────────────────────────────────────
 # MySQL job store for persistent generation history (recommended for production).

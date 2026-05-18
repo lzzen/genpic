@@ -109,3 +109,17 @@ func writeJPEGThumbFile(srcBytes []byte, mime string, dstPath string) error {
 	}
 	return os.Rename(tmp, dstPath)
 }
+
+// encodeJPEGThumbToBytes returns a JPEG preview (same dimensions/quality as artifact thumbs).
+func encodeJPEGThumbToBytes(srcBytes []byte, mime string) ([]byte, error) {
+	src, err := decodeRasterImage(srcBytes, mime)
+	if err != nil {
+		return nil, err
+	}
+	small := resizeToMaxEdge(src, thumbMaxEdge)
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, small, jpegEncodeOpts); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

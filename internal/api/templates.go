@@ -200,6 +200,14 @@ func HandleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 			"b64_json":  b64,
 		})
 	}
+	if len(refs) > 0 && getObjectStore() != nil {
+		var err error
+		refs, err = uploadTemplateReferenceMapsToOSS(r.Context(), user.ID, refs)
+		if err != nil {
+			Error(w, err)
+			return
+		}
+	}
 	if len(refs) > 0 {
 		b, err := json.Marshal(refs)
 		if err != nil {
@@ -258,6 +266,9 @@ func cloneJobParams(p *jobstore.JobParams) *jobstore.JobParams {
 	cp := *p
 	if len(p.WanBboxList) > 0 {
 		cp.WanBboxList = append([]jobstore.JobBBox(nil), p.WanBboxList...)
+	}
+	if len(p.ReferenceAssets) > 0 {
+		cp.ReferenceAssets = append([]jobstore.JobRefAsset(nil), p.ReferenceAssets...)
 	}
 	return &cp
 }

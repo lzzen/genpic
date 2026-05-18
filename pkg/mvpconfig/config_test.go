@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestReadMissing(t *testing.T) {
@@ -73,5 +74,44 @@ gemini:
 	}
 	if m["gemini/gemini-3-pro-image-preview"] != "gemini/banana-pro-4K" {
 		t.Fatalf("pro: %#v", m)
+	}
+}
+
+func TestReadObjectStorage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+object_storage:
+  enabled: true
+  endpoint: "https://cos.example.com"
+  region: "ap-shanghai"
+  bucket: "b1"
+  access_key: "ak"
+  secret_key: "sk"
+  public_base_url: "https://cdn.example.com"
+  key_prefix: "p"
+  use_path_style: true
+  artifact_mode: "both"
+  max_fetch_bytes: 1000
+  fetch_timeout: "30s"
+  url_fetch_hosts:
+    - "oaiusercontent.com"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil || !cfg.Found {
+		t.Fatalf("err=%v found=%v", err, cfg.Found)
+	}
+	o := cfg.ObjectStorage
+	if !o.Enabled || o.Bucket != "b1" || o.AccessKey != "ak" || o.ArtifactMode != "both" {
+		t.Fatalf("object_storage: %#v", o)
+	}
+	if o.MaxFetchBytes != 1000 || o.FetchTimeout != 30*time.Second {
+		t.Fatalf("limits: max=%d timeout=%s", o.MaxFetchBytes, o.FetchTimeout)
+	}
+	if len(o.URLFetchHosts) != 1 || o.URLFetchHosts[0] != "oaiusercontent.com" {
+		t.Fatalf("hosts: %#v", o.URLFetchHosts)
 	}
 }

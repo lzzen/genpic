@@ -1,7 +1,6 @@
 // Package objstore provides a unified interface for object storage operations
-// across S3, Aliyun OSS, and MinIO.
+// across S3-compatible endpoints (Tencent COS, Aliyun OSS, MinIO, AWS S3).
 //
-// All provider adapters that produce image data upload via this interface.
-// The concrete implementation (S3-compatible) lives in internal/storage.
+// The default implementation for cmd/genpic lives in internal/storage (S3 API).
 // Tests use the in-memory Fake.
 package objstore

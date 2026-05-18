@@ -63,17 +63,36 @@ type authYAML struct {
 	AdminEmails []string `yaml:"admin_emails"`
 }
 
+// objectStorageYAML configures S3-compatible object storage (COS, OSS, MinIO).
+type objectStorageYAML struct {
+	Enabled        bool     `yaml:"enabled"`
+	Provider       string   `yaml:"provider"` // reserved; only s3-compatible is implemented
+	Endpoint       string   `yaml:"endpoint"`
+	Region         string   `yaml:"region"`
+	Bucket         string   `yaml:"bucket"`
+	AccessKey      string   `yaml:"access_key"`
+	SecretKey      string   `yaml:"secret_key"`
+	PublicBaseURL  string   `yaml:"public_base_url"`
+	KeyPrefix      string   `yaml:"key_prefix"`
+	UsePathStyle   bool     `yaml:"use_path_style"`
+	ArtifactMode   string   `yaml:"artifact_mode"` // local | oss | both (when enabled; default oss)
+	MaxFetchBytes  int64    `yaml:"max_fetch_bytes"`
+	FetchTimeout   string   `yaml:"fetch_timeout"`
+	URLFetchHosts  []string `yaml:"url_fetch_hosts"` // HTTPS hosts allowed for upstream URL rehost; empty disables fetch
+}
+
 // rootYAML is the full config.yaml structure. Unknown keys are ignored.
 type rootYAML struct {
-	Server     serverYAML        `yaml:"server"`
-	MvpLite    mvpLiteYAML       `yaml:"mvp_lite"`
-	ModelIDMap map[string]string `yaml:"model_id_map"`
-	OpenAI     providerYAML      `yaml:"openai"`
-	Gemini     geminiYAML        `yaml:"gemini"`
-	Wan        providerYAML      `yaml:"wan"`
-	RateLimit  rateLimitYAML     `yaml:"rate_limit"`
-	Database   databaseYAML      `yaml:"database"`
-	Auth       authYAML          `yaml:"auth"`
+	Server         serverYAML        `yaml:"server"`
+	MvpLite        mvpLiteYAML       `yaml:"mvp_lite"`
+	ModelIDMap     map[string]string `yaml:"model_id_map"`
+	OpenAI         providerYAML      `yaml:"openai"`
+	Gemini         geminiYAML        `yaml:"gemini"`
+	Wan            providerYAML      `yaml:"wan"`
+	RateLimit      rateLimitYAML     `yaml:"rate_limit"`
+	Database       databaseYAML      `yaml:"database"`
+	Auth           authYAML          `yaml:"auth"`
+	ObjectStorage  objectStorageYAML `yaml:"object_storage"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -126,6 +145,26 @@ type Config struct {
 
 	// Auth configures cookie-backed sessions (cmd/genpic; requires database).
 	Auth AuthConfig
+
+	// ObjectStorage configures S3-compatible OSS for logged-in users (cmd/genpic).
+	ObjectStorage ObjectStorageConfig
+}
+
+// ObjectStorageConfig holds resolved object storage settings.
+type ObjectStorageConfig struct {
+	Enabled        bool
+	Endpoint       string
+	Region         string
+	Bucket         string
+	AccessKey      string
+	SecretKey      string
+	PublicBaseURL  string
+	KeyPrefix      string
+	UsePathStyle   bool
+	ArtifactMode   string // local | oss | both
+	MaxFetchBytes  int64
+	FetchTimeout   time.Duration
+	URLFetchHosts  []string
 }
 
 // AuthConfig holds session lifetime for auth.NewStore.
@@ -168,9 +207,74 @@ func Read(path string) (Config, error) {
 		Database:                  resolveDatabase(root.Database),
 		ArtifactsDir:              strings.TrimSpace(root.Server.ArtifactsDir),
 		Auth:                      resolveAuth(root.Auth),
+		ObjectStorage:             resolveObjectStorage(root.ObjectStorage),
 	}
 
 	return c, nil
+}
+
+func resolveObjectStorage(y objectStorageYAML) ObjectStorageConfig {
+	if !y.Enabled {
+		return ObjectStorageConfig{}
+	}
+	ak := strings.TrimSpace(y.AccessKey)
+	sk := strings.TrimSpace(y.SecretKey)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_ACCESS_KEY")); v != "" {
+		ak = v
+	}
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_SECRET_KEY")); v != "" {
+		sk = v
+	}
+	ep := strings.TrimSpace(y.Endpoint)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_ENDPOINT")); v != "" {
+		ep = v
+	}
+	region := strings.TrimSpace(y.Region)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_REGION")); v != "" {
+		region = v
+	}
+	bucket := strings.TrimSpace(y.Bucket)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_BUCKET")); v != "" {
+		bucket = v
+	}
+	pub := strings.TrimSpace(y.PublicBaseURL)
+	if v := strings.TrimSpace(os.Getenv("GENPIC_OBJECT_STORAGE_PUBLIC_BASE_URL")); v != "" {
+		pub = v
+	}
+	mode := strings.ToLower(strings.TrimSpace(y.ArtifactMode))
+	if mode == "" {
+		mode = "oss"
+	}
+	maxFetch := y.MaxFetchBytes
+	if maxFetch <= 0 {
+		maxFetch = 25 << 20 // 25 MiB
+	}
+	ft := 60 * time.Second
+	if d, err := time.ParseDuration(strings.TrimSpace(y.FetchTimeout)); err == nil && d > 0 {
+		ft = d
+	}
+	var hosts []string
+	for _, h := range y.URLFetchHosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return ObjectStorageConfig{
+		Enabled:        true,
+		Endpoint:       ep,
+		Region:         region,
+		Bucket:         bucket,
+		AccessKey:      ak,
+		SecretKey:      sk,
+		PublicBaseURL:  pub,
+		KeyPrefix:      strings.TrimSpace(y.KeyPrefix),
+		UsePathStyle:   y.UsePathStyle,
+		ArtifactMode:   mode,
+		MaxFetchBytes:  maxFetch,
+		FetchTimeout:   ft,
+		URLFetchHosts:  hosts,
+	}
 }
 
 // resolveDatabase merges config.yaml database settings with the DB_DSN env var fallback.

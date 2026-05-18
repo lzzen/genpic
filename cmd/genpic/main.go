@@ -51,9 +51,12 @@ import (
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
 	"genpic/internal/provider/wan"
+	"genpic/internal/storage"
 	"genpic/internal/templatestore"
+	"genpic/internal/userstorage"
 	"genpic/pkg/logger"
 	"genpic/pkg/mvpconfig"
+	"genpic/pkg/objstore"
 	"genpic/pkg/provider"
 	"genpic/pkg/ratelimit"
 )
@@ -137,6 +140,43 @@ func main() {
 		}()
 	} else {
 		log.Info("auth store disabled", "reason", "no MySQL DSN; user accounts require a database")
+	}
+
+	// ── Object storage + per-user quota (requires MySQL) ─────────────────────
+	if ms, ok := store.(*jobstore.MySQL); ok {
+		api.SetQuotaDB(ms.DB())
+		if err := userstorage.MigrateUserQuotaColumns(ms.DB()); err != nil {
+			slog.Error("user storage quota columns migrate failed", "error", err)
+			os.Exit(1)
+		}
+	}
+	osCfg := cfg.ObjectStorage
+	if osCfg.Enabled && osCfg.Bucket != "" && osCfg.AccessKey != "" && osCfg.SecretKey != "" {
+		api.SetOSSMaterializeConfig(osCfg)
+		s3s, err := storage.NewS3Compatible(ctx, storage.S3Config{
+			Region:        osCfg.Region,
+			Endpoint:      osCfg.Endpoint,
+			Bucket:        osCfg.Bucket,
+			AccessKey:     osCfg.AccessKey,
+			SecretKey:     osCfg.SecretKey,
+			UsePathStyle:  osCfg.UsePathStyle,
+			PublicBaseURL: osCfg.PublicBaseURL,
+			KeyPrefix:     osCfg.KeyPrefix,
+		})
+		if err != nil {
+			slog.Error("object storage init failed", "error", err)
+			os.Exit(1)
+		}
+		api.SetObjectStore(s3s)
+		api.SetObjectURLResolver(func(cx context.Context, logicalKey string) (string, error) {
+			if pub := strings.TrimSpace(osCfg.PublicBaseURL); pub != "" {
+				return strings.TrimRight(pub, "/") + "/" + strings.TrimLeft(logicalKey, "/"), nil
+			}
+			return s3s.SignedURL(cx, objstore.SignedURLInput{Key: logicalKey, ExpiresIn: 7 * 24 * time.Hour})
+		})
+		slog.Info("object storage initialised", "bucket", osCfg.Bucket, "artifact_mode", osCfg.ArtifactMode)
+	} else if osCfg.Enabled {
+		slog.Warn("object_storage.enabled but bucket, access_key, or secret_key missing — OSS uploads disabled")
 	}
 
 	// ── Artifact files (b64 → disk, GET /api/artifacts/...) ─────────────────

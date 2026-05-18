@@ -426,6 +426,10 @@ function histEntryToDetailPayload(entry) {
 }
 
 function loadReferenceImagesForSimilar(refs) {
+  return loadReferenceImagesForSimilarAsync(refs);
+}
+
+async function loadReferenceImagesForSimilarAsync(refs) {
   referenceEntries = [];
   if (!refs || !Array.isArray(refs)) {
     renderRefPreviews();
@@ -435,12 +439,36 @@ function loadReferenceImagesForSimilar(refs) {
   for (const r of refs) {
     if (n >= 6) break;
     const mime = (r.mime_type || 'image/png').trim();
+    const url = String(r.url || '').trim();
+    if (url) {
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        const dataUrl = await blobToDataURL(blob);
+        const comma = dataUrl.indexOf(',');
+        const b64 = comma >= 0 ? dataUrl.slice(comma + 1).replace(/\s/g, '') : '';
+        if (!b64) continue;
+        referenceEntries.push({ mime, b64, thumb: dataUrl });
+        n++;
+      } catch (_) { /* CORS or network */ }
+      continue;
+    }
     const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
     if (!b64) continue;
     referenceEntries.push({ mime, b64, thumb: 'data:' + mime + ';base64,' + b64 });
     n++;
   }
   renderRefPreviews();
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ''));
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
 }
 
 /** Rebuild catalog model id (e.g. openai/gpt-image-2) from template API row (wire primary_model + provider). */
@@ -456,7 +484,7 @@ function genpicTemplateCatalogModelId(t) {
   return m;
 }
 
-function applyGenpicTemplate(t) {
+async function applyGenpicTemplate(t) {
   if (!t) return;
   const catalog = genpicTemplateCatalogModelId(t);
   const p = { ...(t.params || {}) };
@@ -469,7 +497,7 @@ function applyGenpicTemplate(t) {
     params: p,
     reference_images: t.reference_images,
   };
-  applyCreateSimilar(src);
+  await applyCreateSimilar(src);
 }
 
 function updateTemplateMoreVisibility() {
@@ -562,6 +590,18 @@ function openTemplatePreview(t) {
       for (const r of refs) {
         if (n >= 6) break;
         const mime = (r.mime_type || 'image/png').trim();
+        const url = String(r.url || '').trim();
+        if (url) {
+          const im = document.createElement('img');
+          im.className = 'tpl-preview-ref-thumb';
+          im.alt = '参考图';
+          im.loading = 'lazy';
+          im.referrerPolicy = 'no-referrer';
+          im.src = url;
+          refsEl.appendChild(im);
+          n++;
+          continue;
+        }
         const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
         if (!b64) continue;
         const im = document.createElement('img');
@@ -702,7 +742,7 @@ async function refreshTemplateStrip() {
       use.type = 'button';
       use.className = 'template-card-use';
       use.textContent = '立即使用';
-      use.addEventListener('click', () => applyGenpicTemplate(t));
+      use.addEventListener('click', () => { void applyGenpicTemplate(t); });
       card.appendChild(use);
       rail.appendChild(card);
     }
@@ -971,13 +1011,13 @@ function renderCommunityCard(job) {
     if (job.id) void openJobDetailFetchById(job.id);
     else openJobDetail(job);
   }));
-  act.appendChild(mkBtn('创作同款', () => applyCreateSimilar(job)));
+  act.appendChild(mkBtn('创作同款', () => { void applyCreateSimilar(job); }));
   body.appendChild(act);
   card.appendChild(body);
   return card;
 }
 
-function applyCreateSimilar(source) {
+async function applyCreateSimilar(source) {
   if (!authUser) {
     alert('登录后可查看完整提示词并创作同款');
     openAuthModal('login');
@@ -1038,7 +1078,7 @@ function applyCreateSimilar(source) {
     }
     if ($('wan-thinking')) $('wan-thinking').checked = !!p.thinking_mode;
   }
-  loadReferenceImagesForSimilar(source.reference_images || p.reference_images);
+  await loadReferenceImagesForSimilar(source.reference_images || p.reference_images);
   $('prompt').value = job.prompt || '';
   $('prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('prompt').focus();
@@ -1498,7 +1538,7 @@ $('job-detail-copy-prompt')?.addEventListener('click', () => {
 $('job-detail-create-similar')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
   closeJobDetail();
-  applyCreateSimilar(jobDetailCtx);
+  void applyCreateSimilar(jobDetailCtx);
 });
 $('job-detail-save-template')?.addEventListener('click', () => {
   if (!jobDetailCtx) return;
@@ -1538,7 +1578,7 @@ $('template-preview-apply')?.addEventListener('click', () => {
   if (!templatePreviewCtx) return;
   const t = templatePreviewCtx;
   closeTemplatePreview();
-  applyGenpicTemplate(t);
+  void applyGenpicTemplate(t);
 });
 
 $('eye-btn')?.addEventListener('click', () => {
@@ -2032,7 +2072,7 @@ function addImages(images, model, provider, prompt = '') {
     }));
     act.appendChild(mkBtn('创作同款', () => {
       const gx = galleryCardExtras.get(card);
-      applyCreateSimilar({
+      void applyCreateSimilar({
         model,
         provider,
         prompt: pr,
@@ -2192,10 +2232,12 @@ function histPush(entry) {
     })),
   };
   if (entry.reference_images && Array.isArray(entry.reference_images)) {
-    safe.reference_images = entry.reference_images.map((r) => ({
-      mime_type: r.mime_type,
-      b64_json: (r.b64_json && r.b64_json.length <= MAX_B64) ? r.b64_json : undefined,
-    })).filter((r) => r.b64_json);
+    safe.reference_images = entry.reference_images.map((r) => {
+      const url = String(r.url || '').trim();
+      if (url) return { mime_type: r.mime_type || 'image/png', url };
+      const b64 = r.b64_json && r.b64_json.length <= MAX_B64 ? r.b64_json : undefined;
+      return { mime_type: r.mime_type, b64_json: b64 };
+    }).filter((r) => r.url || r.b64_json);
   }
   let arr = histLoad();
   arr.unshift(safe);
@@ -2270,6 +2312,13 @@ function jobRecordToHistEntry(job) {
   if (job.processing_ms != null) out.processing_ms = job.processing_ms;
   if (job.tokens_used != null) out.tokens_used = job.tokens_used;
   if (job.upstream_request_id) out.upstream_request_id = job.upstream_request_id;
+  const ra = job.params && Array.isArray(job.params.reference_assets) ? job.params.reference_assets : null;
+  if (ra && ra.length) {
+    out.reference_images = ra.map((a) => ({
+      mime_type: a.mime_type || 'image/png',
+      url: String(a.url || '').trim(),
+    })).filter((x) => x.url);
+  }
   return out;
 }
 
@@ -2636,7 +2685,7 @@ function renderHistoryPanel() {
     };
     actRow.appendChild(mkH('复制描述', () => void copyDescriptionWithToast(entry.prompt || '')));
     actRow.appendChild(mkH('详情', () => openHistEntryDetail(entry)));
-    actRow.appendChild(mkH('创作同款', () => applyCreateSimilar(histEntryToDetailPayload(entry))));
+    actRow.appendChild(mkH('创作同款', () => { void applyCreateSimilar(histEntryToDetailPayload(entry)); }));
     const hid = String(entry.id || '').trim();
     if (authUser && entry.status === 'succeeded' && /^[a-f0-9]{32}$/i.test(hid)) {
       actRow.appendChild(mkH('存为模板', () => void saveJobAsTemplatePayload(histEntryToDetailPayload(entry), 'private')));
