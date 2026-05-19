@@ -624,6 +624,77 @@ paths:
         "503":
           description: Auth disabled
 
+  /api/admin/users/storage:
+    get:
+      operationId: adminListUserStorage
+      tags: [admin]
+      summary: List users with storage quota (admin only)
+      description: |
+        Paginated list of registered users with `storage_used_bytes` and `storage_quota_bytes`.
+        Requires MySQL and `auth.admin_emails`.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 30
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Optional email prefix filter (case-insensitive)
+      responses:
+        "200":
+          description: User storage list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserStorageListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Storage disabled (no database)
+    patch:
+      operationId: adminPatchUserStorage
+      tags: [admin]
+      summary: Set or adjust a user's storage quota (admin only)
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPatchUserStorageRequest"
+      responses:
+        "200":
+          description: Updated user storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserStoragePatchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Storage disabled (no database)
+
   /api/admin/templates:
     get:
       operationId: adminListTemplates
@@ -1352,6 +1423,69 @@ components:
           type: string
         email:
           type: string
+
+    AdminUserStorageRow:
+      type: object
+      required: [user_id, email, used_bytes, quota_bytes, remaining_bytes]
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        used_bytes:
+          type: integer
+          format: int64
+        quota_bytes:
+          type: integer
+          format: int64
+        remaining_bytes:
+          type: integer
+          format: int64
+
+    AdminUserStorageListResponse:
+      type: object
+      required: [object, data, total, limit, offset]
+      properties:
+        object:
+          type: string
+          enum: [admin.user_storage_list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserStorageRow"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AdminPatchUserStorageRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: string
+        quota_bytes:
+          type: integer
+          format: int64
+          description: Set absolute quota (mutually exclusive with delta_bytes)
+        delta_bytes:
+          type: integer
+          format: int64
+          description: Add to current quota (mutually exclusive with quota_bytes)
+
+    AdminUserStoragePatchResponse:
+      type: object
+      required: [object, user]
+      properties:
+        object:
+          type: string
+          enum: [admin.user_storage]
+        user:
+          $ref: "#/components/schemas/AdminUserStorageRow"
 
     AdminTemplateSummary:
       type: object

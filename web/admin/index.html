@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 — Genpic</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <div class="admin-sidebar-brand">
+        管理后台
+        <div class="sub">需管理员账号在主站登录</div>
+      </div>
+      <nav>
+        <ul class="admin-nav">
+          <li><a href="#users" data-panel="users" class="active">用户列表</a></li>
+          <li><a href="#templates" data-panel="templates">模板列表 · 公用 / 私有</a></li>
+          <li><a href="#stats" data-panel="stats">模型稳定性 · 统计与图表</a></li>
+        </ul>
+      </nav>
+      <div class="admin-sidebar-footer">
+        <a href="/">← 返回主站</a>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <h1 id="workspace-title">用户列表</h1>
+      </header>
+      <div id="banner" class="admin-banner warn" hidden></div>
+
+      <main class="admin-workspace">
+        <!-- 用户列表 -->
+        <section id="panel-users" class="admin-panel admin-card active">
+          <h2>用户列表</h2>
+          <p class="sub">查看存储用量；可在操作栏重置密码或调整存储配额。</p>
+          <div class="admin-toolbar">
+            <label for="users-q" style="margin:0">邮箱搜索</label>
+            <input type="search" id="users-q" placeholder="前缀匹配…" />
+            <button type="button" class="admin-btn secondary" id="btn-users-search">搜索</button>
+            <button type="button" class="admin-btn secondary" id="btn-users-refresh">刷新</button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>邮箱</th>
+                  <th>用户 ID</th>
+                  <th>昵称</th>
+                  <th>已用</th>
+                  <th>配额</th>
+                  <th>剩余</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+          <div class="row-actions" style="margin-top:12px">
+            <button type="button" class="admin-btn secondary" id="btn-users-prev" disabled>上一页</button>
+            <button type="button" class="admin-btn secondary" id="btn-users-next" disabled>下一页</button>
+            <span id="users-pager-meta" class="admin-msg" style="margin:0"></span>
+          </div>
+          <p id="users-msg" class="admin-msg" role="status"></p>
+        </section>
+
+        <!-- 模板列表 -->
+        <section id="panel-templates" class="admin-panel admin-card">
+          <h2>模板列表 · 公用 / 私有</h2>
+          <div class="admin-toolbar">
+            <label for="tpl-vis-filter" style="margin:0">筛选</label>
+            <select id="tpl-vis-filter" aria-label="可见性筛选">
+              <option value="">全部</option>
+              <option value="public">仅公用</option>
+              <option value="private">仅私有</option>
+            </select>
+            <button type="button" class="admin-btn secondary" id="btn-refresh-templates">刷新</button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="tpl-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>标题 / 模型</th>
+                  <th>所有者</th>
+                  <th>可见性</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="tpl-tbody"></tbody>
+            </table>
+          </div>
+          <div class="row-actions" style="margin-top:12px">
+            <button type="button" class="admin-btn secondary" id="btn-tpl-prev" disabled>上一页</button>
+            <button type="button" class="admin-btn secondary" id="btn-tpl-next" disabled>下一页</button>
+            <span id="tpl-pager-meta" class="admin-msg" style="margin:0"></span>
+          </div>
+          <p id="tpl-msg" class="admin-msg" role="status"></p>
+        </section>
+
+        <!-- 模型统计 -->
+        <section id="panel-stats" class="admin-panel admin-card">
+          <h2>模型稳定性 · 统计与图表</h2>
+          <p class="sub">基于已结束任务（成功+失败），按 finished_at 时间窗口聚合。</p>
+          <div class="admin-toolbar" style="flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <label for="stats-days">时间范围（天）</label>
+              <select id="stats-days" aria-label="时间范围">
+                <option value="7" selected>7</option>
+                <option value="30">30</option>
+                <option value="90">90</option>
+              </select>
+            </div>
+            <div>
+              <label for="stats-granularity">时序粒度</label>
+              <select id="stats-granularity" aria-label="时序粒度">
+                <option value="day" selected>按日</option>
+                <option value="hour">按小时（≤7 天）</option>
+              </select>
+            </div>
+            <div>
+              <label for="stats-models">对比模型（多选）</label>
+              <select id="stats-models" class="stats-model-select" multiple aria-label="对比模型"></select>
+            </div>
+            <div>
+              <label for="stats-single-model">单模型趋势</label>
+              <select id="stats-single-model" aria-label="单模型趋势">
+                <option value="">— 请选择 —</option>
+              </select>
+            </div>
+            <button type="button" class="admin-btn secondary" id="btn-stats-refresh" disabled>刷新图表</button>
+          </div>
+          <p id="stats-msg" class="admin-msg" role="status"></p>
+          <div class="stats-charts" style="margin-top:16px">
+            <div class="stats-chart-wrap"><h3>完成率排名（%）</h3><canvas id="chart-rate-rank" aria-label="完成率排名"></canvas></div>
+            <div class="stats-chart-wrap"><h3>平均响应时间排名（ms）</h3><canvas id="chart-lat-rank" aria-label="响应时间排名"></canvas></div>
+            <div class="stats-chart-wrap"><h3>多模型完成率趋势</h3><canvas id="chart-rate-multi" aria-label="多模型完成率趋势"></canvas></div>
+            <div class="stats-chart-wrap"><h3>单模型完成率趋势</h3><canvas id="chart-rate-single" aria-label="单模型完成率趋势"></canvas></div>
+          </div>
+          <div class="admin-table-wrap" style="margin-top:20px;max-height:none">
+            <table class="admin-table" id="stats-table">
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>Provider</th>
+                  <th>成功</th>
+                  <th>失败</th>
+                  <th>成功率</th>
+                  <th>平均 ms</th>
+                  <th>p95 ms</th>
+                  <th>主要失败 code</th>
+                </tr>
+              </thead>
+              <tbody id="stats-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- 重置密码弹层 -->
+  <div id="backdrop-reset-password" class="admin-modal-backdrop" hidden>
+    <div class="admin-modal" role="dialog" aria-labelledby="reset-modal-title">
+      <h3 id="reset-modal-title">重置用户密码</h3>
+      <p class="sub" style="margin-bottom:12px">用户：<strong id="reset-modal-email"></strong></p>
+      <p class="sub" style="margin-bottom:12px">重置后该用户所有会话将失效。</p>
+      <label for="reset-modal-password">新密码（至少 8 位）</label>
+      <input type="password" id="reset-modal-password" autocomplete="new-password" />
+      <p id="reset-modal-msg" class="admin-msg" role="status"></p>
+      <div class="admin-modal-actions">
+        <button type="button" class="admin-btn" id="btn-reset-submit">确认重置</button>
+        <button type="button" class="admin-btn secondary" id="btn-reset-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 调整配额弹层 -->
+  <div id="backdrop-adjust-quota" class="admin-modal-backdrop" hidden>
+    <div class="admin-modal" role="dialog" aria-labelledby="quota-modal-title">
+      <h3 id="quota-modal-title">调整存储配额</h3>
+      <p class="sub">用户：<strong id="quota-modal-email"></strong></p>
+      <p class="sub">当前配额：<strong id="quota-modal-current"></strong></p>
+      <label><input type="radio" name="quota-mode" id="quota-mode-set" checked /> 设置为</label>
+      <div id="quota-set-fields">
+        <label for="quota-value">配额</label>
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <input type="number" id="quota-value" min="0" step="1" style="flex:1;margin:0" />
+          <select id="quota-unit" style="width:80px;margin:0">
+            <option value="MB" selected>MB</option>
+            <option value="GB">GB</option>
+            <option value="KB">KB</option>
+          </select>
+        </div>
+      </div>
+      <label><input type="radio" name="quota-mode" id="quota-mode-delta" /> 增减</label>
+      <div id="quota-delta-fields" style="display:none">
+        <label for="quota-delta-value">增减量（可为负）</label>
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <input type="number" id="quota-delta-value" step="1" style="flex:1;margin:0" />
+          <select id="quota-delta-unit" style="width:80px;margin:0">
+            <option value="MB" selected>MB</option>
+            <option value="GB">GB</option>
+            <option value="KB">KB</option>
+          </select>
+        </div>
+      </div>
+      <p id="quota-modal-msg" class="admin-msg" role="status"></p>
+      <div class="admin-modal-actions">
+        <button type="button" class="admin-btn" id="btn-quota-submit">确认</button>
+        <button type="button" class="admin-btn secondary" id="btn-quota-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script src="/admin/common.js"></script>
+  <script src="/admin/users.js"></script>
+  <script src="/admin/templates.js"></script>
+  <script src="/admin/stats.js"></script>
+</body>
+</html>

@@ -20,6 +20,8 @@
 //   - GET|POST /api/templates       — list presets (?model=) / save from succeeded job
 //   - DELETE /api/templates/{id}    — delete own template (admins may delete public presets)
 //   - POST /api/admin/users/reset-password — admin: set a user's password (invalidates their sessions)
+//   - GET  /api/admin/users/storage       — admin: list users with storage quota (pagination, email prefix q)
+//   - PATCH /api/admin/users/storage      — admin: set or adjust a user's storage_quota_bytes
 //   - GET  /api/admin/templates     — admin: list all templates (pagination, optional visibility filter)
 //   - PUT  /api/admin/templates/{id}/visibility — admin: set template public or private
 //   - GET  /api/admin/model-stats   — admin: per-model success/latency aggregates for a time window
@@ -261,6 +263,8 @@ func main() {
 	mux.Handle("DELETE /api/templates/{id}", optAuth(http.HandlerFunc(api.HandleDeleteTemplate)))
 
 	mux.Handle("POST /api/admin/users/reset-password", optAuth(http.HandlerFunc(api.HandleAdminResetPassword)))
+	mux.Handle("GET /api/admin/users/storage", optAuth(http.HandlerFunc(api.HandleAdminListUserStorage)))
+	mux.Handle("PATCH /api/admin/users/storage", optAuth(http.HandlerFunc(api.HandleAdminPatchUserStorage)))
 	mux.Handle("GET /api/admin/templates", optAuth(http.HandlerFunc(api.HandleAdminListTemplates)))
 	mux.Handle("PUT /api/admin/templates/{id}/visibility", optAuth(http.HandlerFunc(api.HandleAdminPutTemplateVisibility)))
 	mux.Handle("GET /api/admin/model-stats/timeseries", optAuth(http.HandlerFunc(api.HandleAdminModelStatsTimeseries)))
@@ -269,7 +273,7 @@ func main() {
 	mux.HandleFunc("GET /admin/jobs", api.HandleAdminJobs)
 	mux.HandleFunc("GET /admin/stats", api.HandleAdminStats)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
-		serveEmbeddedHTML(w, webRoot, "admin.html")
+		serveEmbeddedHTML(w, webRoot, "admin/index.html")
 	})
 	mux.HandleFunc("GET /integrate", func(w http.ResponseWriter, r *http.Request) {
 		serveEmbeddedHTML(w, webRoot, "integrate.html")
