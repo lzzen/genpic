@@ -1,4 +1,8 @@
 /* Admin shell: left nav + workspace */
+:root {
+  --bg-elevated: var(--surface);
+}
+
 .admin-shell {
   display: flex;
   min-height: 100vh;
@@ -314,10 +318,98 @@
   font-weight: 600;
   color: var(--muted);
 }
-.stats-model-select {
-  min-height: 120px;
+.stats-models-field {
+  position: relative;
+}
+.stats-models-field label {
+  display: block;
+}
+.stats-models-picker {
+  position: relative;
+  min-width: 200px;
+  max-width: 320px;
+}
+.stats-models-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
-  max-width: 420px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-align: left;
+}
+.stats-models-trigger:hover {
+  border-color: var(--accent);
+}
+.stats-models-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+#stats-models-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.stats-models-caret {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.stats-models-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 280px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  background-color: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.stats-models-menu[hidden] {
+  display: none;
+}
+.stats-models-list {
+  overflow-y: auto;
+  padding: 6px 0;
+  max-height: 280px;
+  background: var(--surface);
+  background-color: #ffffff;
+}
+.stats-models-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.stats-models-option:hover {
+  background: var(--surface);
+}
+.stats-models-option input {
+  margin: 3px 0 0;
+  flex-shrink: 0;
+  width: auto;
+  cursor: pointer;
+}
+.stats-models-option span {
+  min-width: 0;
+  word-break: break-all;
 }
 .admin-modal-backdrop {
   position: fixed;

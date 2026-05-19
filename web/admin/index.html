@@ -134,9 +134,24 @@
                 <option value="hour">按小时（≤7 天）</option>
               </select>
             </div>
-            <div>
-              <label for="stats-models">对比模型（多选）</label>
-              <select id="stats-models" class="stats-model-select" multiple aria-label="对比模型"></select>
+            <div class="stats-models-field">
+              <label id="stats-models-label-text">对比模型（多选）</label>
+              <div class="stats-models-picker" id="stats-models-picker">
+                <button
+                  type="button"
+                  class="stats-models-trigger"
+                  id="stats-models-trigger"
+                  aria-expanded="false"
+                  aria-haspopup="listbox"
+                  aria-labelledby="stats-models-label-text stats-models-label"
+                >
+                  <span id="stats-models-label">选择模型…</span>
+                  <span class="stats-models-caret" aria-hidden="true">▾</span>
+                </button>
+                <div id="stats-models-menu" class="stats-models-menu" hidden role="listbox" aria-multiselectable="true">
+                  <div id="stats-models-list" class="stats-models-list"></div>
+                </div>
+              </div>
             </div>
             <div>
               <label for="stats-single-model">单模型趋势</label>

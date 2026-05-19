@@ -50,34 +50,73 @@ const AdminStats = (function () {
     return best ? best + ' (' + n + ')' : '—';
   }
 
+  function selectedModelsList() {
+    const list = $('stats-models-list');
+    if (!list) return [];
+    const out = [];
+    for (const cb of list.querySelectorAll('input[type="checkbox"]:checked')) {
+      if (cb.value) out.push(cb.value);
+    }
+    return out;
+  }
+
+  function updateStatsModelsLabel() {
+    const label = $('stats-models-label');
+    if (!label) return;
+    const sel = selectedModelsList();
+    if (!sel.length) {
+      label.textContent = '选择模型…';
+      return;
+    }
+    if (sel.length <= 2) {
+      label.textContent = sel.join('、');
+      return;
+    }
+    label.textContent = '已选 ' + sel.length + ' 个模型';
+  }
+
+  function setStatsModelsMenuOpen(open) {
+    const menu = $('stats-models-menu');
+    const trigger = $('stats-models-trigger');
+    if (!menu || !trigger) return;
+    menu.hidden = !open;
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
   function fillModelSelectors(models) {
-    const statsModels = $('stats-models');
+    const statsModelsList = $('stats-models-list');
     const statsSingleModel = $('stats-single-model');
-    if (!statsModels || !statsSingleModel) return;
+    if (!statsModelsList || !statsSingleModel) return;
+    const prevSelected = new Set(selectedModelsList());
+    const hadSelection = prevSelected.size > 0;
     const sorted = models.slice().sort(function (a, b) {
       return (b.total || 0) - (a.total || 0);
     });
-    statsModels.innerHTML = '';
+    statsModelsList.innerHTML = '';
     statsSingleModel.innerHTML = '<option value="">— 请选择 —</option>';
+    let i = 0;
     for (const m of sorted) {
       const id = m.model || '';
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = id + ' · ' + (m.provider || '') + ' (n=' + (m.total || 0) + ')';
-      statsModels.appendChild(opt);
-    }
-    for (const m of sorted) {
-      const id = m.model || '';
+      if (!id) continue;
+      const label = document.createElement('label');
+      label.className = 'stats-models-option';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = id;
+      cb.checked = hadSelection ? prevSelected.has(id) : i < 5;
+      const text = document.createElement('span');
+      text.textContent = id + ' · ' + (m.provider || '') + ' (n=' + (m.total || 0) + ')';
+      label.appendChild(cb);
+      label.appendChild(text);
+      statsModelsList.appendChild(label);
+      i++;
+
       const o2 = document.createElement('option');
       o2.value = id;
       o2.textContent = id;
       statsSingleModel.appendChild(o2);
     }
-    let i = 0;
-    for (const opt of statsModels.options) {
-      opt.selected = i < 5;
-      i++;
-    }
+    updateStatsModelsLabel();
   }
 
   function renderStatsTable(models) {
@@ -170,16 +209,6 @@ const AdminStats = (function () {
         },
       },
     });
-  }
-
-  function selectedModelsList() {
-    const statsModels = $('stats-models');
-    const out = [];
-    if (!statsModels) return out;
-    for (const o of statsModels.selectedOptions) {
-      if (o.value) out.push(o.value);
-    }
-    return out;
   }
 
   function colorsForModels(n) {
@@ -383,7 +412,29 @@ const AdminStats = (function () {
     $('btn-stats-refresh') && $('btn-stats-refresh').addEventListener('click', loadModelStats);
     $('stats-days') && $('stats-days').addEventListener('change', loadModelStats);
     $('stats-granularity') && $('stats-granularity').addEventListener('change', loadModelStats);
-    $('stats-models') && $('stats-models').addEventListener('change', reloadTimeseriesOnly);
+
+    const picker = $('stats-models-picker');
+    const trigger = $('stats-models-trigger');
+    const list = $('stats-models-list');
+    if (trigger) {
+      trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const menu = $('stats-models-menu');
+        setStatsModelsMenuOpen(menu && menu.hidden);
+      });
+    }
+    if (list) {
+      list.addEventListener('change', function () {
+        updateStatsModelsLabel();
+        reloadTimeseriesOnly();
+      });
+    }
+    document.addEventListener('click', function (e) {
+      if (!picker || !picker.contains(e.target)) {
+        setStatsModelsMenuOpen(false);
+      }
+    });
+
     $('stats-single-model') &&
       $('stats-single-model').addEventListener('change', function () {
         renderTimeseriesCharts(
