@@ -68,6 +68,10 @@
   flex-direction: column;
 }
 .admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -76,6 +80,46 @@
   font-size: 1.15rem;
   font-weight: 600;
   margin: 0;
+}
+.admin-user-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: default;
+  flex-shrink: 0;
+}
+.admin-user-badge[hidden] {
+  display: none;
+}
+.admin-user-badge-icon {
+  display: block;
+}
+.admin-user-badge-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  white-space: nowrap;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  pointer-events: none;
+}
+.admin-user-badge:hover .admin-user-badge-tip,
+.admin-user-badge:focus-within .admin-user-badge-tip {
+  display: block;
 }
 .admin-banner {
   margin: 16px 24px 0;

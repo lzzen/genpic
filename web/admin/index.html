@@ -18,8 +18,8 @@
       <nav>
         <ul class="admin-nav">
           <li><a href="#users" data-panel="users" class="active">用户列表</a></li>
-          <li><a href="#templates" data-panel="templates">模板列表 · 公用 / 私有</a></li>
-          <li><a href="#stats" data-panel="stats">模型稳定性 · 统计与图表</a></li>
+          <li><a href="#templates" data-panel="templates">模板列表</a></li>
+          <li><a href="#stats" data-panel="stats">模型统计</a></li>
         </ul>
       </nav>
       <div class="admin-sidebar-footer">
@@ -30,6 +30,18 @@
     <div class="admin-main">
       <header class="admin-topbar">
         <h1 id="workspace-title">用户列表</h1>
+        <div
+          id="admin-user-badge"
+          class="admin-user-badge"
+          hidden
+          role="status"
+          aria-label="管理员"
+        >
+          <svg class="admin-user-badge-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+          <span id="admin-user-badge-tip" class="admin-user-badge-tip"></span>
+        </div>
       </header>
       <div id="banner" class="admin-banner warn" hidden></div>
 
@@ -70,7 +82,7 @@
 
         <!-- 模板列表 -->
         <section id="panel-templates" class="admin-panel admin-card">
-          <h2>模板列表 · 公用 / 私有</h2>
+          <h2>模板列表</h2>
           <div class="admin-toolbar">
             <label for="tpl-vis-filter" style="margin:0">筛选</label>
             <select id="tpl-vis-filter" aria-label="可见性筛选">
@@ -104,7 +116,7 @@
 
         <!-- 模型统计 -->
         <section id="panel-stats" class="admin-panel admin-card">
-          <h2>模型稳定性 · 统计与图表</h2>
+          <h2>模型统计</h2>
           <p class="sub">基于已结束任务（成功+失败），按 finished_at 时间窗口聚合。</p>
           <div class="admin-toolbar" style="flex-wrap:wrap;align-items:flex-end">
             <div>

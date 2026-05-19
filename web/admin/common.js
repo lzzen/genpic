@@ -2,8 +2,8 @@
 (function () {
   const PANELS = {
     users: { title: '用户列表', init: () => AdminUsers && AdminUsers.init() },
-    templates: { title: '模板列表 · 公用 / 私有', init: () => AdminTemplates && AdminTemplates.init() },
-    stats: { title: '模型稳定性 · 统计与图表', init: () => AdminStats && AdminStats.init() },
+    templates: { title: '模板列表', init: () => AdminTemplates && AdminTemplates.init() },
+    stats: { title: '模型统计', init: () => AdminStats && AdminStats.init() },
   };
 
   const state = {
@@ -86,8 +86,25 @@
     }
     banner.textContent = text;
     banner.classList.toggle('warn', kind === 'warn');
-    banner.classList.toggle('ok', kind === 'ok');
+    banner.classList.remove('ok');
     banner.hidden = false;
+  }
+
+  function setAdminUserBadge(me) {
+    const badge = $('admin-user-badge');
+    const tip = $('admin-user-badge-tip');
+    if (!badge) return;
+    if (!me || !me.is_admin) {
+      badge.hidden = true;
+      if (tip) tip.textContent = '';
+      badge.removeAttribute('title');
+      return;
+    }
+    const label = me.email || me.id || '管理员';
+    badge.hidden = false;
+    badge.title = '管理员：' + label;
+    badge.setAttribute('aria-label', '管理员：' + label);
+    if (tip) tip.textContent = label;
   }
 
   function setAdminEnabled(enabled) {
@@ -127,23 +144,27 @@
     const { res, data } = await apiFetch('/api/auth/me');
     if (res.status === 401) {
       state.me = null;
+      setAdminUserBadge(null);
       showBanner('未登录：请先在主站使用管理员账号登录，再回到本页。', 'warn');
       setAdminEnabled(false);
       return;
     }
     if (!res.ok) {
       state.me = null;
+      setAdminUserBadge(null);
       showBanner(errMessage(data), 'warn');
       setAdminEnabled(false);
       return;
     }
     state.me = data;
     if (!data.is_admin) {
+      setAdminUserBadge(null);
       showBanner('当前账号不是管理员（邮箱未在 admin_emails 列表中）。', 'warn');
       setAdminEnabled(false);
       return;
     }
-    showBanner('已以管理员身份登录：' + (data.email || data.id), 'ok');
+    setAdminUserBadge(data);
+    showBanner('');
     setAdminEnabled(true);
     switchPanel(parseHash());
   }
