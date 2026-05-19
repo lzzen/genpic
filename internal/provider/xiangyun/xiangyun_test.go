@@ -87,6 +87,64 @@ func TestProvider_Generate_tryOrder(t *testing.T) {
 	}
 }
 
+func TestProvider_Generate_emptyImageSlotContinuesFallback(t *testing.T) {
+	for _, n := range []string{"openai", "gemini", "wan", "xiangyun"} {
+		provider.Unregister(n)
+	}
+	t.Cleanup(func() {
+		for _, n := range []string{"openai", "gemini", "wan", "xiangyun"} {
+			provider.Unregister(n)
+		}
+	})
+
+	provider.Register(&provider.Fake{
+		ProviderName: "openai",
+		ModelList: []provider.ModelInfo{
+			{ID: "openai/gpt-image-2", UpstreamModel: "gpt-image-2", TimeoutSeconds: 30},
+		},
+		Response: &provider.GenerateResponse{
+			Images: []provider.Image{{URL: "", B64JSON: ""}},
+		},
+	})
+	wantURL := "https://gem.ok/x.png"
+	provider.Register(&provider.Fake{
+		ProviderName: "gemini",
+		ModelList: []provider.ModelInfo{
+			{ID: "gemini/gemini-3.1-flash-image-preview", UpstreamModel: "gemini-3.1-flash-image-preview", TimeoutSeconds: 30},
+		},
+		Response: &provider.GenerateResponse{
+			Images: []provider.Image{{URL: wantURL}},
+		},
+	})
+	provider.Register(&provider.Fake{
+		ProviderName: "wan",
+		ModelList: []provider.ModelInfo{
+			{ID: "wan/wan2.7-image", UpstreamModel: "wan2.7-image", TimeoutSeconds: 30},
+		},
+		Response: &provider.GenerateResponse{
+			Images: []provider.Image{{URL: "https://wan.should-not-run/y.png"}},
+		},
+	})
+
+	p := New(Config{TryOrder: []string{"openai", "gemini", "wan"}})
+	provider.Register(p)
+
+	resp, err := p.Generate(context.Background(), provider.GenerateRequest{
+		Model:  "x",
+		Prompt: "cat",
+		N:      1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Images) != 1 || resp.Images[0].URL != wantURL {
+		t.Fatalf("want gemini result, got %+v", resp)
+	}
+	if resp.EffectiveProvider != "gemini" {
+		t.Fatalf("effective provider: %q", resp.EffectiveProvider)
+	}
+}
+
 func TestProvider_Generate_nonUpstreamShortCircuit(t *testing.T) {
 	for _, n := range []string{"openai", "gemini", "wan", "xiangyun"} {
 		provider.Unregister(n)

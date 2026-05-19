@@ -112,7 +112,7 @@ idempotency:
 #   artifact_mode: "oss"   # oss | both | local  (oss: only OSS; both: disk + OSS; local: disk even if OSS configured)
 #   max_fetch_bytes: 26214400
 #   fetch_timeout: "60s"
-#   url_fetch_hosts: []    # HTTPS hostnames allowed to re-fetch upstream image URLs; empty disables rehost
+#   url_fetch_hosts: []    # optional extra hosts for re-fetching upstream image URLs; when empty, http(s) URLs use their own hostname (127.0.0.1 only if explicitly listed). Failed rehosts keep the upstream URL and append a row to table materialize_fetch_failures (migration 005).
 
 # ── Database ─────────────────────────────────────────────────────────────────
 # MySQL job store for persistent generation history (recommended for production).

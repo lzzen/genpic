@@ -98,6 +98,22 @@ func cloneGenerateRequest(base provider.GenerateRequest, upstreamWire string) pr
 	return out
 }
 
+// responseHasRenderableImages is true only when every slot has a non-empty URL or b64 payload.
+// Some adapters may return len(Images)>0 with empty slots; we must not treat that as success
+// or we would stop the fallback chain while still having nothing to show (and might look like
+// "another model was still requested" downstream).
+func responseHasRenderableImages(resp *provider.GenerateResponse) bool {
+	if resp == nil || len(resp.Images) == 0 {
+		return false
+	}
+	for _, im := range resp.Images {
+		if strings.TrimSpace(im.URL) == "" && strings.TrimSpace(im.B64JSON) == "" {
+			return false
+		}
+	}
+	return true
+}
+
 // Generate tries each backend in TryOrder. Child adapters use the same
 // credential resolution as direct calls: per-request base_url/api_key from the
 // JSON body take precedence when present; otherwise config.yaml defaults apply.
@@ -130,7 +146,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		subReq := cloneGenerateRequest(req, upstreamWire)
 
 		resp, err := subProv.Generate(ctx, subReq)
-		if err == nil && resp != nil && len(resp.Images) > 0 {
+		if err == nil && responseHasRenderableImages(resp) {
 			out := *resp
 			if out.EffectiveProvider == "" {
 				out.EffectiveProvider = subProv.Name()
@@ -141,7 +157,11 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			return &out, nil
 		}
 		if err == nil {
-			err = pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+			if resp == nil || len(resp.Images) == 0 {
+				err = pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+			} else {
+				err = pkgerrors.UpstreamErr("empty_image_slots", "upstream returned image slots without url or b64_json", nil)
+			}
 		}
 		lastErr = err
 		if !isRetriableUpstreamFailure(err) {

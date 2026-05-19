@@ -120,6 +120,24 @@ func uploadReferenceImagesToOSS(ctx context.Context, userID string, refs []provi
 	return assets, nil
 }
 
+// effectiveFetchHostsForRehost returns the configured allowlist when non-empty; otherwise
+// for HTTPS image URLs it allows the URL's own hostname so OSS materialization can
+// rehost upstream links without a static url_fetch_hosts entry (still subject to
+// DNS/private-IP checks in FetchRemoteImage).
+func effectiveFetchHostsForRehost(rawURL string, configured []string) ([]string, error) {
+	if len(configured) > 0 {
+		return configured, nil
+	}
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil, err
+	}
+	if (strings.ToLower(u.Scheme) != "https" && strings.ToLower(u.Scheme) != "http") || u.Hostname() == "" {
+		return nil, fmt.Errorf("rehost fetch requires http(s) URL with host (or configure object_storage.url_fetch_hosts)")
+	}
+	return []string{strings.ToLower(u.Hostname())}, nil
+}
+
 func readLocalArtifactBytes(jobID, artifactURL string) ([]byte, string, error) {
 	u, err := url.Parse(strings.TrimSpace(artifactURL))
 	if err != nil || u.Path == "" {
@@ -164,10 +182,14 @@ func imageBytesForJobOutput(ctx context.Context, jobID string, d *imageData, fet
 	if strings.HasPrefix(u, "/api/artifacts/") {
 		return readLocalArtifactBytes(jobID, u)
 	}
-	if len(fetchHosts) == 0 {
-		return nil, "", fmt.Errorf("remote url fetch disabled")
+	effectiveHosts, ferr := effectiveFetchHostsForRehost(u, fetchHosts)
+	if ferr != nil {
+		return nil, "", fmt.Errorf("remote url fetch: %w", ferr)
 	}
-	b, ct, err := FetchRemoteHTTPSImage(ctx, u, fetchHosts, maxFetch, fetchTimeout)
+	if len(effectiveHosts) == 0 {
+		return nil, "", fmt.Errorf("remote url fetch: empty allowlist")
+	}
+	b, ct, err := FetchRemoteImage(ctx, u, effectiveHosts, maxFetch, fetchTimeout)
 	if err != nil {
 		return nil, "", err
 	}
@@ -203,8 +225,8 @@ func materializeJobOutputsOSS(ctx context.Context, jobID, userID string, out map
 		slot := &next[i]
 		b, mime, err := imageBytesForJobOutput(ctx, jobID, slot, fetchHosts, maxFetch, fetchTimeout)
 		if err != nil {
-			// Keep upstream URL when we cannot fetch / decode (e.g. remote fetch disabled).
-			if strings.TrimSpace(slot.URL) != "" && strings.TrimSpace(slot.B64JSON) == "" {
+			if isRehostableRemoteImageURL(slot.URL) && strings.TrimSpace(slot.B64JSON) == "" {
+				recordMaterializeFetchFailure(ctx, db, jobID, userID, i, slot.URL, err)
 				continue
 			}
 			deleteOSSObjects(ctx, st, keys)
