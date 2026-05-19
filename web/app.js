@@ -228,6 +228,80 @@ function formatMsHuman(ms) {
   return m + ' 分 ' + (s % 60) + ' 秒';
 }
 
+/** Reference thumbs from top-level reference_images and/or params.reference_assets (OSS urls). */
+function genpicExtractReferenceImages(obj) {
+  if (!obj) return [];
+  const out = [];
+  const seen = new Set();
+  function add(r) {
+    if (!r || typeof r !== 'object') return;
+    const mime = String(r.mime_type || r.mimeType || 'image/png').trim() || 'image/png';
+    const url = String(r.url || '').trim();
+    const b64 = String(r.b64_json || r.b64JSON || '').trim().replace(/\s/g, '');
+    const key = url || (b64 ? 'b64:' + b64.slice(0, 48) : '');
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const item = { mime_type: mime };
+    if (url) item.url = url;
+    if (b64) item.b64_json = b64;
+    out.push(item);
+  }
+  const top = obj.reference_images;
+  if (Array.isArray(top)) top.forEach(add);
+  const p = obj.params || {};
+  const ra = p.reference_assets;
+  if (Array.isArray(ra)) ra.forEach(add);
+  const pri = p.reference_images;
+  if (Array.isArray(pri)) pri.forEach(add);
+  return out.slice(0, 6);
+}
+
+function renderDetailReferenceThumbs(containerEl, infoEl, refs) {
+  if (!containerEl) return;
+  const list = Array.isArray(refs) ? refs : [];
+  containerEl.innerHTML = '';
+  if (infoEl) infoEl.textContent = list.length ? list.length + ' 个' : '';
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'detail-refs-empty';
+    p.textContent = '无参考图';
+    containerEl.appendChild(p);
+    return;
+  }
+  let n = 0;
+  for (const r of list) {
+    if (n >= 6) break;
+    const mime = (r.mime_type || 'image/png').trim();
+    const url = String(r.url || '').trim();
+    if (url) {
+      const im = document.createElement('img');
+      im.className = 'detail-ref-thumb';
+      im.alt = '参考图';
+      im.loading = 'lazy';
+      im.referrerPolicy = 'no-referrer';
+      im.src = url;
+      containerEl.appendChild(im);
+      n++;
+      continue;
+    }
+    const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
+    if (!b64) continue;
+    const im = document.createElement('img');
+    im.className = 'detail-ref-thumb';
+    im.alt = '参考图';
+    im.loading = 'lazy';
+    im.src = 'data:' + mime + ';base64,' + b64;
+    containerEl.appendChild(im);
+    n++;
+  }
+  if (!containerEl.querySelector('img')) {
+    const p2 = document.createElement('p');
+    p2.className = 'detail-refs-empty';
+    p2.textContent = '无参考图';
+    containerEl.appendChild(p2);
+  }
+}
+
 function normalizeJobDetailPayload(obj) {
   if (!obj) return {};
   const p = obj.params || {};
@@ -248,7 +322,7 @@ function normalizeJobDetailPayload(obj) {
     started_at: obj.started_at,
     finished_at: obj.finished_at,
     ts: obj.ts,
-    reference_images: obj.reference_images,
+    reference_images: genpicExtractReferenceImages(obj),
   };
 }
 
@@ -359,6 +433,7 @@ function openJobDetail(raw) {
   }
   if (pr) pr.textContent = ctx.prompt || '（无提示词）';
   if (meta) meta.innerHTML = buildJobDetailMetaHTML(ctx);
+  renderDetailReferenceThumbs($('job-detail-refs'), $('job-detail-ref-info'), ctx.reference_images);
   const jobIdOk = typeof ctx.id === 'string' && /^[a-f0-9]{32}$/i.test(ctx.id);
   const canSave = !!(authUser && ctx.status === 'succeeded' && jobIdOk);
   const savePr = $('job-detail-save-template');
@@ -421,7 +496,7 @@ function histEntryToDetailPayload(entry) {
     started_at: entry.started_at,
     finished_at: entry.finished_at,
     ts: entry.ts,
-    reference_images: entry.reference_images,
+    reference_images: genpicExtractReferenceImages(entry),
   };
 }
 
@@ -495,7 +570,7 @@ async function applyGenpicTemplate(t) {
     prompt: t.prompt || '',
     status: 'succeeded',
     params: p,
-    reference_images: t.reference_images,
+    reference_images: genpicExtractReferenceImages(t),
   };
   await applyCreateSimilar(src);
 }
@@ -568,7 +643,7 @@ function openTemplatePreview(t) {
     visStrip.className = 'tpl-preview-visibility' + (pub ? ' tpl-preview-visibility--public' : ' tpl-preview-visibility--private');
   }
   if (modelRow) modelRow.innerHTML = templatePreviewModelChipsHTML(t);
-  const refs = Array.isArray(t.reference_images) ? t.reference_images : [];
+  const refs = genpicExtractReferenceImages(t);
   const modelsArr = Array.isArray(t.models) ? t.models : [];
   let nProducts = modelsArr.filter((m) => String(m || '').trim()).length;
   if (nProducts < 1) nProducts = 1; // 至少含原始模型自身，与 DB models_json 条数一致
@@ -576,51 +651,7 @@ function openTemplatePreview(t) {
     prodLine.textContent = '使用产品：' + nProducts + ' 个';
   }
   if (promptBox) promptBox.textContent = t.prompt || '（无提示词）';
-  if (refInfo) refInfo.textContent = refs.length ? (refs.length + ' 个') : '';
-  if (refsEl) {
-    refsEl.innerHTML = '';
-    if (!refs.length) {
-      const p = document.createElement('p');
-      p.className = 'tpl-preview-refs-empty';
-      p.style.margin = '0';
-      p.textContent = '无参考图';
-      refsEl.appendChild(p);
-    } else {
-      let n = 0;
-      for (const r of refs) {
-        if (n >= 6) break;
-        const mime = (r.mime_type || 'image/png').trim();
-        const url = String(r.url || '').trim();
-        if (url) {
-          const im = document.createElement('img');
-          im.className = 'tpl-preview-ref-thumb';
-          im.alt = '参考图';
-          im.loading = 'lazy';
-          im.referrerPolicy = 'no-referrer';
-          im.src = url;
-          refsEl.appendChild(im);
-          n++;
-          continue;
-        }
-        const b64 = String(r.b64_json || '').trim().replace(/\s/g, '');
-        if (!b64) continue;
-        const im = document.createElement('img');
-        im.className = 'tpl-preview-ref-thumb';
-        im.alt = '参考图';
-        im.loading = 'lazy';
-        im.src = 'data:' + mime + ';base64,' + b64;
-        refsEl.appendChild(im);
-        n++;
-      }
-      if (!refsEl.querySelector('img')) {
-        const p2 = document.createElement('p');
-        p2.className = 'tpl-preview-refs-empty';
-        p2.style.margin = '0';
-        p2.textContent = '无参考图';
-        refsEl.appendChild(p2);
-      }
-    }
-  }
+  renderDetailReferenceThumbs(refsEl, refInfo, refs);
   if (tagsEl) {
     tagsEl.innerHTML = '';
     const rawTags = t.tags;
@@ -764,12 +795,12 @@ async function saveJobAsTemplatePayload(payload, visibility) {
     alert('无法保存：缺少有效任务 ID');
     return;
   }
-  const refs = payload.reference_images || [];
+  const refs = genpicExtractReferenceImages(payload);
   const body = {
     job_id: jobId,
     visibility: visibility === 'public' ? 'public' : 'private',
     title: '',
-    reference_images: Array.isArray(refs) ? refs : [],
+    reference_images: refs,
   };
   try {
     const r = await genpicFetch('/api/templates', {
@@ -1084,7 +1115,7 @@ async function applyCreateSimilar(source) {
     }
     if ($('wan-thinking')) $('wan-thinking').checked = !!p.thinking_mode;
   }
-  await loadReferenceImagesForSimilar(source.reference_images || p.reference_images);
+  await loadReferenceImagesForSimilar(job.reference_images);
   $('prompt').value = job.prompt || '';
   $('prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('prompt').focus();
@@ -2369,13 +2400,8 @@ function jobRecordToHistEntry(job) {
   if (job.processing_ms != null) out.processing_ms = job.processing_ms;
   if (job.tokens_used != null) out.tokens_used = job.tokens_used;
   if (job.upstream_request_id) out.upstream_request_id = job.upstream_request_id;
-  const ra = job.params && Array.isArray(job.params.reference_assets) ? job.params.reference_assets : null;
-  if (ra && ra.length) {
-    out.reference_images = ra.map((a) => ({
-      mime_type: a.mime_type || 'image/png',
-      url: String(a.url || '').trim(),
-    })).filter((x) => x.url);
-  }
+  const refs = genpicExtractReferenceImages(job);
+  if (refs.length) out.reference_images = refs;
   return out;
 }
 
