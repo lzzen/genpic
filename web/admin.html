@@ -39,6 +39,11 @@
     .admin-topnav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
     .admin-topnav a { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
     .admin-topnav a:hover { text-decoration: underline; }
+    .stats-charts { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    @media (min-width: 960px) { .stats-charts { grid-template-columns: 1fr 1fr; } }
+    .stats-chart-wrap { position: relative; height: 280px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--surface); }
+    .stats-chart-wrap h3 { font-size: 0.85rem; margin: 0 0 8px; font-weight: 600; color: var(--muted); }
+    .stats-model-select { min-height: 120px; width: 100%; max-width: 420px; }
   </style>
 </head>
 <body>
@@ -105,8 +110,66 @@
         <p id="tpl-msg" class="admin-msg" role="status"></p>
       </section>
     </div>
+
+    <section class="admin-card" id="model-stats-section" style="margin-top:22px">
+      <h2>模型稳定性 · 统计与图表</h2>
+      <p class="sub" style="margin-top:-6px;margin-bottom:12px">基于已结束任务（成功+失败），按 <code>finished_at</code> 时间窗口聚合；日/小时粒度与数据库服务器本地时区一致。</p>
+      <div class="admin-toolbar" style="flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label for="stats-days">时间范围（天）</label>
+          <select id="stats-days" aria-label="时间范围">
+            <option value="7" selected>7</option>
+            <option value="30">30</option>
+            <option value="90">90</option>
+          </select>
+        </div>
+        <div>
+          <label for="stats-granularity">时序粒度</label>
+          <select id="stats-granularity" aria-label="时序粒度">
+            <option value="day" selected>按日</option>
+            <option value="hour">按小时（≤7 天）</option>
+          </select>
+        </div>
+        <div>
+          <label for="stats-models">对比模型（多选）</label>
+          <select id="stats-models" class="stats-model-select" multiple aria-label="对比模型"></select>
+        </div>
+        <div>
+          <label for="stats-single-model">单模型趋势</label>
+          <select id="stats-single-model" aria-label="单模型趋势">
+            <option value="">— 请选择 —</option>
+          </select>
+        </div>
+        <button type="button" class="admin-btn secondary" id="btn-stats-refresh" disabled>刷新图表</button>
+      </div>
+      <p id="stats-msg" class="admin-msg" role="status"></p>
+      <div class="stats-charts" style="margin-top:16px">
+        <div class="stats-chart-wrap"><h3>完成率排名（%）</h3><canvas id="chart-rate-rank" aria-label="完成率排名"></canvas></div>
+        <div class="stats-chart-wrap"><h3>平均响应时间排名（ms）</h3><canvas id="chart-lat-rank" aria-label="响应时间排名"></canvas></div>
+        <div class="stats-chart-wrap"><h3>多模型完成率趋势</h3><canvas id="chart-rate-multi" aria-label="多模型完成率趋势"></canvas></div>
+        <div class="stats-chart-wrap"><h3>单模型完成率趋势</h3><canvas id="chart-rate-single" aria-label="单模型完成率趋势"></canvas></div>
+      </div>
+      <div class="admin-table-wrap" style="margin-top:20px;max-height:none">
+        <table class="admin-table" id="stats-table">
+          <thead>
+            <tr>
+              <th>模型</th>
+              <th>Provider</th>
+              <th>成功</th>
+              <th>失败</th>
+              <th>成功率</th>
+              <th>平均 ms</th>
+              <th>p95 ms</th>
+              <th>主要失败 code</th>
+            </tr>
+          </thead>
+          <tbody id="stats-tbody"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script>
 (function () {
   const banner = document.getElementById('banner');
@@ -129,6 +192,318 @@
   let tplOffset = 0;
   const tplLimit = 30;
   let tplTotal = 0;
+
+  const statsDays = document.getElementById('stats-days');
+  const statsGranularity = document.getElementById('stats-granularity');
+  const statsModels = document.getElementById('stats-models');
+  const statsSingleModel = document.getElementById('stats-single-model');
+  const btnStatsRefresh = document.getElementById('btn-stats-refresh');
+  const statsMsg = document.getElementById('stats-msg');
+  const statsTbody = document.getElementById('stats-tbody');
+
+  let chartRateRank = null;
+  let chartLatRank = null;
+  let chartRateMulti = null;
+  let chartRateSingle = null;
+  let lastBuckets = [];
+
+  function chartTextColor() {
+    const m = getComputedStyle(document.documentElement).getPropertyValue('--text').trim();
+    return m || '#e5e7eb';
+  }
+  function chartMutedColor() {
+    const m = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+    return m || '#9ca3af';
+  }
+  function chartBorderColor() {
+    const m = getComputedStyle(document.documentElement).getPropertyValue('--border').trim();
+    return m || '#374151';
+  }
+  function chartAccentColor() {
+    const m = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    return m || '#6366f1';
+  }
+
+  function destroyChart(ch) {
+    if (ch) {
+      try { ch.destroy(); } catch (_) {}
+    }
+    return null;
+  }
+
+  function topFailureCode(fmap) {
+    if (!fmap || typeof fmap !== 'object') return '—';
+    let best = '';
+    let n = 0;
+    for (const k of Object.keys(fmap)) {
+      if (fmap[k] > n) {
+        n = fmap[k];
+        best = k;
+      }
+    }
+    return best ? best + ' (' + n + ')' : '—';
+  }
+
+  function fillModelSelectors(models) {
+    const sorted = models.slice().sort(function (a, b) { return (b.total || 0) - (a.total || 0); });
+    statsModels.innerHTML = '';
+    statsSingleModel.innerHTML = '<option value="">— 请选择 —</option>';
+    for (const m of sorted) {
+      const id = m.model || '';
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = id + ' · ' + (m.provider || '') + ' (n=' + (m.total || 0) + ')';
+      statsModels.appendChild(opt);
+    }
+    for (const m of sorted) {
+      const id = m.model || '';
+      const o2 = document.createElement('option');
+      o2.value = id;
+      o2.textContent = id;
+      statsSingleModel.appendChild(o2);
+    }
+    let i = 0;
+    for (const opt of statsModels.options) {
+      opt.selected = i < 5;
+      i++;
+    }
+  }
+
+  function renderStatsTable(models) {
+    statsTbody.innerHTML = '';
+    if (!models || !models.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="8" style="padding:16px;color:var(--muted)">该窗口内无已结束任务</td>';
+      statsTbody.appendChild(tr);
+      return;
+    }
+    for (const m of models) {
+      const tr = document.createElement('tr');
+      const rate = m.total ? (100 * m.success_rate).toFixed(1) + '%' : '—';
+      const low = m.total >= 3 && m.success_rate < 0.9;
+      const avg = m.avg_processing_ms != null ? String(m.avg_processing_ms) : '—';
+      const p95 = m.p95_processing_ms != null ? String(m.p95_processing_ms) : '—';
+      const ins = m.sample_insufficient ? ' <span style="color:var(--muted);font-size:0.72rem">(样本&lt;3)</span>' : '';
+      tr.innerHTML =
+        '<td>' + escapeHtml(m.model || '') + ins + '</td>' +
+        '<td>' + escapeHtml(m.provider || '') + '</td>' +
+        '<td>' + (m.succeeded || 0) + '</td>' +
+        '<td>' + (m.failed || 0) + '</td>' +
+        '<td' + (low ? ' style="color:#f87171;font-weight:600"' : '') + '>' + rate + '</td>' +
+        '<td>' + avg + '</td>' +
+        '<td>' + p95 + '</td>' +
+        '<td style="font-size:0.78rem">' + escapeHtml(topFailureCode(m.failures_by_code)) + '</td>';
+      statsTbody.appendChild(tr);
+    }
+  }
+
+  function renderRankBar(canvasId, rows, valueKey, labelSuffix, horizontal) {
+    const el = document.getElementById(canvasId);
+    if (!el || typeof Chart === 'undefined') return null;
+    if (!rows || !rows.length) return null;
+    const labels = rows.map(function (r) { return (r.model || '') + ' · ' + (r.provider || ''); });
+    const data = rows.map(function (r) { return valueKey === 'success_rate' ? 100 * (r.success_rate || 0) : (r.avg_processing_ms || 0); });
+    const bg = rows.map(function (r) {
+      if (r.sample_insufficient) return chartMutedColor();
+      return chartAccentColor();
+    });
+    return new Chart(el, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{ label: labelSuffix, data: data, backgroundColor: bg, borderColor: chartBorderColor(), borderWidth: 1 }]
+      },
+      options: {
+        indexAxis: horizontal ? 'y' : 'x',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterLabel: function (ctx) {
+                const r = rows[ctx.dataIndex];
+                if (!r) return '';
+                return '成功 ' + (r.succeeded || 0) + ' / 失败 ' + (r.failed || 0);
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() } },
+          y: { ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() } }
+        }
+      }
+    });
+  }
+
+  function selectedModelsList() {
+    const out = [];
+    for (const o of statsModels.selectedOptions) {
+      if (o.value) out.push(o.value);
+    }
+    return out;
+  }
+
+  function colorsForModels(n) {
+    const base = ['#6366f1', '#22c55e', '#f97316', '#ec4899', '#14b8a6', '#eab308', '#a855f7', '#ef4444'];
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(base[i % base.length]);
+    return out;
+  }
+
+  async function loadModelStats() {
+    if (!me || !me.is_admin) return;
+    statsMsg.textContent = '';
+    statsMsg.className = 'admin-msg';
+    const days = statsDays.value || '7';
+    const gran = statsGranularity.value || 'day';
+    if (gran === 'hour' && Number(days) > 7) {
+      statsMsg.textContent = '按小时统计时请将时间范围设为 7 天以内';
+      statsMsg.classList.add('err');
+      return;
+    }
+
+    const qs = new URLSearchParams();
+    qs.set('days', days);
+    const { res, data } = await apiFetch('/api/admin/model-stats?' + qs.toString());
+    if (!res.ok) {
+      statsMsg.textContent = errMessage(data);
+      statsMsg.classList.add('err');
+      return;
+    }
+    const stats = data.stats || {};
+    const models = stats.models || [];
+    fillModelSelectors(models);
+    renderStatsTable(models);
+
+    chartRateRank = destroyChart(chartRateRank);
+    chartLatRank = destroyChart(chartLatRank);
+    const rateRows = models.slice().sort(function (a, b) { return (a.success_rate || 0) - (b.success_rate || 0); });
+    const latRows = models.filter(function (m) { return m.avg_processing_ms != null; })
+      .sort(function (a, b) { return (b.avg_processing_ms || 0) - (a.avg_processing_ms || 0); });
+    chartRateRank = renderRankBar('chart-rate-rank', rateRows, 'success_rate', '成功率 %', true);
+    chartLatRank = renderRankBar('chart-lat-rank', latRows, 'avg_processing_ms', '平均 ms', true);
+
+    const modelsParam = selectedModelsList().join(',');
+    const q2 = new URLSearchParams();
+    q2.set('days', days);
+    q2.set('granularity', gran);
+    if (modelsParam) q2.set('models', modelsParam);
+
+    const ts = await apiFetch('/api/admin/model-stats/timeseries?' + q2.toString());
+    if (!ts.res.ok) {
+      statsMsg.textContent = errMessage(ts.data);
+      statsMsg.classList.add('err');
+      chartRateMulti = destroyChart(chartRateMulti);
+      chartRateSingle = destroyChart(chartRateSingle);
+      return;
+    }
+    const tb = (ts.data.stats && ts.data.stats.buckets) || [];
+    lastBuckets = tb;
+    renderTimeseriesCharts(tb, selectedModelsList(), statsSingleModel.value);
+    statsMsg.textContent = '已加载 ' + models.length + ' 个模型 · ' + tb.length + ' 个时间桶';
+    statsMsg.classList.add('ok');
+  }
+
+  async function reloadTimeseriesOnly() {
+    if (!me || !me.is_admin) return;
+    const days = statsDays.value || '7';
+    const gran = statsGranularity.value || 'day';
+    if (gran === 'hour' && Number(days) > 7) {
+      statsMsg.textContent = '按小时统计时请将时间范围设为 7 天以内';
+      statsMsg.classList.add('err');
+      return;
+    }
+    const q2 = new URLSearchParams();
+    q2.set('days', days);
+    q2.set('granularity', gran);
+    const modelsParam = selectedModelsList().join(',');
+    if (modelsParam) q2.set('models', modelsParam);
+    const ts = await apiFetch('/api/admin/model-stats/timeseries?' + q2.toString());
+    if (!ts.res.ok) {
+      statsMsg.textContent = errMessage(ts.data);
+      statsMsg.classList.add('err');
+      return;
+    }
+    lastBuckets = (ts.data.stats && ts.data.stats.buckets) || [];
+    renderTimeseriesCharts(lastBuckets, selectedModelsList(), statsSingleModel.value);
+  }
+
+  function renderTimeseriesCharts(buckets, modelIds, singleId) {
+    chartRateMulti = destroyChart(chartRateMulti);
+    chartRateSingle = destroyChart(chartRateSingle);
+    const labels = buckets.map(function (b) { return b.label || ''; });
+
+    const multiEl = document.getElementById('chart-rate-multi');
+    if (multiEl && typeof Chart !== 'undefined' && modelIds.length) {
+      const ds = [];
+      const cols = colorsForModels(modelIds.length);
+      let ci = 0;
+      for (const mid of modelIds) {
+        const pts = buckets.map(function (b) {
+          const row = (b.models || []).find(function (m) { return m.model === mid; });
+          if (!row || !row.total) return null;
+          return 100 * (row.success_rate || 0);
+        });
+        ds.push({
+          label: mid,
+          data: pts,
+          borderColor: cols[ci % cols.length],
+          backgroundColor: 'transparent',
+          tension: 0.15,
+          spanGaps: true
+        });
+        ci++;
+      }
+      chartRateMulti = new Chart(multiEl, {
+        type: 'line',
+        data: { labels: labels, datasets: ds },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: chartTextColor() } } },
+          scales: {
+            x: { ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() } },
+            y: { min: 0, max: 100, ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() }, title: { display: true, text: '%', color: chartMutedColor() } }
+          }
+        }
+      });
+    }
+
+    const singleEl = document.getElementById('chart-rate-single');
+    if (singleEl && typeof Chart !== 'undefined' && singleId) {
+      const pts = buckets.map(function (b) {
+        const row = (b.models || []).find(function (m) { return m.model === singleId; });
+        if (!row || !row.total) return null;
+        return 100 * (row.success_rate || 0);
+      });
+      chartRateSingle = new Chart(singleEl, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: singleId,
+            data: pts,
+            borderColor: chartAccentColor(),
+            backgroundColor: 'rgba(99,102,241,0.08)',
+            fill: true,
+            tension: 0.2,
+            spanGaps: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: chartTextColor() } } },
+          scales: {
+            x: { ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() } },
+            y: { min: 0, max: 100, ticks: { color: chartMutedColor() }, grid: { color: chartBorderColor() } }
+          }
+        }
+      });
+    }
+  }
 
   function showBanner(text, kind) {
     if (!text) {
@@ -178,11 +553,13 @@
       showBanner('未登录：请先在主站使用管理员账号登录，再回到本页。', 'warn');
       btnResetPw.disabled = true;
       btnRefreshTemplates.disabled = true;
+      btnStatsRefresh.disabled = true;
       return;
     }
     if (!res.ok) {
       me = null;
       showBanner(errMessage(data), 'warn');
+      btnStatsRefresh.disabled = true;
       return;
     }
     me = data;
@@ -190,12 +567,15 @@
       showBanner('当前账号不是管理员（邮箱未在 admin_emails 列表中）。', 'warn');
       btnResetPw.disabled = true;
       btnRefreshTemplates.disabled = true;
+      btnStatsRefresh.disabled = true;
       return;
     }
     showBanner('已以管理员身份登录：' + (data.email || data.id), 'ok');
     btnResetPw.disabled = false;
     btnRefreshTemplates.disabled = false;
+    btnStatsRefresh.disabled = false;
     loadTemplates(true);
+    loadModelStats();
   }
 
   btnResetPw.addEventListener('click', async function () {
@@ -332,6 +712,14 @@
       tplOffset += tplLimit;
       loadTemplates(false);
     }
+  });
+
+  btnStatsRefresh.addEventListener('click', loadModelStats);
+  statsDays.addEventListener('change', loadModelStats);
+  statsGranularity.addEventListener('change', loadModelStats);
+  statsModels.addEventListener('change', reloadTimeseriesOnly);
+  statsSingleModel.addEventListener('change', function () {
+    renderTimeseriesCharts(lastBuckets, selectedModelsList(), statsSingleModel.value);
   });
 
   loadMe();

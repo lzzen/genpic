@@ -6,8 +6,11 @@ package dbmigrate
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"strings"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
 //go:embed migrations/*.sql
@@ -30,6 +33,11 @@ func Up(db *sql.DB) error {
 		sqlText := extractGooseUp(string(b))
 		for _, stmt := range splitSQLStatements(sqlText) {
 			if _, err := db.Exec(stmt); err != nil {
+				var me *mysqldriver.MySQLError
+				if errors.As(err, &me) && me.Number == 1061 {
+					// Duplicate index name (re-run migrations on same DB).
+					continue
+				}
 				return fmt.Errorf("dbmigrate: exec %s: %w", e.Name(), err)
 			}
 		}

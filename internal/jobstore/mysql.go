@@ -103,6 +103,7 @@ func migrateMySQLSchema(db *sql.DB) error {
 		`ALTER TABLE generation_jobs ADD COLUMN params TEXT NULL`,
 		`ALTER TABLE generation_jobs ADD INDEX idx_visibility_created (visibility, created_at, id)`,
 		`ALTER TABLE generation_jobs ADD COLUMN upstream_request_id VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE generation_jobs ADD INDEX idx_jobs_finished_model (finished_at, status, model)`,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {

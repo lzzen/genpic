@@ -120,6 +120,43 @@ type AdminStatsSummary struct {
 	ByProvider    map[string]int64 `json:"by_provider"`
 }
 
+// ModelStatRow aggregates finished jobs for one catalog model in a time window.
+type ModelStatRow struct {
+	Model             string           `json:"model"`
+	Provider          string           `json:"provider"`
+	Succeeded         int64            `json:"succeeded"`
+	Failed            int64            `json:"failed"`
+	Total             int64            `json:"total"`
+	SuccessRate       float64          `json:"success_rate"`
+	AvgProcessingMs   *int64           `json:"avg_processing_ms,omitempty"`
+	P95ProcessingMs   *int64           `json:"p95_processing_ms,omitempty"`
+	FailuresByCode    map[string]int64 `json:"failures_by_code,omitempty"`
+	SampleInsufficient bool          `json:"sample_insufficient,omitempty"`
+}
+
+// AdminModelStatsSummary is per-model aggregates for a [since, until) window on finished_at.
+type AdminModelStatsSummary struct {
+	Since  int64          `json:"since"`
+	Until  int64          `json:"until"`
+	Models []ModelStatRow `json:"models"`
+}
+
+// ModelStatsBucket is one time bucket in a model-stats timeseries.
+type ModelStatsBucket struct {
+	Start  int64          `json:"start"`
+	End    int64          `json:"end"`
+	Label  string         `json:"label"`
+	Models []ModelStatRow `json:"models"`
+}
+
+// AdminModelStatsTimeseries is bucketed per-model stats for charts.
+type AdminModelStatsTimeseries struct {
+	Since       int64              `json:"since"`
+	Until       int64              `json:"until"`
+	Granularity string             `json:"granularity"`
+	Buckets     []ModelStatsBucket `json:"buckets"`
+}
+
 // Store is the interface for job persistence.
 // The in-memory implementation (Memory) satisfies this interface.
 // A DB-backed implementation can be swapped in without changing callers.
@@ -141,6 +178,11 @@ type Store interface {
 	AdminList(limit, offset int) ([]*Job, int64)
 	// AdminStats returns aggregate counts. Not authenticated here.
 	AdminStats() AdminStatsSummary
+	// AdminModelStats returns per-model aggregates for finished jobs in [since, until).
+	AdminModelStats(since, until time.Time) AdminModelStatsSummary
+	// AdminModelStatsTimeseries returns bucketed per-model stats; granularity is "day" or "hour".
+	// modelFilter limits which models appear (empty = all). FailuresByCode is omitted on series rows.
+	AdminModelStatsTimeseries(since, until time.Time, granularity string, modelFilter []string) AdminModelStatsTimeseries
 	// ListPublic returns jobs with visibility="public", newest community_listed_at first.
 	// Used for the community feed. In-memory store returns an empty result.
 	ListPublic(limit int, cursor string) ([]*Job, string)

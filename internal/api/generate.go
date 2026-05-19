@@ -296,6 +296,13 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 	finished := time.Now()
 	if genErr != nil {
 		code := "generation_error"
+		if ae, ok := pkgerrors.As(genErr); ok {
+			if ae.Code != "" {
+				code = ae.Type + "/" + ae.Code
+			} else if ae.Type != "" {
+				code = ae.Type
+			}
+		}
 		msg := genErr.Error()
 		jobStoreInstance.Update(jobID, func(j *jobstore.Job) {
 			j.Status = jobstore.StatusFailed

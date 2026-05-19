@@ -1,4 +1,5 @@
 - 设置代理环境变量（当前 Terminal 会话）
+
 ```sh
 export WIN_HOST=172.17.32.1
 export HTTP_PROXY="http://${WIN_HOST}:17891"
@@ -8,4 +9,12 @@ export NO_PROXY="localhost,127.0.0.1,::1"
 ```
 
 - 国内镜像：
+
 `go env -w GOPROXY=https://goproxy.cn,direct`
+
+- 临时走国内镜像：
+
+```
+GOPROXY=https://goproxy.cn,direct go test ./internal/jobstore/... ./internal/api/... -short -count=1
+GOPROXY=https://goproxy.cn,direct go build -o /dev/null ./cmd/genpic/...
+```

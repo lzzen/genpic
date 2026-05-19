@@ -19,6 +19,11 @@ func withUser(ctx context.Context, u *User) context.Context {
 	return context.WithValue(ctx, ctxUserKey{}, u)
 }
 
+// ContextWithUser returns a context carrying u (for tests and internal wiring).
+func ContextWithUser(ctx context.Context, u *User) context.Context {
+	return withUser(ctx, u)
+}
+
 // OptionalAuth reads the session cookie and, when valid, injects the User into
 // the request context. Unauthenticated requests are passed through unchanged.
 func OptionalAuth(store *Store) func(http.Handler) http.Handler {

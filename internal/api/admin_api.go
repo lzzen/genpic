@@ -3,9 +3,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"genpic/internal/auth"
 	"genpic/internal/templatestore"
@@ -215,5 +217,148 @@ func HandleAdminPutTemplateVisibility(w http.ResponseWriter, r *http.Request) {
 		"object":     "admin.template_visibility",
 		"id":         id,
 		"visibility": vis,
+	})
+}
+
+func parseFlexibleTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty time")
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n > 1_000_000_000_000 {
+			return time.UnixMilli(n), nil
+		}
+		return time.Unix(n, 0), nil
+	}
+	return time.Parse(time.RFC3339, s)
+}
+
+// parseAdminModelStatsWindow returns [since, until) from query params.
+// Default: last `days` (default 7) until now. Explicit since/until override days.
+func parseAdminModelStatsWindow(r *http.Request) (since, until time.Time, err error) {
+	q := r.URL.Query()
+	days := 7
+	if s := q.Get("days"); s != "" {
+		if n, e := strconv.Atoi(s); e == nil && n > 0 {
+			days = n
+		}
+	}
+	if days > 366 {
+		days = 366
+	}
+	until = time.Now()
+	since = until.Add(-time.Duration(days) * 24 * time.Hour)
+
+	if ss := strings.TrimSpace(q.Get("since")); ss != "" {
+		t, e := parseFlexibleTime(ss)
+		if e != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("since: %w", e)
+		}
+		since = t
+	}
+	if us := strings.TrimSpace(q.Get("until")); us != "" {
+		t, e := parseFlexibleTime(us)
+		if e != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("until: %w", e)
+		}
+		until = t
+	}
+	if !until.After(since) {
+		return time.Time{}, time.Time{}, fmt.Errorf("until must be after since")
+	}
+	return since, until, nil
+}
+
+func parseModelsCSV(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// HandleAdminModelStats serves GET /api/admin/model-stats — admin only.
+func HandleAdminModelStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if jobStoreInstance == nil {
+		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "not_ready", "job store not initialised"))
+		return
+	}
+	actor := CurrentUser(r)
+	if actor == nil {
+		Error(w, pkgerrors.New(http.StatusUnauthorized, pkgerrors.TypeAuthentication, "unauthenticated", "login required"))
+		return
+	}
+	if !isAdminUser(actor) {
+		Error(w, pkgerrors.New(http.StatusForbidden, pkgerrors.TypePermission, "forbidden", "administrator privileges required"))
+		return
+	}
+	since, until, err := parseAdminModelStatsWindow(r)
+	if err != nil {
+		Error(w, pkgerrors.BadRequest("invalid_window", err.Error()))
+		return
+	}
+	stats := jobStoreInstance.AdminModelStats(since, until)
+	JSON(w, http.StatusOK, map[string]any{
+		"object": "admin.model_stats",
+		"stats":  stats,
+	})
+}
+
+// HandleAdminModelStatsTimeseries serves GET /api/admin/model-stats/timeseries — admin only.
+func HandleAdminModelStatsTimeseries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if jobStoreInstance == nil {
+		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "not_ready", "job store not initialised"))
+		return
+	}
+	actor := CurrentUser(r)
+	if actor == nil {
+		Error(w, pkgerrors.New(http.StatusUnauthorized, pkgerrors.TypeAuthentication, "unauthenticated", "login required"))
+		return
+	}
+	if !isAdminUser(actor) {
+		Error(w, pkgerrors.New(http.StatusForbidden, pkgerrors.TypePermission, "forbidden", "administrator privileges required"))
+		return
+	}
+	since, until, err := parseAdminModelStatsWindow(r)
+	if err != nil {
+		Error(w, pkgerrors.BadRequest("invalid_window", err.Error()))
+		return
+	}
+	g := strings.TrimSpace(r.URL.Query().Get("granularity"))
+	if g == "" {
+		g = "day"
+	}
+	gl := strings.ToLower(g)
+	if gl != "day" && gl != "hour" {
+		Error(w, pkgerrors.BadRequest("invalid_granularity", "granularity must be day or hour"))
+		return
+	}
+	if gl == "hour" && until.Sub(since) > 7*24*time.Hour+time.Millisecond {
+		Error(w, pkgerrors.BadRequest("invalid_granularity", "hour granularity requires window <= 7 days"))
+		return
+	}
+	models := parseModelsCSV(r.URL.Query().Get("models"))
+	stats := jobStoreInstance.AdminModelStatsTimeseries(since, until, gl, models)
+	JSON(w, http.StatusOK, map[string]any{
+		"object": "admin.model_stats_timeseries",
+		"stats":  stats,
 	})
 }
