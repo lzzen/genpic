@@ -831,6 +831,12 @@ function updateAuthChrome() {
     btn.setAttribute('aria-label', '登录');
   }
   if (em) em.textContent = authUser && authUser.email ? authUser.email : '';
+  const stEl = $('auth-dropdown-storage');
+  if (stEl) {
+    const line = authUser && authUser.storage ? formatStorageQuotaLine(authUser.storage) : '';
+    stEl.textContent = line;
+    stEl.hidden = !line;
+  }
 }
 
 function closeAuthDropdown() {
@@ -1037,10 +1043,10 @@ async function applyCreateSimilar(source) {
   if (p.n) {
     const gn = $('gpt-n'), gemn = $('gem-n'), wann = $('wan-n');
     if (gn && activeProvider === 'openai') gn.value = String(p.n);
-    if (gemn && activeProvider === 'gemini') gemn.value = String(p.n);
+    if (gemn && (activeProvider === 'gemini' || activeProvider === 'xiangyun')) gemn.value = String(p.n);
     if (wann && activeProvider === 'wan') wann.value = String(p.n);
   }
-  if (p.aspect_ratio && activeProvider === 'gemini') {
+  if (p.aspect_ratio && (activeProvider === 'gemini' || activeProvider === 'xiangyun')) {
     document.querySelectorAll('#gem-ratio-grid .ratio-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.aspect === p.aspect_ratio);
     });
@@ -1050,7 +1056,7 @@ async function applyCreateSimilar(source) {
   if (p.quality && $('gpt-quality')) $('gpt-quality').value = p.quality;
   if (p.style && $('gpt-style')) $('gpt-style').value = p.style;
   if (p.response_format && $('gpt-format')) $('gpt-format').value = p.response_format;
-  if (activeProvider === 'gemini' && $('gem-thinking')) {
+  if ((activeProvider === 'gemini' || activeProvider === 'xiangyun') && $('gem-thinking')) {
     const g = $('gem-thinking');
     if (p.thinking_budget !== undefined && p.thinking_budget !== null && !Number.isNaN(Number(p.thinking_budget))) {
       g.value = String(Number(p.thinking_budget));
@@ -1157,9 +1163,10 @@ function setActiveModel(modelId, provider) {
     b.classList.toggle('active', b.dataset.vendor === provider);
   });
 
+  const panelProv = provider === 'xiangyun' ? 'gemini' : provider;
   ['openai', 'gemini', 'wan'].forEach((p) => {
-    $('params-' + p)?.classList.toggle('show', p === provider);
-    $('more-extra-' + p)?.classList.toggle('show', p === provider);
+    $('params-' + p)?.classList.toggle('show', p === panelProv);
+    $('more-extra-' + p)?.classList.toggle('show', p === panelProv);
   });
 
   // Show thinking field only for thinking-capable Gemini models.
@@ -1178,7 +1185,10 @@ function setActiveModel(modelId, provider) {
   save('active-provider', provider);
   save('active-vendor', provider);
 
-  if (provider === 'gemini') syncGemImageSizeUI(modelId);
+  if (provider === 'gemini' || provider === 'xiangyun') {
+    const mid = provider === 'xiangyun' ? 'gemini/gemini-3.1-flash-image-preview' : modelId;
+    syncGemImageSizeUI(mid);
+  }
   void refreshTemplateStrip();
 }
 
@@ -1355,6 +1365,7 @@ function modelToProvider(modelId) {
   if (m.startsWith('openai/')) return 'openai';
   if (m.startsWith('gemini/')) return 'gemini';
   if (m.startsWith('wan/')) return 'wan';
+  if (m.startsWith('xiangyun/')) return 'xiangyun';
   return 'openai';
 }
 
@@ -1663,6 +1674,25 @@ function hideGalleryCRTLoading() {
 
 function effectiveModelId() {
   return activeModel;
+}
+
+function isXiangyunModel() {
+  const m = String(activeModel || '').trim().toLowerCase();
+  return m.startsWith('xiangyun/');
+}
+
+function formatStorageQuotaLine(st) {
+  if (!st || typeof st.used_bytes !== 'number' || typeof st.quota_bytes !== 'number') return '';
+  const quota = st.quota_bytes;
+  if (!Number.isFinite(quota) || quota <= 0) return '';
+  const used = Math.max(0, st.used_bytes);
+  const fmt = (n) => {
+    if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GiB';
+    if (n >= 1048576) return (n / 1048576).toFixed(2) + ' MiB';
+    if (n >= 1024) return (n / 1024).toFixed(1) + ' KiB';
+    return n + ' B';
+  };
+  return '存储：' + fmt(used) + ' / ' + fmt(quota);
 }
 
 function parseDataURL(dataUrl) {
@@ -1982,6 +2012,17 @@ function buildBody() {
       });
       if (bboxes.length) base.wan_bbox_list = bboxes;
     }
+  } else if (activeProvider === 'xiangyun') {
+    const gemBtn = document.querySelector('#gem-ratio-grid .ratio-btn.active');
+    base.aspect_ratio = gemBtn?.dataset.aspect || '1:1';
+    base.n = parseInt($('gem-n').value) || 1;
+    base.response_format = 'b64_json';
+    const g = $('gem-image-size');
+    if (g && g.closest('#gem-image-size-wrap')?.style.display !== 'none') {
+      base.image_size = g.value || '1K';
+    }
+    const budget = parseInt($('gem-thinking')?.value ?? 0);
+    if (budget > 0) base.thinking_budget = budget;
   }
   if (referenceEntries.length) {
     base.reference_images = referenceEntries.map((e) => ({ mime_type: e.mime, b64_json: e.b64 }));
@@ -2093,21 +2134,37 @@ $('btn-gen').addEventListener('click', async () => {
   const prompt  = $('prompt').value.trim();
 
   if (!prompt) { setStatus('error', '请输入提示词'); return; }
-  if (!baseURL) {
-    setStatus('error', '请填写接口地址，或在服务器 config.yaml 中配置 mvp_lite.default_base_url');
-    openCredDialog();
-    return;
-  }
-  if (!apiKey)  { setStatus('error', '请点击右上角 ⚙️ 填写完整密钥'); openCredDialog(); return; }
-  if (looksLikeMaskedKey(apiKey)) {
-    setStatus('error', '密钥疑似脱敏或不完整，请替换为完整密钥');
-    openCredDialog();
-    return;
+  const xy = isXiangyunModel();
+  if (!xy) {
+    if (!baseURL) {
+      setStatus('error', '请填写接口地址，或在服务器 config.yaml 中配置 mvp_lite.default_base_url');
+      openCredDialog();
+      return;
+    }
+    if (!apiKey) { setStatus('error', '请点击右上角 ⚙️ 填写完整密钥'); openCredDialog(); return; }
+    if (looksLikeMaskedKey(apiKey)) {
+      setStatus('error', '密钥疑似脱敏或不完整，请替换为完整密钥');
+      openCredDialog();
+      return;
+    }
+  } else if (baseURL || apiKey) {
+    if (!baseURL || !apiKey) {
+      setStatus('error', '自备网关时需同时填写接口地址和完整密钥');
+      openCredDialog();
+      return;
+    }
+    if (looksLikeMaskedKey(apiKey)) {
+      setStatus('error', '密钥疑似脱敏或不完整，请替换为完整密钥');
+      openCredDialog();
+      return;
+    }
   }
 
   const body = buildBody();
-  body.base_url = baseURL;
-  body.api_key  = apiKey;
+  if (baseURL && apiKey) {
+    body.base_url = baseURL;
+    body.api_key = apiKey;
+  }
 
   clearStatus();
   setBusy(true);

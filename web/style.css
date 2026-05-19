@@ -331,6 +331,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .img-card .provider-badge.openai { border-color: var(--accent); color: var(--accent); }
 .img-card .provider-badge.gemini { border-color: var(--accent2); color: var(--accent2); }
 .img-card .provider-badge.wan { border-color: var(--accent3); color: var(--accent3); }
+.img-card .provider-badge.xiangyun { border-color: #8b5cf6; color: #8b5cf6; }
 .img-card .revised { padding: 0 13px 8px; font-size: .73rem; color: var(--muted); font-style: italic; line-height: 1.4; }
 .img-card .card-actions { padding-left: 14px; padding-bottom: 10px; }
 
@@ -539,6 +540,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .hist-entry-header .provider-badge.openai { border-color: var(--accent); color: var(--accent); }
 .hist-entry-header .provider-badge.gemini { border-color: var(--accent2); color: var(--accent2); }
 .hist-entry-header .provider-badge.wan { border-color: var(--accent3); color: var(--accent3); }
+.hist-entry-header .provider-badge.xiangyun { border-color: #8b5cf6; color: #8b5cf6; }
 .hist-model {
   font-size: .72rem;
   font-weight: 600;
@@ -709,6 +711,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 }
 .auth-dropdown[hidden] { display: none !important; }
 .auth-dropdown-email { font-size: .72rem; color: var(--muted); padding: 6px 8px; word-break: break-all; }
+.auth-dropdown-storage { font-size: .72rem; color: var(--muted); padding: 0 8px 6px; }
 .auth-dropdown button {
   display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; background: none;
   font-size: .82rem; cursor: pointer; border-radius: 6px; color: var(--text); font-family: var(--font);

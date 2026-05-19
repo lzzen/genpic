@@ -7,8 +7,11 @@ info:
     Genpic image generation platform HTTP API.
 
     **Primary generation**: `POST /api/generate` — the server routes `model` to
-    OpenAI, Gemini, or Wan adapters. Each request carries `base_url` and `api_key`
-    for your upstream aggregator (same as the embedded web UI).
+    OpenAI, Gemini, Wan, or the optional 祥云 (`xiangyun/…`) meta-provider. Requests
+    normally include `base_url` and `api_key` (same as the embedded web form); each
+    adapter prefers those values and falls back to `config.yaml` when they are
+    omitted. **祥云** may omit them to use only server defaults; if provided, the
+    same credentials apply to each backend in the configured try order.
 
     **Session authentication** (when MySQL is configured):
     - Cookie `genpic_session` — HTTP-only session token set by `POST /api/auth/register`
@@ -934,14 +937,28 @@ components:
         x_provider:
           type: string
           description: |
-            [Non-standard] Upstream provider that served this request.
-            Values: openai | gemini | wan
+            [Non-standard] Adapter that handled this request (`xiangyun` for the
+            meta-provider, or the concrete backend name).
+        x_effective_provider:
+          type: string
+          description: |
+            [Non-standard] When `x_provider` is `xiangyun`, the concrete backend that
+            produced images (openai | gemini | wan).
+        x_effective_model:
+          type: string
+          description: |
+            [Non-standard] Catalog model id used on the successful backend when
+            `x_provider` is `xiangyun`.
 
     ApiGenerateRequest:
       allOf:
         - $ref: "#/components/schemas/ImageGenerationRequest"
         - type: object
-          required: [base_url, api_key]
+          description: |
+            Per-request upstream credentials. **`base_url` and `api_key` are required**
+            for non-祥云 models. For **`model` values starting with `xiangyun/`** they
+            are optional: when omitted, adapters use `config.yaml` defaults; when set,
+            they take precedence for each backend attempt (same as other models).
           properties:
             base_url:
               type: string

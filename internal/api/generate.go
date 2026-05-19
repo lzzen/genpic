@@ -223,13 +223,20 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 		})
 	}
 
-	return map[string]any{
+	out := map[string]any{
 		"created":               time.Now().Unix(),
 		"data":                  data,
 		"x_provider":            prov.Name(),
 		"x_tokens_used":         resp.TokensUsed,
 		"x_upstream_request_id": strings.TrimSpace(resp.UpstreamRequestID),
-	}, nil
+	}
+	if ep := strings.TrimSpace(resp.EffectiveProvider); ep != "" {
+		out["x_effective_provider"] = ep
+	}
+	if em := strings.TrimSpace(resp.EffectiveCatalogModelID); em != "" {
+		out["x_effective_model"] = em
+	}
+	return out, nil
 }
 
 func jobBBoxesFromProvider(in []provider.WanBbox) []jobstore.JobBBox {
@@ -328,6 +335,19 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 		j.FinishedAt = finished
 		j.TokensUsed = tokens
 		j.UpstreamRequestID = upstreamID
+		if ep, ok := out["x_effective_provider"].(string); ok {
+			if s := strings.TrimSpace(ep); s != "" {
+				j.Provider = s
+			}
+		}
+		if em, ok := out["x_effective_model"].(string); ok {
+			if s := strings.TrimSpace(em); s != "" {
+				j.Model = s
+				if j.Params != nil {
+					j.Params.Model = s
+				}
+			}
+		}
 	})
 	maybeCommunityAutoPublic(jobID)
 }
@@ -386,10 +406,14 @@ func runJob(ctx context.Context, jobID string, req GenerateRequest) {
 }
 
 // HandleCompatGenerate serves POST /api/generate for the embedded SPA.
-// base_url and api_key in the JSON body are required and are sent to the third-party
-// upstream as-is; the terminal running genpic prints the full upstream request
-// and response JSON to stderr for each call (large base64 and thoughtSignature
-// strings are replaced with placeholders).
+// For normal models, base_url and api_key in the JSON body are required and are
+// sent to the third-party upstream as-is; the terminal running genpic prints the
+// full upstream request and response JSON to stderr for each call (large base64
+// and thoughtSignature strings are replaced with placeholders).
+//
+// For models under `xiangyun/`, base_url and api_key are optional: when omitted,
+// adapters use config.yaml defaults; when provided, they are used for each
+// backend attempt (same precedence as other models).
 //
 // When a job store is configured (cmd/genpic), the handler returns 202 Accepted
 // with a job record immediately and runs generation in the background; clients
@@ -405,17 +429,27 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 
 	base := strings.TrimSpace(body.BaseURL)
 	key := strings.TrimSpace(body.APIKey)
-	if base == "" || key == "" {
+	modelTrim := strings.TrimSpace(body.Model)
+	isXiangyun := strings.HasPrefix(strings.ToLower(modelTrim), "xiangyun/")
+	if !isXiangyun && (base == "" || key == "") {
 		Error(w, pkgerrors.BadRequest("missing_field", "base_url and api_key are required in POST /api/generate"))
 		return
 	}
 
-	ov := &compatctx.Override{
-		BaseURL:     base,
-		APIKey:      key,
-		LogToStderr: true,
+	var ctx context.Context
+	var bgCompatCtx context.Context
+	if base != "" && key != "" {
+		ov := &compatctx.Override{
+			BaseURL:     base,
+			APIKey:      key,
+			LogToStderr: true,
+		}
+		ctx = compatctx.With(r.Context(), ov)
+		bgCompatCtx = compatctx.With(context.Background(), ov)
+	} else {
+		ctx = r.Context()
+		bgCompatCtx = context.Background()
 	}
-	ctx := compatctx.With(r.Context(), ov)
 
 	// Full platform (cmd/genpic): always wire a job store — enqueue async and
 	// return 202; clients poll GET /jobs/{id}. compatctx must be attached to
@@ -441,8 +475,7 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 			Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "job_create", err.Error()))
 			return
 		}
-		bgCtx := compatctx.With(context.Background(), ov)
-		go runJob(bgCtx, id, body.GenerateRequest)
+		go runJob(bgCompatCtx, id, body.GenerateRequest)
 		j, _ := jobStoreInstance.Get(id)
 		JSON(w, http.StatusAccepted, toJobResponseOwner(j))
 		return

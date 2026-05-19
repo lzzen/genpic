@@ -93,6 +93,14 @@ type rootYAML struct {
 	Database       databaseYAML      `yaml:"database"`
 	Auth           authYAML          `yaml:"auth"`
 	ObjectStorage  objectStorageYAML `yaml:"object_storage"`
+	Xiangyun       xiangyunYAML      `yaml:"xiangyun"`
+}
+
+// xiangyunYAML configures the 祥云 meta-provider (multi-backend fallback).
+type xiangyunYAML struct {
+	Enabled  bool              `yaml:"enabled"`
+	TryOrder []string          `yaml:"try_order"`
+	Models   map[string]string `yaml:"models"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -148,6 +156,9 @@ type Config struct {
 
 	// ObjectStorage configures S3-compatible OSS for logged-in users (cmd/genpic).
 	ObjectStorage ObjectStorageConfig
+
+	// Xiangyun enables the 祥云 meta-provider (Gemini → OpenAI → Wan fallback by default).
+	Xiangyun XiangyunConfig
 }
 
 // ObjectStorageConfig holds resolved object storage settings.
@@ -171,6 +182,13 @@ type ObjectStorageConfig struct {
 type AuthConfig struct {
 	SessionTTL  time.Duration
 	AdminEmails []string // lowercased emails with operator privileges (public templates, etc.)
+}
+
+// XiangyunConfig holds resolved 祥云 settings (cmd/genpic).
+type XiangyunConfig struct {
+	Enabled  bool
+	TryOrder []string          // lowercased provider names: gemini, openai, wan
+	Models   map[string]string // optional per-backend catalog model id overrides
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -208,9 +226,47 @@ func Read(path string) (Config, error) {
 		ArtifactsDir:              strings.TrimSpace(root.Server.ArtifactsDir),
 		Auth:                      resolveAuth(root.Auth),
 		ObjectStorage:             resolveObjectStorage(root.ObjectStorage),
+		Xiangyun:                  resolveXiangyun(root.Xiangyun),
 	}
 
 	return c, nil
+}
+
+func resolveXiangyun(y xiangyunYAML) XiangyunConfig {
+	if !y.Enabled {
+		return XiangyunConfig{}
+	}
+	order := normalizeXiangyunTryOrder(y.TryOrder)
+	if len(order) == 0 {
+		order = []string{"gemini", "openai", "wan"}
+	}
+	models := map[string]string{}
+	for k, v := range y.Models {
+		kb := strings.ToLower(strings.TrimSpace(k))
+		v = strings.TrimSpace(v)
+		if kb != "" && v != "" {
+			models[kb] = v
+		}
+	}
+	if len(models) == 0 {
+		models = nil
+	}
+	return XiangyunConfig{Enabled: true, TryOrder: order, Models: models}
+}
+
+func normalizeXiangyunTryOrder(in []string) []string {
+	valid := map[string]bool{"gemini": true, "openai": true, "wan": true}
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if !valid[s] || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 func resolveObjectStorage(y objectStorageYAML) ObjectStorageConfig {

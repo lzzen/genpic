@@ -206,3 +206,31 @@ object_storage:
 		t.Fatalf("public_base_url: got %q", o.PublicBaseURL)
 	}
 }
+
+func TestReadXiangyun(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+xiangyun:
+  enabled: true
+  try_order: [wan, openai, gemini]
+  models:
+    wan: wan/wan2.7-image-pro
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Read(path)
+	if err != nil || !cfg.Found {
+		t.Fatalf("err=%v found=%v", err, cfg.Found)
+	}
+	if !cfg.Xiangyun.Enabled {
+		t.Fatal("enabled")
+	}
+	if len(cfg.Xiangyun.TryOrder) != 3 || cfg.Xiangyun.TryOrder[0] != "wan" {
+		t.Fatalf("try_order: %#v", cfg.Xiangyun.TryOrder)
+	}
+	if cfg.Xiangyun.Models["wan"] != "wan/wan2.7-image-pro" {
+		t.Fatalf("models: %#v", cfg.Xiangyun.Models)
+	}
+}

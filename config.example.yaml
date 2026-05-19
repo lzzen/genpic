@@ -72,6 +72,18 @@ wan:
   timeout: "180s"
   max_retries: 1
 
+# ── 祥云 meta-provider（多路依次兜底，cmd/genpic）────────────────────────────
+# 注册目录模型 `xiangyun/auto`。每次生图按 try_order 依次调用 gemini / openai / wan；
+# 上游返回失败（502 类）时换下一个。凭证规则与其它模型一致：请求里若带了 base_url、
+# api_key 则优先使用；未带时才用本文件中各 provider 的服务端配置。
+# xiangyun:
+#   enabled: true
+#   try_order: [gemini, openai, wan]
+#   models:
+#     gemini: gemini/gemini-3.1-flash-image-preview
+#     openai: openai/gpt-image-2
+#     wan: wan/wan2.7-image
+
 # ── Rate limiting ───────────────────────────────────────────────────────────
 rate_limit:
   # Global RPM cap for POST /api/generate (0 = unlimited)

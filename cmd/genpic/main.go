@@ -51,6 +51,7 @@ import (
 	"genpic/internal/provider/gemini"
 	"genpic/internal/provider/openai"
 	"genpic/internal/provider/wan"
+	"genpic/internal/provider/xiangyun"
 	"genpic/internal/storage"
 	"genpic/internal/templatestore"
 	"genpic/internal/userstorage"
@@ -79,6 +80,7 @@ func main() {
 
 	api.SetModelIDMap(cfg.ModelIDMap)
 	geminiconfig.Install(cfg.GeminiImageSize4KModelMap)
+	api.SetXiangyunUICatalog(cfg.Xiangyun.Enabled)
 	registerProviders(log, cfg)
 
 	// ── Job store ────────────────────────────────────────────────────────────
@@ -328,6 +330,19 @@ func registerProviders(log *slog.Logger, cfg mvpconfig.Config) {
 	log.Info("registered provider", "name", "wan",
 		"base_url_set", cfg.Wan.BaseURL != "",
 		"api_key_set", cfg.Wan.APIKey != "")
+
+	if cfg.Xiangyun.Enabled {
+		to := append([]string(nil), cfg.Xiangyun.TryOrder...)
+		if len(to) == 0 {
+			to = append(to, xiangyun.DefaultTryOrder...)
+		}
+		provider.Register(xiangyun.New(xiangyun.Config{
+			TryOrder:   to,
+			Models:     cfg.Xiangyun.Models,
+			ModelIDMap: cfg.ModelIDMap,
+		}))
+		log.Info("registered provider", "name", "xiangyun", "try_order", strings.Join(to, ","))
+	}
 }
 
 // rateMiddleware applies the global limiter when configured. On reject, returns

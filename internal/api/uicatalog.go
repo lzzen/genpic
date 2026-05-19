@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"genpic/internal/geminiconfig"
@@ -15,7 +16,28 @@ func HandleUICatalog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	JSON(w, http.StatusOK, geminiconfig.MergeUICatalogPayload(uiCatalogPayload))
+	raw, err := json.Marshal(uiCatalogPayload)
+	if err != nil {
+		JSON(w, http.StatusOK, geminiconfig.MergeUICatalogPayload(uiCatalogPayload))
+		return
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(raw, &merged); err != nil {
+		JSON(w, http.StatusOK, geminiconfig.MergeUICatalogPayload(uiCatalogPayload))
+		return
+	}
+	if xiangyunUICatalogOn() {
+		vendors, _ := merged["vendors"].([]any)
+		vendors = append(vendors, map[string]any{
+			"id":   "xiangyun",
+			"name": "祥云",
+			"models": []any{
+				map[string]string{"id": "xiangyun/auto", "label": "祥云（自动聚合）"},
+			},
+		})
+		merged["vendors"] = vendors
+	}
+	JSON(w, http.StatusOK, geminiconfig.MergeUICatalogPayload(merged))
 }
 
 // uiCatalogPayload mirrors the SPA's vendor rail + model dropdown.
