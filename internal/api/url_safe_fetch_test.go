@@ -38,12 +38,12 @@ func TestFetchRemoteImage_httptestHTTP(t *testing.T) {
 	}
 }
 
-// TestFetchRemoteImage_integrationSamples hits real third-party URLs when
+// TestIntegration_ThirdPartyRemoteImageFetch hits real upstream-model image URLs when
 // GENPIC_TEST_REMOTE_IMAGE_FETCH=1 (default off: flaky, rate limits, expiring presignatures).
 //
 // Typical failure reasons: DNS/TLS/HTTP status != 200, body > max_fetch_bytes, timeout,
 // resolved IP in private range, expired OSS query params, 403 from CDN.
-func TestFetchRemoteImage_integrationSamples(t *testing.T) {
+func TestIntegration_ThirdPartyRemoteImageFetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")
 	}
@@ -89,7 +89,7 @@ func TestFetchRemoteImage_integrationSamples(t *testing.T) {
 	}
 }
 
-func TestFetchRemoteImage_derivedAllowlist_integration(t *testing.T) {
+func TestIntegration_ThirdPartyRemoteImageDerivedAllowlist(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")
 	}
