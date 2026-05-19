@@ -202,13 +202,32 @@ func referencePartsOpenAI(refs []provider.ReferenceImage) ([]openaiimg.ImagePart
 	return out, nil
 }
 
+// openAIImageSlot is one element of OpenAI images API `data[]` (or equivalent in aggregators).
+type openAIImageSlot struct {
+	URL           string `json:"url"`
+	B64JSON       string `json:"b64_json"`
+	RevisedPrompt string `json:"revised_prompt"`
+}
+
 func parseOpenAIImagesResponse(raw []byte) ([]provider.Image, error) {
+	var head struct {
+		Code    string          `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse upstream response", err)
+	}
+	if strings.TrimSpace(head.Code) != "" {
+		return parseOpenAIAggregatorEnvelope(head.Code, head.Message, head.Data)
+	}
+	return parseOpenAIDirectImagesResponse(raw)
+}
+
+// parseOpenAIDirectImagesResponse handles the official OpenAI images JSON: { "data": [...], "error": ... }.
+func parseOpenAIDirectImagesResponse(raw []byte) ([]provider.Image, error) {
 	var out struct {
-		Data []struct {
-			URL           string `json:"url"`
-			B64JSON       string `json:"b64_json"`
-			RevisedPrompt string `json:"revised_prompt"`
-		} `json:"data"`
+		Data  []openAIImageSlot `json:"data"`
 		Error *struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
@@ -220,18 +239,73 @@ func parseOpenAIImagesResponse(raw []byte) ([]provider.Image, error) {
 	if out.Error != nil {
 		return nil, pkgerrors.UpstreamErr(out.Error.Type, out.Error.Message, nil)
 	}
-	images := make([]provider.Image, 0, len(out.Data))
-	for _, d := range out.Data {
+	if len(out.Data) == 0 {
+		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+	}
+	return openAIImageSlotsToImages(out.Data), nil
+}
+
+// parseOpenAIAggregatorEnvelope handles task-style wrappers such as openapi.wang:
+// { "code":"success", "data":{ "data":{ "data":[{ "url":"...", "b64_json":"" }] }, "status":"SUCCESS" } }.
+func parseOpenAIAggregatorEnvelope(code, message string, outerData json.RawMessage) ([]provider.Image, error) {
+	c := strings.TrimSpace(code)
+	if !strings.EqualFold(c, "success") {
+		msg := strings.TrimSpace(message)
+		if msg == "" {
+			msg = "aggregator returned code " + c
+		}
+		return nil, pkgerrors.UpstreamErr("aggregator_error", msg, nil)
+	}
+	var mid struct {
+		Inner  json.RawMessage `json:"data"`
+		Status string          `json:"status"`
+	}
+	if err := json.Unmarshal(outerData, &mid); err != nil {
+		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse aggregator task envelope", err)
+	}
+	if st := strings.TrimSpace(mid.Status); st != "" && !strings.EqualFold(st, "SUCCESS") {
+		return nil, pkgerrors.UpstreamErr("aggregator_status", "task status: "+st, nil)
+	}
+	return parseOpenAIImagesInnerPayload(mid.Inner)
+}
+
+func parseOpenAIImagesInnerPayload(blob json.RawMessage) ([]provider.Image, error) {
+	blob = bytes.TrimSpace(blob)
+	if len(blob) == 0 {
+		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+	}
+	if blob[0] == '[' {
+		var slots []openAIImageSlot
+		if err := json.Unmarshal(blob, &slots); err != nil {
+			return nil, pkgerrors.UpstreamErr("parse_error", "could not parse image array payload", err)
+		}
+		if len(slots) == 0 {
+			return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+		}
+		return openAIImageSlotsToImages(slots), nil
+	}
+	var obj struct {
+		Data []openAIImageSlot `json:"data"`
+	}
+	if err := json.Unmarshal(blob, &obj); err != nil {
+		return nil, pkgerrors.UpstreamErr("parse_error", "could not parse nested images object", err)
+	}
+	if len(obj.Data) == 0 {
+		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
+	}
+	return openAIImageSlotsToImages(obj.Data), nil
+}
+
+func openAIImageSlotsToImages(slots []openAIImageSlot) []provider.Image {
+	images := make([]provider.Image, 0, len(slots))
+	for _, d := range slots {
 		images = append(images, provider.Image{
 			URL:           d.URL,
 			B64JSON:       d.B64JSON,
 			RevisedPrompt: d.RevisedPrompt,
 		})
 	}
-	if len(images) == 0 {
-		return nil, pkgerrors.UpstreamErr("empty_response", "upstream returned no images", nil)
-	}
-	return images, nil
+	return images
 }
 
 func buildRequest(req provider.GenerateRequest) ([]byte, error) {

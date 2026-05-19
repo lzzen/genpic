@@ -2016,7 +2016,7 @@ function buildBody() {
     const gemBtn = document.querySelector('#gem-ratio-grid .ratio-btn.active');
     base.aspect_ratio = gemBtn?.dataset.aspect || '1:1';
     base.n = parseInt($('gem-n').value) || 1;
-    base.response_format = 'b64_json';
+    // Default url for 祥云; server forces url for OpenAI child calls. Avoid b64_json-only assumptions.
     const g = $('gem-image-size');
     if (g && g.closest('#gem-image-size-wrap')?.style.display !== 'none') {
       base.image_size = g.value || '1K';

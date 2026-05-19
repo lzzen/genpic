@@ -144,6 +144,11 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		}
 		upstreamWire := modelmap.Apply(p.cfg.ModelIDMap, []string{modelInfo.ID, normalised, modelInfo.UpstreamModel}, modelInfo.UpstreamModel)
 		subReq := cloneGenerateRequest(req, upstreamWire)
+		// OpenAI-compatible aggregators often return URLs even when the client asked for b64_json;
+		// the SPA sends b64_json for 祥云 to suit Gemini — force URL for OpenAI only.
+		if b == "openai" {
+			subReq.ResponseFormat = "url"
+		}
 
 		resp, err := subProv.Generate(ctx, subReq)
 		if err == nil && responseHasRenderableImages(resp) {
