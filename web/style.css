@@ -28,7 +28,13 @@ header {
   flex-shrink: 0;
   background: var(--surface);
 }
-.header-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.header-home {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0;
+  border: none; background: transparent; padding: 4px 6px; margin: -4px -6px;
+  cursor: pointer; font: inherit; color: inherit; border-radius: 8px;
+}
+.header-home:hover { background: var(--surface2); }
+.header-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-direction: row; }
 .toolbar-btn.active {
   color: var(--accent);
@@ -743,6 +749,95 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
   font-family: var(--font); font-size: .82rem; background: var(--surface2); color: var(--text);
 }
 .modal-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Asset picker (resource library) ── */
+.asset-picker-backdrop { align-items: stretch; justify-content: center; padding: 24px 16px; }
+.asset-picker-panel {
+  display: flex; flex-direction: column; max-width: 960px; width: 100%; max-height: min(88vh, 720px);
+  background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(0,0,0,.2); overflow: hidden;
+}
+.asset-picker-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.asset-picker-title { margin: 0; font-size: 1rem; font-weight: 700; }
+.asset-picker-header-actions { display: flex; align-items: center; gap: 8px; }
+.asset-picker-upload-btn {
+  padding: 7px 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff;
+  font-size: .82rem; cursor: pointer; font-family: var(--font);
+}
+.asset-picker-close {
+  width: 32px; height: 32px; border: none; background: transparent; font-size: 1.4rem;
+  line-height: 1; cursor: pointer; color: var(--muted); border-radius: 8px;
+}
+.asset-picker-close:hover { background: var(--surface2); color: var(--text); }
+.asset-picker-body { display: flex; flex: 1; min-height: 0; }
+.asset-picker-sidebar {
+  width: 160px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.asset-picker-sidebar-title { font-size: .78rem; color: var(--muted); margin-bottom: 4px; }
+.asset-picker-group {
+  text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent;
+  background: transparent; cursor: default; font-size: .82rem; font-family: var(--font); color: var(--text);
+}
+.asset-picker-group.active { background: rgba(99,102,241,.12); border-color: rgba(99,102,241,.35); color: var(--accent); font-weight: 600; }
+.asset-picker-group-add {
+  margin-top: auto; padding: 8px; border-radius: 8px; border: 1px dashed var(--border);
+  background: transparent; color: var(--muted); font-size: .78rem; cursor: not-allowed; opacity: .6;
+}
+.asset-picker-main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px 16px 8px; }
+.asset-picker-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.asset-picker-tab {
+  padding: 8px 2px; border: none; background: none; cursor: pointer; font-size: .88rem;
+  font-family: var(--font); color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.asset-picker-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.asset-picker-toolbar {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+  font-size: .82rem; color: var(--muted);
+}
+.asset-picker-refresh {
+  padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2);
+  cursor: pointer; font-size: .78rem; font-family: var(--font); color: var(--text);
+}
+.asset-picker-grid {
+  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px; align-content: start; min-height: 200px;
+}
+.asset-picker-card {
+  position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; cursor: pointer;
+  border: 2px solid transparent; background: var(--surface2);
+}
+.asset-picker-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-picker-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,.25); }
+.asset-picker-card-check {
+  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: .72rem; display: none; align-items: center; justify-content: center;
+}
+.asset-picker-card.selected .asset-picker-card-check { display: flex; }
+.asset-picker-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--muted); text-align: center; padding: 32px 16px; min-height: 200px;
+}
+.asset-picker-empty[hidden] { display: none !important; }
+.asset-picker-empty-icon { font-size: 2.5rem; opacity: .4; margin-bottom: 8px; }
+.asset-picker-empty-hint { font-size: .78rem; margin-top: 4px; }
+.asset-picker-msg { font-size: .78rem; color: #f87171; margin: 8px 0 0; }
+.asset-picker-footer {
+  display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border);
+}
+.asset-picker-footer button {
+  padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2);
+  cursor: pointer; font-family: var(--font); font-size: .84rem;
+}
+.asset-picker-footer button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+@media (max-width: 720px) {
+  .asset-picker-sidebar { display: none; }
+  .asset-picker-backdrop { padding: 0; }
+  .asset-picker-panel { max-height: 100vh; border-radius: 0; }
+}
 
 /* ── Community feed ── */
 .gallery-area[data-view="community"] .gallery,

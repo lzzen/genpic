@@ -485,6 +485,70 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/user/assets:
+    get:
+      operationId: listUserAssets
+      tags: [user]
+      summary: List images in the logged-in user's resource library
+      description: |
+        Returns OSS-backed objects recorded in `user_storage_objects`. Requires login and
+        configured object storage. Tab `upload` lists `kind=reference`; tab `ai` lists generated outputs.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: tab
+          in: query
+          schema:
+            type: string
+            enum: [upload, ai]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 48
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Asset page
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Storage disabled
+    post:
+      operationId: uploadUserAssets
+      tags: [user]
+      summary: Upload reference images to the user's library
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference_images]
+              properties:
+                reference_images:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      mime_type:
+                        type: string
+                      b64_json:
+                        type: string
+      responses:
+        "201":
+          description: Uploaded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Storage disabled
+
   /api/templates:
     get:
       operationId: listTemplates

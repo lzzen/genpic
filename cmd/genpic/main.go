@@ -262,6 +262,9 @@ func main() {
 	mux.Handle("POST /api/templates", optAuth(http.HandlerFunc(api.HandleCreateTemplate)))
 	mux.Handle("DELETE /api/templates/{id}", optAuth(http.HandlerFunc(api.HandleDeleteTemplate)))
 
+	mux.Handle("GET /api/user/assets", optAuth(http.HandlerFunc(api.HandleListUserAssets)))
+	mux.Handle("POST /api/user/assets", optAuth(http.HandlerFunc(api.HandleUploadUserAssets)))
+
 	mux.Handle("POST /api/admin/users/reset-password", optAuth(http.HandlerFunc(api.HandleAdminResetPassword)))
 	mux.Handle("GET /api/admin/users/storage", optAuth(http.HandlerFunc(api.HandleAdminListUserStorage)))
 	mux.Handle("PATCH /api/admin/users/storage", optAuth(http.HandlerFunc(api.HandleAdminPatchUserStorage)))

@@ -10,10 +10,10 @@
 <body>
 
 <header>
-  <div class="header-left">
-    <div class="logo">Gen<span>pic</span></div>
-    <div class="logo-sub">光影视界</div>
-  </div>
+  <button type="button" class="header-home" id="btn-home" title="回到初始界面" aria-label="回到初始界面">
+    <span class="logo">Gen<span>pic</span></span>
+    <span class="logo-sub">光影视界</span>
+  </button>
   <div class="header-actions">
     <button type="button" class="toolbar-btn" id="btn-community" title="社区精选" aria-label="社区精选">🌐</button>
     <button type="button" class="toolbar-btn" id="btn-hist-drawer" title="生成历史">🕑</button>
@@ -337,6 +337,49 @@
       <button type="button" class="primary" id="auth-modal-submit">继续</button>
     </div>
   </div>
+</div>
+
+<div id="asset-picker-modal" class="modal-backdrop asset-picker-backdrop" hidden>
+  <div class="asset-picker-panel" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
+    <header class="asset-picker-header">
+      <h2 class="asset-picker-title" id="asset-picker-title">选择图片</h2>
+      <div class="asset-picker-header-actions">
+        <button type="button" class="asset-picker-upload-btn" id="asset-picker-upload">↑ 上传图片</button>
+        <button type="button" class="asset-picker-close" id="asset-picker-close" aria-label="关闭">×</button>
+      </div>
+    </header>
+    <div class="asset-picker-body">
+      <aside class="asset-picker-sidebar">
+        <div class="asset-picker-sidebar-title">图片分组</div>
+        <button type="button" class="asset-picker-group active" id="asset-picker-group-all" disabled>
+          全部 <span id="asset-picker-group-count">0</span>
+        </button>
+        <button type="button" class="asset-picker-group-add" disabled title="分组功能即将推出">+ 创建分组</button>
+      </aside>
+      <div class="asset-picker-main">
+        <div class="asset-picker-tabs" role="tablist">
+          <button type="button" class="asset-picker-tab active" data-tab="upload" role="tab" aria-selected="true">用户上传</button>
+          <button type="button" class="asset-picker-tab" data-tab="ai" role="tab" aria-selected="false">AI生成</button>
+        </div>
+        <div class="asset-picker-toolbar">
+          <span id="asset-picker-selected-label">已选择 0 张图片</span>
+          <button type="button" class="asset-picker-refresh" id="asset-picker-refresh">↻ 刷新</button>
+        </div>
+        <div id="asset-picker-grid" class="asset-picker-grid" role="list"></div>
+        <div id="asset-picker-empty" class="asset-picker-empty" hidden>
+          <div class="asset-picker-empty-icon" aria-hidden="true">🖼</div>
+          <p id="asset-picker-empty-text">暂无图片</p>
+          <p class="asset-picker-empty-hint">请先上传图片，或完成一次 AI 生图</p>
+        </div>
+        <p id="asset-picker-msg" class="asset-picker-msg" hidden></p>
+      </div>
+    </div>
+    <footer class="asset-picker-footer">
+      <button type="button" id="asset-picker-cancel">取消</button>
+      <button type="button" class="primary" id="asset-picker-confirm">确定</button>
+    </footer>
+  </div>
+  <input type="file" id="asset-picker-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
 </div>
 
 <div id="privacy-modal" class="modal-backdrop" hidden>

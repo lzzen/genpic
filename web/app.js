@@ -1282,6 +1282,46 @@ function applyVendorRailHiddenFromStorage() {
   syncVendorRailToggleUI();
 }
 
+function showVendorRail() {
+  const app = $('app');
+  if (!app || !app.classList.contains('vendor-rail-hidden')) return;
+  app.classList.remove('vendor-rail-hidden');
+  save('vendor-rail-hidden', '');
+  syncVendorRailToggleUI();
+}
+
+/** Logo / home: restore generate UI, show left rail, close overlays. */
+function goHome() {
+  closeHistDrawer();
+  closeCredDialog();
+  closeTemplatePreview();
+  closeJobDetail();
+  showVendorRail();
+
+  if (activeVendorId === 'community') {
+    const vids = (uiCatalog?.vendors || []).map((v) => v.id);
+    let vend = load('active-vendor', null);
+    if (!vend || vend === 'community' || !vids.includes(vend)) {
+      vend = uiCatalog?.vendors[0]?.id || 'openai';
+    }
+    selectVendor(vend);
+    let sm = load('active-model', null);
+    if (sm) sm = scrubStoredModelIfGemini4KRoute(uiCatalog, sm);
+    if (sm && getModelsForVendor(vend).some((m) => m.id === sm)) {
+      const sel = $('model-select');
+      if (sel) sel.value = sm;
+      setActiveModel(sm, modelToProvider(sm));
+    }
+    return;
+  }
+
+  const sidebar = $('sidebar');
+  if (sidebar) sidebar.hidden = false;
+  const genArea = $('generate-area');
+  if (genArea) genArea.dataset.view = 'generate';
+  $('btn-community')?.classList.remove('active');
+}
+
 let uiCatalog = null;
 
 /** If stored active-model is a server-only 4K route id, map back to the public catalog key. */
@@ -1542,6 +1582,7 @@ function closeHistDrawer() {
   if (dr) dr.hidden = true;
 }
 
+$('btn-home')?.addEventListener('click', () => goHome());
 $('btn-community')?.addEventListener('click', () => selectVendor('community'));
 
 $('btn-vendor-rail-toggle')?.addEventListener('click', () => {
@@ -1777,6 +1818,237 @@ function addReferenceFromFile(file) {
   reader.readAsDataURL(file);
 }
 
+function canUseAssetLibrary() {
+  return !!(authUser && authUser.storage);
+}
+
+const assetPickerState = {
+  tab: 'upload',
+  items: [],
+  selected: new Map(),
+  loading: false,
+};
+
+function assetPickerSlotsLeft() {
+  return Math.max(0, 6 - referenceEntries.length);
+}
+
+function updateAssetPickerSelectionUI() {
+  const n = assetPickerState.selected.size;
+  const label = $('asset-picker-selected-label');
+  if (label) label.textContent = '已选择 ' + n + ' 张图片';
+  const left = assetPickerSlotsLeft();
+  const confirm = $('asset-picker-confirm');
+  if (confirm) confirm.disabled = n === 0 || n > left;
+  const gc = $('asset-picker-group-count');
+  if (gc) gc.textContent = String(assetPickerState.items.length);
+}
+
+function openAssetPickerModal() {
+  if (!canUseAssetLibrary()) {
+    $('ref-input')?.click();
+    return;
+  }
+  assetPickerState.selected.clear();
+  assetPickerState.tab = 'upload';
+  const modal = $('asset-picker-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  document.querySelectorAll('.asset-picker-tab').forEach((btn) => {
+    const on = btn.dataset.tab === 'upload';
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const msg = $('asset-picker-msg');
+  if (msg) msg.hidden = true;
+  updateAssetPickerSelectionUI();
+  void loadAssetPickerGrid(true);
+}
+
+function closeAssetPickerModal() {
+  const modal = $('asset-picker-modal');
+  if (modal) modal.hidden = true;
+  assetPickerState.selected.clear();
+}
+
+async function loadAssetPickerGrid(reset) {
+  if (!canUseAssetLibrary()) return;
+  const grid = $('asset-picker-grid');
+  const empty = $('asset-picker-empty');
+  const msg = $('asset-picker-msg');
+  if (!grid) return;
+  if (reset) {
+    assetPickerState.items = [];
+    grid.innerHTML = '';
+  }
+  assetPickerState.loading = true;
+  if (msg) msg.hidden = true;
+  const tab = assetPickerState.tab === 'ai' ? 'ai' : 'upload';
+  try {
+    const r = await genpicFetch('/api/user/assets?tab=' + encodeURIComponent(tab) + '&limit=48');
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const err = data?.error?.message || data?.message || '加载资源库失败';
+      if (msg) {
+        msg.textContent = err;
+        msg.hidden = false;
+      }
+      if (empty) empty.hidden = false;
+      return;
+    }
+    const rows = Array.isArray(data.data) ? data.data : [];
+    assetPickerState.items = rows;
+    grid.innerHTML = '';
+    if (!rows.length) {
+      if (empty) {
+        empty.hidden = false;
+        const t = $('asset-picker-empty-text');
+        if (t) t.textContent = tab === 'ai' ? '暂无 AI 生成图' : '暂无上传图片';
+      }
+    } else {
+      if (empty) empty.hidden = true;
+      for (const item of rows) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'asset-picker-card';
+        card.dataset.id = item.id;
+        card.setAttribute('role', 'listitem');
+        const img = document.createElement('img');
+        img.src = item.thumb_url || item.url;
+        img.alt = '';
+        img.loading = 'lazy';
+        const chk = document.createElement('span');
+        chk.className = 'asset-picker-card-check';
+        chk.textContent = '✓';
+        card.appendChild(img);
+        card.appendChild(chk);
+        if (assetPickerState.selected.has(item.id)) card.classList.add('selected');
+        card.addEventListener('click', () => {
+          if (assetPickerState.selected.has(item.id)) {
+            assetPickerState.selected.delete(item.id);
+            card.classList.remove('selected');
+          } else {
+            const left = assetPickerSlotsLeft();
+            if (assetPickerState.selected.size >= left) {
+              showGenpicToast('最多还能选 ' + left + ' 张（参考图上限 6 张）');
+              return;
+            }
+            assetPickerState.selected.set(item.id, item);
+            card.classList.add('selected');
+          }
+          updateAssetPickerSelectionUI();
+        });
+        grid.appendChild(card);
+      }
+    }
+    updateAssetPickerSelectionUI();
+  } catch (e) {
+    if (msg) {
+      msg.textContent = e.message || String(e);
+      msg.hidden = false;
+    }
+  } finally {
+    assetPickerState.loading = false;
+  }
+}
+
+async function confirmAssetPickerSelection() {
+  const left = assetPickerSlotsLeft();
+  const picks = [...assetPickerState.selected.values()].slice(0, left);
+  if (!picks.length) return;
+  const confirmBtn = $('asset-picker-confirm');
+  if (confirmBtn) confirmBtn.disabled = true;
+  try {
+    for (const item of picks) {
+      if (referenceEntries.length >= 6) break;
+      const url = String(item.url || '').trim();
+      if (!url) continue;
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        const dataUrl = await blobToDataURL(blob);
+        const p = parseDataURL(dataUrl);
+        if (!p) continue;
+        referenceEntries.push({ mime: p.mime, b64: p.b64, thumb: dataUrl });
+      } catch (_) {
+        showGenpicToast('部分图片无法加载（跨域限制），请改用手动上传');
+      }
+    }
+    renderRefPreviews();
+    closeAssetPickerModal();
+  } finally {
+    if (confirmBtn) confirmBtn.disabled = false;
+    updateAssetPickerSelectionUI();
+  }
+}
+
+async function uploadFilesToAssetLibrary(files) {
+  if (!canUseAssetLibrary() || !files?.length) return;
+  const refs = [];
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    if (file.size > 4 * 1024 * 1024) {
+      showGenpicToast('单张不能超过 4MB：' + (file.name || ''));
+      continue;
+    }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const p = parseDataURL(dataUrl);
+    if (p) refs.push({ mime_type: p.mime, b64_json: p.b64 });
+  }
+  if (!refs.length) return;
+  const r = await genpicFetch('/api/user/assets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reference_images: refs }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error(data?.error?.message || data?.message || '上传失败');
+  }
+  showGenpicToast('已上传到资源库');
+  assetPickerState.tab = 'upload';
+  await loadAssetPickerGrid(true);
+}
+
+function initAssetPickerModal() {
+  $('asset-picker-close')?.addEventListener('click', closeAssetPickerModal);
+  $('asset-picker-cancel')?.addEventListener('click', closeAssetPickerModal);
+  $('asset-picker-confirm')?.addEventListener('click', () => void confirmAssetPickerSelection());
+  $('asset-picker-refresh')?.addEventListener('click', () => void loadAssetPickerGrid(true));
+  $('asset-picker-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'asset-picker-modal') closeAssetPickerModal();
+  });
+  document.querySelectorAll('.asset-picker-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      assetPickerState.tab = btn.dataset.tab || 'upload';
+      document.querySelectorAll('.asset-picker-tab').forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      assetPickerState.selected.clear();
+      void loadAssetPickerGrid(true);
+    });
+  });
+  $('asset-picker-upload')?.addEventListener('click', () => $('asset-picker-input')?.click());
+  $('asset-picker-input')?.addEventListener('change', async (e) => {
+    const files = e.target.files;
+    e.target.value = '';
+    if (!files?.length) return;
+    try {
+      await uploadFilesToAssetLibrary([...files]);
+    } catch (err) {
+      showGenpicToast(err.message || String(err));
+    }
+  });
+}
+
 function clipboardDataHasPlainOrHtmlText(dataTransfer) {
   if (!dataTransfer?.items) return false;
   for (const it of dataTransfer.items) {
@@ -1807,7 +2079,7 @@ function collectClipboardImageFiles(dataTransfer) {
 /** True when paste-to-reference should run (not in modals / text fields where paste means text). */
 function shouldPasteClipboardImagesToRefs(activeEl) {
   if (!activeEl) return true;
-  if (activeEl.closest?.('#job-detail-modal, #auth-modal, #cred-panel, #hist-drawer, #template-preview-modal, #privacy-modal')) {
+  if (activeEl.closest?.('#job-detail-modal, #auth-modal, #cred-panel, #hist-drawer, #template-preview-modal, #privacy-modal, #asset-picker-modal')) {
     return false;
   }
   if (activeEl.isContentEditable || activeEl.closest?.('[contenteditable="true"]')) {
@@ -1951,12 +2223,18 @@ function wireRefAndGpt() {
   // ── Wan bbox add/remove ──
   $('wan-bbox-add')?.addEventListener('click', addWanBboxRow);
 
-  const pick = () => $('ref-input')?.click();
-  $('ref-pick')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    pick();
+  const pickFile = () => $('ref-input')?.click();
+  const pickImage = (e) => {
+    if (e) e.stopPropagation();
+    if (canUseAssetLibrary()) openAssetPickerModal();
+    else pickFile();
+  };
+  $('ref-pick')?.addEventListener('click', pickImage);
+  $('ref-zone')?.addEventListener('click', (e) => {
+    if (e.target.closest?.('#ref-pick')) return;
+    pickImage(e);
   });
-  $('ref-zone')?.addEventListener('click', pick);
+  initAssetPickerModal();
   $('ref-input')?.addEventListener('change', (e) => {
     const files = e.target.files;
     if (!files) return;
