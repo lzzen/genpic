@@ -340,16 +340,15 @@ func registerProviders(log *slog.Logger, cfg mvpconfig.Config) {
 		"api_key_set", cfg.Wan.APIKey != "")
 
 	if cfg.Xiangyun.Enabled {
-		to := append([]string(nil), cfg.Xiangyun.TryOrder...)
-		if len(to) == 0 {
-			to = append(to, xiangyun.DefaultTryOrder...)
+		models := append([]string(nil), cfg.Xiangyun.Models...)
+		if len(models) == 0 {
+			models = append(models, xiangyun.DefaultModels...)
 		}
 		provider.Register(xiangyun.New(xiangyun.Config{
-			TryOrder:   to,
-			Models:     cfg.Xiangyun.Models,
+			Models:     models,
 			ModelIDMap: cfg.ModelIDMap,
 		}))
-		log.Info("registered provider", "name", "xiangyun", "try_order", strings.Join(to, ","))
+		log.Info("registered provider", "name", "xiangyun", "models", strings.Join(models, ","))
 	}
 }
 

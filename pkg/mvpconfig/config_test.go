@@ -213,9 +213,10 @@ func TestReadXiangyun(t *testing.T) {
 	content := `
 xiangyun:
   enabled: true
-  try_order: [wan, openai, gemini]
   models:
-    wan: wan/wan2.7-image-pro
+    - wan/wan2.7-image-pro
+    - openai/gpt-image-2
+    - gemini/gemini-3.1-flash-image-preview
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -227,10 +228,13 @@ xiangyun:
 	if !cfg.Xiangyun.Enabled {
 		t.Fatal("enabled")
 	}
-	if len(cfg.Xiangyun.TryOrder) != 3 || cfg.Xiangyun.TryOrder[0] != "wan" {
-		t.Fatalf("try_order: %#v", cfg.Xiangyun.TryOrder)
-	}
-	if cfg.Xiangyun.Models["wan"] != "wan/wan2.7-image-pro" {
+	want := []string{"wan/wan2.7-image-pro", "openai/gpt-image-2", "gemini/gemini-3.1-flash-image-preview"}
+	if len(cfg.Xiangyun.Models) != len(want) {
 		t.Fatalf("models: %#v", cfg.Xiangyun.Models)
+	}
+	for i := range want {
+		if cfg.Xiangyun.Models[i] != want[i] {
+			t.Fatalf("models[%d]: got %q want %q", i, cfg.Xiangyun.Models[i], want[i])
+		}
 	}
 }

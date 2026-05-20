@@ -96,11 +96,10 @@ type rootYAML struct {
 	Xiangyun       xiangyunYAML      `yaml:"xiangyun"`
 }
 
-// xiangyunYAML configures the 祥云 meta-provider (multi-backend fallback).
+// xiangyunYAML configures the 祥云 meta-provider (multi-model fallback).
 type xiangyunYAML struct {
-	Enabled  bool              `yaml:"enabled"`
-	TryOrder []string          `yaml:"try_order"`
-	Models   map[string]string `yaml:"models"`
+	Enabled bool     `yaml:"enabled"`
+	Models  []string `yaml:"models"`
 }
 
 // ProviderConfig holds resolved credentials for one upstream provider.
@@ -157,7 +156,7 @@ type Config struct {
 	// ObjectStorage configures S3-compatible OSS for logged-in users (cmd/genpic).
 	ObjectStorage ObjectStorageConfig
 
-	// Xiangyun enables the 祥云 meta-provider (Gemini → OpenAI → Wan fallback by default).
+	// Xiangyun enables the 祥云 meta-provider (ordered catalog models, fallback on upstream failure).
 	Xiangyun XiangyunConfig
 }
 
@@ -186,9 +185,8 @@ type AuthConfig struct {
 
 // XiangyunConfig holds resolved 祥云 settings (cmd/genpic).
 type XiangyunConfig struct {
-	Enabled  bool
-	TryOrder []string          // lowercased provider names: gemini, openai, wan
-	Models   map[string]string // optional per-backend catalog model id overrides
+	Enabled bool
+	Models  []string // ordered catalog model ids to try, e.g. gemini/gemini-3.1-flash-image-preview
 }
 
 // Read loads config from a YAML file. A missing file is not an error (Found=false).
@@ -236,34 +234,17 @@ func resolveXiangyun(y xiangyunYAML) XiangyunConfig {
 	if !y.Enabled {
 		return XiangyunConfig{}
 	}
-	order := normalizeXiangyunTryOrder(y.TryOrder)
-	if len(order) == 0 {
-		order = []string{"gemini", "openai", "wan"}
-	}
-	models := map[string]string{}
-	for k, v := range y.Models {
-		kb := strings.ToLower(strings.TrimSpace(k))
-		v = strings.TrimSpace(v)
-		if kb != "" && v != "" {
-			models[kb] = v
-		}
-	}
-	if len(models) == 0 {
-		models = nil
-	}
-	return XiangyunConfig{Enabled: true, TryOrder: order, Models: models}
+	models := normalizeXiangyunModels(y.Models)
+	return XiangyunConfig{Enabled: true, Models: models}
 }
 
-func normalizeXiangyunTryOrder(in []string) []string {
-	valid := map[string]bool{"gemini": true, "openai": true, "wan": true}
-	seen := map[string]bool{}
+func normalizeXiangyunModels(in []string) []string {
 	var out []string
 	for _, s := range in {
-		s = strings.ToLower(strings.TrimSpace(s))
-		if !valid[s] || seen[s] {
+		s = strings.TrimSpace(s)
+		if s == "" {
 			continue
 		}
-		seen[s] = true
 		out = append(out, s)
 	}
 	return out

@@ -1,6 +1,5 @@
-// Package xiangyun implements a meta-provider that tries real image adapters
-// (Gemini, OpenAI, Wan) in a configured order until one succeeds on upstream
-// failure (502-class APIErr).
+// Package xiangyun implements a meta-provider that tries catalog image models
+// in a configured order until one succeeds on upstream failure (502-class APIErr).
 package xiangyun
 
 import (
@@ -15,10 +14,9 @@ import (
 	"genpic/pkg/provider"
 )
 
-// Config controls backend order and default catalog model ids per backend.
+// Config controls fallback order as an ordered list of catalog model ids.
 type Config struct {
-	TryOrder   []string
-	Models     map[string]string // key: gemini|openai|wan → catalog id, e.g. gemini/gemini-3.1-flash-image-preview
+	Models     []string // e.g. gemini/gemini-3.1-flash-image-preview, openai/gpt-image-2
 	ModelIDMap map[string]string // same semantics as config.yaml model_id_map
 }
 
@@ -27,7 +25,7 @@ type Provider struct {
 	cfg Config
 }
 
-// New returns a 祥云 provider. cfg.TryOrder must be non-empty (callers pass
+// New returns a 祥云 provider. cfg.Models must be non-empty (callers pass
 // defaults from mvpconfig).
 func New(cfg Config) *Provider {
 	return &Provider{cfg: cfg}
@@ -50,29 +48,6 @@ func (p *Provider) Models() []provider.ModelInfo {
 			},
 		},
 	}
-}
-
-func defaultCatalogFor(backend string) string {
-	switch strings.ToLower(strings.TrimSpace(backend)) {
-	case "openai":
-		return "openai/gpt-image-2"
-	case "gemini":
-		return "gemini/gemini-3.1-flash-image-preview"
-	case "wan":
-		return "wan/wan2.7-image"
-	default:
-		return ""
-	}
-}
-
-func (p *Provider) catalogModel(backend string) string {
-	b := strings.ToLower(strings.TrimSpace(backend))
-	if p.cfg.Models != nil {
-		if id := strings.TrimSpace(p.cfg.Models[b]); id != "" {
-			return id
-		}
-	}
-	return defaultCatalogFor(b)
 }
 
 func isRetriableUpstreamFailure(err error) bool {
@@ -114,27 +89,24 @@ func responseHasRenderableImages(resp *provider.GenerateResponse) bool {
 	return true
 }
 
-// Generate tries each backend in TryOrder. Child adapters use the same
+// Generate tries each catalog model in Models order. Child adapters use the same
 // credential resolution as direct calls: per-request base_url/api_key from the
 // JSON body take precedence when present; otherwise config.yaml defaults apply.
 func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (*provider.GenerateResponse, error) {
 	log := logger.FromContext(ctx)
 
 	var lastErr error
-	for _, backend := range p.cfg.TryOrder {
-		b := strings.ToLower(strings.TrimSpace(backend))
-		if b == "" || b == p.Name() {
-			continue
-		}
-		catalogID := p.catalogModel(b)
-		if catalogID == "" {
+	for _, catalogID := range p.cfg.Models {
+		catalogID = strings.TrimSpace(catalogID)
+		if catalogID == "" || strings.HasPrefix(strings.ToLower(catalogID), "xiangyun/") {
 			continue
 		}
 		subProv, modelInfo, ok := provider.ProviderForModel(catalogID)
 		if !ok || subProv == nil || subProv.Name() == p.Name() {
-			lastErr = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "xiangyun_backend", "backend "+b+": model "+catalogID+" is not registered")
+			lastErr = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "xiangyun_backend", "model "+catalogID+" is not registered")
 			continue
 		}
+		b := subProv.Name()
 		normalised := strings.TrimSpace(catalogID)
 		for _, prefix := range []string{"gemini/", "openai/", "wan/"} {
 			if strings.HasPrefix(normalised, prefix) {
@@ -173,19 +145,23 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			return nil, err
 		}
 		if logger.DevMode() {
-			log.Warn("xiangyun_try_upstream_failed", "backend", b, "catalog", catalogID, "err", err)
+			log.Warn("xiangyun_try_upstream_failed", "provider", b, "catalog", catalogID, "err", err)
 		} else {
-			log.Info("xiangyun_try_upstream_failed", "backend", b, "catalog", catalogID)
+			log.Info("xiangyun_try_upstream_failed", "provider", b, "catalog", catalogID)
 		}
 	}
 	if lastErr == nil {
-		return nil, pkgerrors.BadRequest("xiangyun_no_backend", "祥云未配置可用的后端顺序或模型")
+		return nil, pkgerrors.BadRequest("xiangyun_no_backend", "祥云未配置可用的模型列表")
 	}
 	return nil, lastErr
 }
 
-// DefaultTryOrder is used when config leaves try_order empty.
-var DefaultTryOrder = []string{"gemini", "openai", "wan"}
+// DefaultModels is used when config leaves models empty.
+var DefaultModels = []string{
+	"gemini/gemini-3.1-flash-image-preview",
+	"openai/gpt-image-2",
+	"wan/wan2.7-image",
+}
 
 // Compile-time check.
 var _ provider.Provider = (*Provider)(nil)

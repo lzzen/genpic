@@ -26,7 +26,7 @@ func TestIsRetriableUpstreamFailure(t *testing.T) {
 	}
 }
 
-func TestProvider_Generate_tryOrder(t *testing.T) {
+func TestProvider_Generate_modelsOrder(t *testing.T) {
 	for _, n := range []string{"openai", "gemini", "wan", "xiangyun"} {
 		provider.Unregister(n)
 	}
@@ -62,7 +62,11 @@ func TestProvider_Generate_tryOrder(t *testing.T) {
 	})
 
 	p := New(Config{
-		TryOrder:   []string{"openai", "gemini", "wan"},
+		Models: []string{
+			"openai/gpt-image-2",
+			"gemini/gemini-3.1-flash-image-preview",
+			"wan/wan2.7-image",
+		},
 		ModelIDMap: nil,
 	})
 	provider.Register(p)
@@ -127,7 +131,11 @@ func TestProvider_Generate_geminiFailsOpenAISuccessSkipsWan(t *testing.T) {
 	provider.Register(openaiFake)
 	provider.Register(wanFake)
 
-	p := New(Config{TryOrder: []string{"gemini", "openai", "wan"}})
+	p := New(Config{Models: []string{
+		"gemini/gemini-3.1-flash-image-preview",
+		"openai/gpt-image-2",
+		"wan/wan2.7-image",
+	}})
 	provider.Register(p)
 
 	want := "https://openai.ok/from-openai.png"
@@ -196,7 +204,11 @@ func TestProvider_Generate_emptyImageSlotContinuesFallback(t *testing.T) {
 		},
 	})
 
-	p := New(Config{TryOrder: []string{"openai", "gemini", "wan"}})
+	p := New(Config{Models: []string{
+		"openai/gpt-image-2",
+		"gemini/gemini-3.1-flash-image-preview",
+		"wan/wan2.7-image",
+	}})
 	provider.Register(p)
 
 	resp, err := p.Generate(context.Background(), provider.GenerateRequest{
@@ -242,7 +254,10 @@ func TestProvider_Generate_nonUpstreamShortCircuit(t *testing.T) {
 		},
 	})
 
-	p := New(Config{TryOrder: []string{"openai", "gemini"}})
+	p := New(Config{Models: []string{
+		"openai/gpt-image-2",
+		"gemini/gemini-3.1-flash-image-preview",
+	}})
 	provider.Register(p)
 
 	_, err := p.Generate(context.Background(), provider.GenerateRequest{
