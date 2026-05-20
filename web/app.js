@@ -1799,9 +1799,43 @@ function setAssetPickerUploadBusy(busy) {
 }
 
 function parseDataURL(dataUrl) {
-  const m = /^data:([^;,]+);base64,(.+)$/i.exec(String(dataUrl).trim());
-  if (!m) return null;
-  return { mime: m[1].trim(), b64: m[2].trim().replace(/\s/g, '') };
+  const s = String(dataUrl || '').trim();
+  const comma = s.indexOf(',');
+  if (comma < 0) return null;
+  const meta = s.slice(0, comma);
+  if (!/;base64/i.test(meta)) return null;
+  const b64 = s.slice(comma + 1).replace(/\s/g, '');
+  if (!b64) return null;
+  let mime = 'image/jpeg';
+  const mimeMatch = /^data:([^;,]+)/i.exec(meta);
+  if (mimeMatch && mimeMatch[1]) mime = mimeMatch[1].trim();
+  return { mime, b64 };
+}
+
+function mimeFromUploadFile(file) {
+  if (file?.type && file.type.startsWith('image/')) return file.type;
+  const n = (file?.name || '').toLowerCase();
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.gif')) return 'image/gif';
+  if (n.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+/** Read a File as { mime_type, b64_json } for POST /api/user/assets (all browsers). */
+function readFileAsBase64Ref(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseDataURL(reader.result);
+      if (parsed?.b64) {
+        resolve({ mime_type: parsed.mime || mimeFromUploadFile(file), b64_json: parsed.b64 });
+        return;
+      }
+      reject(new Error('无法读取图片数据'));
+    };
+    reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function renderRefPreviews() {
@@ -2258,15 +2292,11 @@ async function uploadFilesToAssetLibrary(files) {
       skipped += 1;
       continue;
     }
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-    const p = parseDataURL(dataUrl);
-    if (p) refs.push({ mime_type: p.mime, b64_json: p.b64 });
-    else skipped += 1;
+    try {
+      refs.push(await readFileAsBase64Ref(file));
+    } catch (_) {
+      skipped += 1;
+    }
   }
   if (!refs.length) {
     showGenpicToast(skipped ? '没有可上传的图片文件' : '请选择图片文件');
@@ -2283,9 +2313,17 @@ async function uploadFilesToAssetLibrary(files) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reference_images: refs }),
     });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const err = data?.error?.message || data?.message || '上传失败';
+    const text = await r.text();
+    let data = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        data = {};
+      }
+    }
+    if (r.status !== 201 || !Array.isArray(data.data)) {
+      const err = data?.error?.message || data?.message || ('上传失败 (HTTP ' + r.status + ')');
       if (msg) {
         msg.textContent = err;
         msg.hidden = false;
@@ -2352,14 +2390,21 @@ function initAssetPickerModal() {
     closeAssetPickerMoveMenu();
   });
   const assetInput = $('asset-picker-input');
+  $('asset-picker-upload')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if ($('asset-picker-upload')?.classList.contains('is-disabled')) return;
+    assetInput?.click();
+  });
   assetInput?.addEventListener('change', async (e) => {
-    const files = e.target.files;
-    e.target.value = '';
-    if (!files?.length) return;
+    const input = e.target;
+    const files = input.files ? [...input.files] : [];
+    if (!files.length) return;
     try {
-      await uploadFilesToAssetLibrary([...files]);
+      await uploadFilesToAssetLibrary(files);
     } catch (err) {
       showGenpicToast(err.message || String(err));
+    } finally {
+      input.value = '';
     }
   });
 }

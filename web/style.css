@@ -764,14 +764,17 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .asset-picker-header-main { min-width: 0; flex: 1; }
 .asset-picker-title { margin: 0; font-size: 1rem; font-weight: 700; }
 .asset-picker-storage { margin: 4px 0 0; font-size: .74rem; color: var(--muted); font-weight: 400; cursor: help; }
-.asset-picker-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.asset-picker-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; position: relative; }
 .asset-picker-upload-btn {
   display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 8px; border: none;
   background: var(--accent); color: #fff; font-size: .82rem; cursor: pointer; font-family: var(--font);
 }
 .asset-picker-upload-btn.is-disabled { opacity: .55; pointer-events: none; cursor: not-allowed; }
+/* Off-screen file input: no aria-hidden (Edge blocks change); opened via button click */
 .asset-picker-file-input {
-  position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+  right: 48px; top: 50%; transform: translateY(-50%);
 }
 .asset-picker-close {
   width: 32px; height: 32px; border: none; background: transparent; font-size: 1.4rem;

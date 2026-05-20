@@ -347,7 +347,8 @@
         <p id="asset-picker-storage" class="asset-picker-storage" hidden></p>
       </div>
       <div class="asset-picker-header-actions">
-        <label for="asset-picker-input" class="asset-picker-upload-btn" id="asset-picker-upload">↑ 上传图片</label>
+        <button type="button" class="asset-picker-upload-btn" id="asset-picker-upload">↑ 上传图片</button>
+        <input type="file" id="asset-picker-input" class="asset-picker-file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple aria-label="上传图片到资源库" tabindex="-1" />
         <button type="button" class="asset-picker-close" id="asset-picker-close" aria-label="关闭">×</button>
       </div>
     </header>
@@ -390,8 +391,6 @@
     </footer>
   </div>
 </div>
-<input type="file" id="asset-picker-input" class="asset-picker-file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" />
-
 <div id="privacy-modal" class="modal-backdrop" hidden>
   <div class="modal-panel" role="dialog" aria-modal="true">
     <div class="modal-title">隐私与社区</div>
