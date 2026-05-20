@@ -351,10 +351,11 @@
     <div class="asset-picker-body">
       <aside class="asset-picker-sidebar">
         <div class="asset-picker-sidebar-title">图片分组</div>
-        <button type="button" class="asset-picker-group active" id="asset-picker-group-all" disabled>
+        <button type="button" class="asset-picker-group active" id="asset-picker-group-all" data-group-id="all">
           全部 <span id="asset-picker-group-count">0</span>
         </button>
-        <button type="button" class="asset-picker-group-add" disabled title="分组功能即将推出">+ 创建分组</button>
+        <div id="asset-picker-group-list" class="asset-picker-group-list"></div>
+        <button type="button" class="asset-picker-group-add" id="asset-picker-group-add">+ 创建分组</button>
       </aside>
       <div class="asset-picker-main">
         <div class="asset-picker-tabs" role="tablist">
@@ -363,6 +364,7 @@
         </div>
         <div class="asset-picker-toolbar">
           <span id="asset-picker-selected-label">已选择 0 张图片</span>
+          <button type="button" class="asset-picker-add-group" id="asset-picker-add-to-group" hidden>加入当前分组</button>
           <button type="button" class="asset-picker-refresh" id="asset-picker-refresh">↻ 刷新</button>
         </div>
         <div id="asset-picker-grid" class="asset-picker-grid" role="list"></div>

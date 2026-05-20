@@ -36,8 +36,23 @@ func deleteOSSObjects(ctx context.Context, st objstore.Store, logicalKeys []stri
 	}
 }
 
+// UploadedReference is a reference image stored in OSS with ledger id.
+type UploadedReference struct {
+	ID       string
+	URL      string
+	MIMEType string
+}
+
+func uploadedToJobRefs(in []UploadedReference) []jobstore.JobRefAsset {
+	out := make([]jobstore.JobRefAsset, 0, len(in))
+	for _, u := range in {
+		out = append(out, jobstore.JobRefAsset{URL: u.URL, MIMEType: u.MIMEType})
+	}
+	return out
+}
+
 // uploadReferenceImagesToOSS uploads decoded reference blobs for a logged-in user.
-func uploadReferenceImagesToOSS(ctx context.Context, userID string, refs []provider.ReferenceImage) ([]jobstore.JobRefAsset, error) {
+func uploadReferenceImagesToOSS(ctx context.Context, userID string, refs []provider.ReferenceImage) ([]UploadedReference, error) {
 	st := getObjectStore()
 	db := getQuotaDB()
 	if st == nil || userID == "" {
@@ -74,9 +89,14 @@ func uploadReferenceImagesToOSS(ctx context.Context, userID string, refs []provi
 
 	var keys []string
 	var ledger []userstorage.LedgerRow
-	var assets []jobstore.JobRefAsset
+	var assets []UploadedReference
 
 	for i := range decoded {
+		ledgerID, err := randomHex(16)
+		if err != nil {
+			deleteOSSObjects(ctx, st, keys)
+			return nil, err
+		}
 		suffix, err := randomHex(8)
 		if err != nil {
 			deleteOSSObjects(ctx, st, keys)
@@ -100,8 +120,9 @@ func uploadReferenceImagesToOSS(ctx context.Context, userID string, refs []provi
 			deleteOSSObjects(ctx, st, keys)
 			return nil, err
 		}
-		assets = append(assets, jobstore.JobRefAsset{URL: pub, MIMEType: mimes[i]})
+		assets = append(assets, UploadedReference{ID: ledgerID, URL: pub, MIMEType: mimes[i]})
 		ledger = append(ledger, userstorage.LedgerRow{
+			ID:        ledgerID,
 			ObjectKey: logical,
 			ByteSize:  int64(len(decoded[i])),
 			Kind:      "reference",

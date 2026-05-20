@@ -100,3 +100,23 @@ func ThumbKeyForOutput(objectKey string) string {
 	base := objectKey[:dot]
 	return base + "_thumb.jpg"
 }
+
+// GetUserAsset returns one ledger row owned by userID, or nil if missing.
+func GetUserAsset(ctx context.Context, db *sql.DB, userID, assetID string) (*UserAssetRow, error) {
+	if db == nil || userID == "" || assetID == "" {
+		return nil, fmt.Errorf("userstorage: get asset: missing args")
+	}
+	var r UserAssetRow
+	err := db.QueryRowContext(ctx,
+		`SELECT id, object_key, byte_size, kind, job_id, created_at
+		 FROM user_storage_objects WHERE id = ? AND user_id = ?`,
+		assetID, userID,
+	).Scan(&r.ID, &r.ObjectKey, &r.ByteSize, &r.Kind, &r.JobID, &r.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}

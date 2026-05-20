@@ -264,6 +264,7 @@ func main() {
 
 	mux.Handle("GET /api/user/assets", optAuth(http.HandlerFunc(api.HandleListUserAssets)))
 	mux.Handle("POST /api/user/assets", optAuth(http.HandlerFunc(api.HandleUploadUserAssets)))
+	mux.Handle("GET /api/user/assets/{id}/content", optAuth(http.HandlerFunc(api.HandleGetUserAssetContent)))
 
 	mux.Handle("POST /api/admin/users/reset-password", optAuth(http.HandlerFunc(api.HandleAdminResetPassword)))
 	mux.Handle("GET /api/admin/users/storage", optAuth(http.HandlerFunc(api.HandleAdminListUserStorage)))

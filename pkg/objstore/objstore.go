@@ -2,6 +2,7 @@ package objstore
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 )
@@ -39,6 +40,8 @@ type SignedURLInput struct {
 type Store interface {
 	// Put uploads an object and returns metadata.
 	Put(ctx context.Context, in PutInput) (PutResult, error)
+	// Get downloads an object by logical key.
+	Get(ctx context.Context, key string) ([]byte, string, error)
 	// SignedURL generates a time-limited HTTPS URL for the given object.
 	SignedURL(ctx context.Context, in SignedURLInput) (string, error)
 	// Delete removes an object. Returns nil if the object was not found.
@@ -52,6 +55,13 @@ type Fake struct {
 }
 
 func NewFake() *Fake { return &Fake{Objects: map[string][]byte{}} }
+
+func (f *Fake) Get(_ context.Context, key string) ([]byte, string, error) {
+	if b, ok := f.Objects[key]; ok {
+		return b, "application/octet-stream", nil
+	}
+	return nil, "", fmt.Errorf("objstore fake: not found")
+}
 
 func (f *Fake) Put(_ context.Context, in PutInput) (PutResult, error) {
 	data, err := io.ReadAll(in.Body)

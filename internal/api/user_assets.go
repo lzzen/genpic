@@ -163,6 +163,7 @@ func HandleUploadUserAssets(w http.ResponseWriter, r *http.Request) {
 	data := make([]map[string]any, 0, len(assets))
 	for _, a := range assets {
 		data = append(data, map[string]any{
+			"id":        a.ID,
 			"url":       a.URL,
 			"mime_type": a.MIMEType,
 			"kind":      "reference",
@@ -172,4 +173,48 @@ func HandleUploadUserAssets(w http.ResponseWriter, r *http.Request) {
 		"object": "user.asset_upload",
 		"data":   data,
 	})
+}
+
+// HandleGetUserAssetContent serves GET /api/user/assets/{id}/content — same-origin proxy for library images.
+func HandleGetUserAssetContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	u := requireLoggedInUser(w, r)
+	if u == nil {
+		return
+	}
+	assetID := strings.TrimSpace(r.PathValue("id"))
+	if assetID == "" {
+		Error(w, pkgerrors.BadRequest("missing_field", "asset id is required"))
+		return
+	}
+	row, err := userstorage.GetUserAsset(r.Context(), getQuotaDB(), u.ID, assetID)
+	if err != nil {
+		Error(w, pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "user_asset_get_error", err.Error()))
+		return
+	}
+	if row == nil {
+		Error(w, pkgerrors.New(http.StatusNotFound, pkgerrors.TypeNotFound, "asset_not_found", "asset not found"))
+		return
+	}
+	st := getObjectStore()
+	if st == nil {
+		Error(w, pkgerrors.New(http.StatusServiceUnavailable, pkgerrors.TypeInternal, "storage_disabled", "object storage is not configured"))
+		return
+	}
+	body, ct, err := st.Get(r.Context(), row.ObjectKey)
+	if err != nil {
+		Error(w, pkgerrors.New(http.StatusBadGateway, pkgerrors.TypeInternal, "oss_get_asset", "could not read asset from storage"))
+		return
+	}
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }

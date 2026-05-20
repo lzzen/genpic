@@ -86,6 +86,27 @@ func (s *S3Store) PublicURL(objectKey string) string {
 	return s.publicBaseURL + "/" + strings.TrimLeft(s.fullKey(objectKey), "/")
 }
 
+func (s *S3Store) Get(ctx context.Context, key string) ([]byte, string, error) {
+	fk := s.fullKey(key)
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fk),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer out.Body.Close()
+	b, err := io.ReadAll(out.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	ct := "application/octet-stream"
+	if out.ContentType != nil && strings.TrimSpace(*out.ContentType) != "" {
+		ct = strings.TrimSpace(*out.ContentType)
+	}
+	return b, ct, nil
+}
+
 func (s *S3Store) Put(ctx context.Context, in objstore.PutInput) (objstore.PutResult, error) {
 	key := in.Key
 	if strings.TrimSpace(in.Bucket) != "" {

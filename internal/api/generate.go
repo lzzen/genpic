@@ -470,11 +470,12 @@ func HandleCompatGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		var refAssets []jobstore.JobRefAsset
 		if owner.UserID != "" && getObjectStore() != nil {
-			refAssets, err = uploadReferenceImagesToOSS(r.Context(), owner.UserID, refs)
+			uploaded, err := uploadReferenceImagesToOSS(r.Context(), owner.UserID, refs)
 			if err != nil {
 				Error(w, err)
 				return
 			}
+			refAssets = uploadedToJobRefs(uploaded)
 		}
 		job := jobFromGenerateRequest(body.GenerateRequest, owner, refAssets)
 		id, err := jobStoreInstance.Create(job)
