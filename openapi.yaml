@@ -549,6 +549,36 @@ paths:
         "503":
           description: Storage disabled
 
+  /api/user/assets/{id}/content:
+    get:
+      operationId: getUserAssetContent
+      tags: [user]
+      summary: Download a library asset via same-origin proxy
+      description: |
+        Streams the object bytes from OSS for the logged-in owner. Used by the SPA to avoid
+        browser CORS when importing library images as reference inputs.
+      parameters:
+        - $ref: "#/components/parameters/GenpicSessionCookie"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Image bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Storage disabled
+
   /api/templates:
     get:
       operationId: listTemplates

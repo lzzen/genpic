@@ -89,6 +89,9 @@ func TestProvider_Generate_modelsOrder(t *testing.T) {
 	if resp.EffectiveCatalogModelID != "wan/wan2.7-image" {
 		t.Fatalf("effective model: %q", resp.EffectiveCatalogModelID)
 	}
+	if resp.EffectiveUpstreamModel != "wan2.7-image" {
+		t.Fatalf("effective upstream: %q", resp.EffectiveUpstreamModel)
+	}
 }
 
 // When OpenAI succeeds, 祥云 must not call Wan (regression: OpenAI envelope parse + forced url format).

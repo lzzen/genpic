@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -25,32 +24,6 @@ import (
 	"genpic/pkg/logger"
 	"genpic/pkg/provider"
 )
-
-const geminiAgentDebugLogPath = "/home/pozenqi/workspace/genpic/.cursor/debug-360165.log"
-
-// #region agent log
-func geminiAgentDebugLog(hypothesisID, location, message string, data map[string]any) {
-	payload := map[string]any{
-		"sessionId":    "360165",
-		"hypothesisId": hypothesisID,
-		"location":     location,
-		"message":      message,
-		"data":         data,
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	line, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	f, err := os.OpenFile(geminiAgentDebugLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	_, _ = f.Write(append(line, '\n'))
-	_ = f.Close()
-}
-
-// #endregion
 
 // Config holds default upstream connection details (optional when using POST /api/generate with JSON base_url + api_key).
 type Config struct {
@@ -146,13 +119,6 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 	start := time.Now()
 
 	baseURL, apiKey, trace := compatctx.Resolve(ctx, p.cfg.BaseURL, p.cfg.APIKey)
-	// #region agent log
-	geminiAgentDebugLog("H4", "gemini.go:Generate:start", "gemini generate start", map[string]any{
-		"model": req.Model, "n": req.N,
-		"has_base_url": baseURL != "", "has_api_key": apiKey != "",
-		"ctx_override": compatctx.From(ctx) != nil,
-	})
-	// #endregion
 	if baseURL == "" || apiKey == "" {
 		return nil, pkgerrors.BadRequest("upstream_credentials", "set base_url and api_key in the POST /api/generate JSON body (third-party scheme + host only, no path suffix).")
 	}
@@ -196,9 +162,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			)
 		}
 
-		httpStart := time.Now()
 		resp, raw, err := p.client.Do(ctx, http.MethodPost, url, headers, body)
-		httpMs := time.Since(httpStart).Milliseconds()
 		status := 0
 		if resp != nil {
 			status = resp.StatusCode
@@ -210,20 +174,9 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			compatctx.LogStderrRoundTrip("gemini", http.MethodPost, url, headers, body, status, raw)
 		}
 		if err != nil {
-			// #region agent log
-			geminiAgentDebugLog("H1", "gemini.go:Generate:http_err", "gemini http round failed", map[string]any{
-				"model": req.Model, "round": round, "http_ms": httpMs, "status": status,
-			})
-			// #endregion
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			// #region agent log
-			geminiAgentDebugLog("H2", "gemini.go:Generate:http_non_ok", "gemini http non-200", map[string]any{
-				"model": req.Model, "round": round, "http_ms": httpMs, "status": resp.StatusCode,
-				"response_bytes": len(raw),
-			})
-			// #endregion
 			if logger.DevMode() && !trace {
 				log.Warn("gemini_generateContent_non_ok",
 					"round", round,
@@ -248,19 +201,9 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 
 		batch, tokens, rid, err := parseGenerateContentResponse(raw)
 		if err != nil {
-			// #region agent log
-			geminiAgentDebugLog("H3", "gemini.go:Generate:parse_err", "gemini parse response failed", map[string]any{
-				"model": req.Model, "round": round, "http_ms": httpMs,
-			})
-			// #endregion
 			return nil, err
 		}
 		if len(batch) == 0 {
-			// #region agent log
-			geminiAgentDebugLog("H3", "gemini.go:Generate:empty_batch", "gemini parsed zero images", map[string]any{
-				"model": req.Model, "round": round, "http_ms": httpMs, "response_bytes": len(raw),
-			})
-			// #endregion
 			return nil, pkgerrors.UpstreamErr("empty_response", "Gemini returned no images in generateContent response", nil)
 		}
 		images = append(images, batch...)
@@ -280,11 +223,6 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 
 	latency := time.Since(start)
 	log.Info("gemini generate ok", "model", req.Model, "n", len(images), "tokens", totalTokens, "latency_ms", latency.Milliseconds())
-	// #region agent log
-	geminiAgentDebugLog("H3", "gemini.go:Generate:ok", "gemini generate ok", map[string]any{
-		"model": req.Model, "image_count": len(images), "duration_ms": latency.Milliseconds(),
-	})
-	// #endregion
 
 	return &provider.GenerateResponse{
 		Images:            images,

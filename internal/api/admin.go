@@ -13,11 +13,13 @@ const adminMaxPromptRunes = 200
 
 // adminJobRow is a compact job row for GET /admin/jobs (no image payloads).
 type adminJobRow struct {
-	ID         string `json:"id"`
-	Status     string `json:"status"`
-	Provider   string `json:"provider,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Prompt     string `json:"prompt,omitempty"`
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	Provider          string `json:"provider,omitempty"`
+	Model             string `json:"model,omitempty"`
+	EffectiveProvider string `json:"effective_provider,omitempty"`
+	EffectiveModel    string `json:"effective_model,omitempty"`
+	Prompt            string `json:"prompt,omitempty"`
 	CreatedAt  int64  `json:"created_at"`
 	StartedAt  *int64 `json:"started_at,omitempty"`
 	FinishedAt *int64 `json:"finished_at,omitempty"`
@@ -41,11 +43,13 @@ func truncatePrompt(s string) string {
 
 func toAdminJobRow(j *jobstore.Job) adminJobRow {
 	row := adminJobRow{
-		ID:         j.ID,
-		Status:     string(j.Status),
-		Provider:   j.Provider,
-		Model:      j.Model,
-		Prompt:     truncatePrompt(j.Prompt),
+		ID:                j.ID,
+		Status:            string(j.Status),
+		Provider:          j.Provider,
+		Model:             j.Model,
+		EffectiveProvider: j.EffectiveProvider,
+		EffectiveModel:    j.EffectiveModel,
+		Prompt:            truncatePrompt(j.Prompt),
 		CreatedAt:  j.CreatedAt.Unix(),
 		ImageCount: len(j.Images),
 		UserID:     j.UserID,

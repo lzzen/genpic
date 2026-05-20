@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   id                   VARCHAR(64)   NOT NULL PRIMARY KEY,
   model                VARCHAR(128)  NOT NULL DEFAULT '',
   provider             VARCHAR(64)   NOT NULL DEFAULT '',
+  effective_model      VARCHAR(128)  NOT NULL DEFAULT '',
+  effective_provider   VARCHAR(64)   NOT NULL DEFAULT '',
   prompt               TEXT          NOT NULL,
   status               VARCHAR(32)   NOT NULL DEFAULT 'queued',
   error_code           VARCHAR(64)   NOT NULL DEFAULT '',
@@ -42,7 +44,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `
 
-const mysqlCols = `id, model, provider, prompt, status, error_code, error_msg,
+const mysqlCols = `id, model, provider, effective_model, effective_provider, prompt, status, error_code, error_msg,
   images, tokens_used, upstream_request_id, key_id, user_id, session_id, visibility, community_listed_at, params,
   created_at, started_at, finished_at`
 
@@ -152,12 +154,12 @@ func (s *MySQL) Create(job *Job) (string, error) {
 	}
 	_, err = s.db.Exec(`
 		INSERT INTO generation_jobs
-		  (id, model, provider, prompt, status, error_code, error_msg,
+		  (id, model, provider, effective_model, effective_provider, prompt, status, error_code, error_msg,
 		   images, tokens_used, upstream_request_id, key_id, user_id, session_id,
 		   visibility, community_listed_at, params,
 		   created_at, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		job.ID, job.Model, job.Provider, job.Prompt,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.ID, job.Model, job.Provider, job.EffectiveModel, job.EffectiveProvider, job.Prompt,
 		string(job.Status), job.ErrorCode, job.ErrorMsg,
 		imagesJSON, job.TokensUsed, job.UpstreamRequestID, job.KeyID, job.UserID, job.SessionID,
 		vis, nullTime(job.CommunityListedAt), paramsJSON,
@@ -206,13 +208,20 @@ func (s *MySQL) Update(id string, fn func(*Job)) bool {
 	if err != nil {
 		return false
 	}
+	paramsJSON, err := marshalParams(j.Params)
+	if err != nil {
+		return false
+	}
 	_, err = tx.Exec(`
 		UPDATE generation_jobs SET
 		  status = ?, error_code = ?, error_msg = ?,
-		  images = ?, tokens_used = ?, upstream_request_id = ?, started_at = ?, finished_at = ?
+		  images = ?, tokens_used = ?, upstream_request_id = ?,
+		  effective_model = ?, effective_provider = ?, params = ?,
+		  started_at = ?, finished_at = ?
 		WHERE id = ?`,
 		string(j.Status), j.ErrorCode, j.ErrorMsg,
 		imagesJSON, j.TokensUsed, j.UpstreamRequestID,
+		j.EffectiveModel, j.EffectiveProvider, paramsJSON,
 		nullTime(j.StartedAt), nullTime(j.FinishedAt),
 		id,
 	)
@@ -374,7 +383,7 @@ func doScan(s rowScanner) (*Job, error) {
 		finishedAt        sql.NullTime
 	)
 	if err := s.Scan(
-		&j.ID, &j.Model, &j.Provider, &j.Prompt,
+		&j.ID, &j.Model, &j.Provider, &j.EffectiveModel, &j.EffectiveProvider, &j.Prompt,
 		&status, &j.ErrorCode, &j.ErrorMsg,
 		&imgData, &j.TokensUsed, &j.UpstreamRequestID, &j.KeyID, &j.UserID, &j.SessionID,
 		&j.Visibility, &communityListedAt, &paramsData,

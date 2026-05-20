@@ -93,10 +93,11 @@ type GenerateResponse struct {
 	TokensUsed int
 	// Latency is the wall-clock time from request dispatch to response receipt.
 	Latency time.Duration
-	// EffectiveProvider and EffectiveCatalogModel are set when a meta-provider
-	// (e.g. 祥云) delegates to a concrete adapter; empty when unused.
+	// EffectiveProvider, EffectiveCatalogModelID, and EffectiveUpstreamModel are set
+	// when a meta-provider (e.g. 祥云) delegates to a concrete adapter; empty when unused.
 	EffectiveProvider       string
 	EffectiveCatalogModelID string
+	EffectiveUpstreamModel  string // wire id sent upstream, e.g. gemini-2.5-flash-image
 }
 
 // Capability is a feature flag that a provider model may or may not support.

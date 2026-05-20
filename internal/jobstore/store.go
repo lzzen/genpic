@@ -76,9 +76,13 @@ type JobRefAsset struct {
 // Job is the canonical record for one image-generation request.
 type Job struct {
 	ID       string
-	Model    string
-	Provider string
-	Prompt   string
+	Model    string // catalog id requested by the client, e.g. xiangyun/auto
+	Provider string // adapter for Model, e.g. xiangyun
+	// EffectiveModel is the upstream wire model that produced output (when known).
+	EffectiveModel string
+	// EffectiveProvider is the concrete adapter that produced output (when known).
+	EffectiveProvider string
+	Prompt            string
 
 	Status     Status
 	ErrorCode  string

@@ -34,8 +34,8 @@ func Up(db *sql.DB) error {
 		for _, stmt := range splitSQLStatements(sqlText) {
 			if _, err := db.Exec(stmt); err != nil {
 				var me *mysqldriver.MySQLError
-				if errors.As(err, &me) && me.Number == 1061 {
-					// Duplicate index name (re-run migrations on same DB).
+				if errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061) {
+					// Duplicate column (1060) or index (1061) — idempotent re-run.
 					continue
 				}
 				return fmt.Errorf("dbmigrate: exec %s: %w", e.Name(), err)

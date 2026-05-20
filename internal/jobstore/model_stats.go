@@ -29,6 +29,30 @@ func modelStatKey(model, provider string) string {
 	return strings.TrimSpace(model) + "\x00" + strings.TrimSpace(provider)
 }
 
+// statsModel returns the model dimension used for operator aggregates.
+func statsModel(j *Job) string {
+	if s := strings.TrimSpace(j.EffectiveModel); s != "" {
+		return s
+	}
+	return strings.TrimSpace(j.Model)
+}
+
+// statsProvider returns the provider dimension used for operator aggregates.
+func statsProvider(j *Job) string {
+	if s := strings.TrimSpace(j.EffectiveProvider); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(j.Provider); s != "" {
+		return s
+	}
+	return "(unknown)"
+}
+
+const (
+	statsModelSQL    = `COALESCE(NULLIF(TRIM(effective_model), ''), model)`
+	statsProviderSQL = `COALESCE(NULLIF(TRIM(effective_provider), ''), provider)`
+)
+
 func finishModelStatRow(m *ModelStatRow) {
 	m.Total = m.Succeeded + m.Failed
 	if m.Total > 0 {
@@ -161,11 +185,8 @@ func (m *Memory) AdminModelStats(since, until time.Time) AdminModelStatsSummary 
 		if j.FinishedAt.IsZero() || j.FinishedAt.Before(since) || !j.FinishedAt.Before(until) {
 			continue
 		}
-		mod := strings.TrimSpace(j.Model)
-		prov := strings.TrimSpace(j.Provider)
-		if prov == "" {
-			prov = "(unknown)"
-		}
+		mod := statsModel(j)
+		prov := statsProvider(j)
 		k := modelStatKey(mod, prov)
 		a := groups[k]
 		if a == nil {
@@ -297,7 +318,7 @@ func (s *MySQL) AdminModelStats(since, until time.Time) AdminModelStatsSummary {
 		return out
 	}
 	rows, err := s.db.Query(`
-		SELECT model, provider,
+		SELECT `+statsModelSQL+`, `+statsProviderSQL+`,
 			SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END),
 			AVG(CASE WHEN status IN ('succeeded','failed') AND started_at IS NOT NULL AND finished_at IS NOT NULL
@@ -305,7 +326,7 @@ func (s *MySQL) AdminModelStats(since, until time.Time) AdminModelStatsSummary {
 		FROM generation_jobs
 		WHERE status IN ('succeeded','failed')
 		  AND finished_at >= ? AND finished_at < ?
-		GROUP BY model, provider`,
+		GROUP BY `+statsModelSQL+`, `+statsProviderSQL,
 		since, until,
 	)
 	if err != nil {
@@ -341,10 +362,10 @@ func (s *MySQL) AdminModelStats(since, until time.Time) AdminModelStatsSummary {
 	_ = rows.Close()
 
 	frows, err := s.db.Query(`
-		SELECT model, provider, COALESCE(NULLIF(TRIM(error_code), ''), '(empty)'), COUNT(*)
+		SELECT `+statsModelSQL+`, `+statsProviderSQL+`, COALESCE(NULLIF(TRIM(error_code), ''), '(empty)'), COUNT(*)
 		FROM generation_jobs
 		WHERE status = 'failed' AND finished_at >= ? AND finished_at < ?
-		GROUP BY model, provider, error_code`,
+		GROUP BY `+statsModelSQL+`, `+statsProviderSQL+`, error_code`,
 		since, until,
 	)
 	if err == nil {
@@ -376,7 +397,7 @@ func (s *MySQL) AdminModelStats(since, until time.Time) AdminModelStatsSummary {
 
 func (s *MySQL) attachModelLatencyP95(out *AdminModelStatsSummary, since, until time.Time) {
 	rows, err := s.db.Query(`
-		SELECT model, provider,
+		SELECT `+statsModelSQL+`, `+statsProviderSQL+`,
 			TIMESTAMPDIFF(MICROSECOND, started_at, finished_at) / 1000.0
 		FROM generation_jobs
 		WHERE status IN ('succeeded','failed')
@@ -444,13 +465,13 @@ func (s *MySQL) AdminModelStatsTimeseries(since, until time.Time, granularity st
 	}
 	if len(cleanModels) > 0 {
 		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cleanModels)), ",")
-		modelWhere = " AND model IN (" + placeholders + ")"
+		modelWhere = " AND " + statsModelSQL + " IN (" + placeholders + ")"
 		for _, id := range cleanModels {
 			args = append(args, id)
 		}
 	}
 	q := fmt.Sprintf(`
-		SELECT %s AS bucket_key, model, provider,
+		SELECT %s AS bucket_key, `+statsModelSQL+`, `+statsProviderSQL+`,
 			SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END),
 			AVG(CASE WHEN status IN ('succeeded','failed') AND started_at IS NOT NULL AND finished_at IS NOT NULL
@@ -458,8 +479,8 @@ func (s *MySQL) AdminModelStatsTimeseries(since, until time.Time, granularity st
 		FROM generation_jobs
 		WHERE status IN ('succeeded','failed')
 		  AND finished_at >= ? AND finished_at < ? %s
-		GROUP BY bucket_key, model, provider
-		ORDER BY bucket_key, model`, dateExpr, modelWhere)
+		GROUP BY bucket_key, `+statsModelSQL+`, `+statsProviderSQL+`
+		ORDER BY bucket_key, `+statsModelSQL, dateExpr, modelWhere)
 
 	rows, err := s.db.Query(q, args...)
 	if err != nil {

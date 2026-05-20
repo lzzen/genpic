@@ -236,6 +236,11 @@ func executeImageGeneration(ctx context.Context, req GenerateRequest) (map[strin
 	if em := strings.TrimSpace(resp.EffectiveCatalogModelID); em != "" {
 		out["x_effective_model"] = em
 	}
+	if wire := strings.TrimSpace(resp.EffectiveUpstreamModel); wire != "" {
+		out["x_effective_upstream_model"] = wire
+	} else {
+		out["x_effective_upstream_model"] = upstreamWire
+	}
 	return out, nil
 }
 
@@ -344,15 +349,12 @@ func finalizeJobResult(jobID string, out map[string]any, genErr error) {
 		j.UpstreamRequestID = upstreamID
 		if ep, ok := out["x_effective_provider"].(string); ok {
 			if s := strings.TrimSpace(ep); s != "" {
-				j.Provider = s
+				j.EffectiveProvider = s
 			}
 		}
-		if em, ok := out["x_effective_model"].(string); ok {
-			if s := strings.TrimSpace(em); s != "" {
-				j.Model = s
-				if j.Params != nil {
-					j.Params.Model = s
-				}
+		if wire, ok := out["x_effective_upstream_model"].(string); ok {
+			if s := strings.TrimSpace(wire); s != "" {
+				j.EffectiveModel = s
 			}
 		}
 	})

@@ -4,44 +4,16 @@ package xiangyun
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
+	"genpic/internal/geminiconfig"
 	pkgerrors "genpic/pkg/errors"
 	"genpic/pkg/logger"
 	"genpic/pkg/modelmap"
 	"genpic/pkg/provider"
 )
-
-const agentDebugLogPath = "/home/pozenqi/workspace/genpic/.cursor/debug-360165.log"
-
-// #region agent log
-func agentDebugLog(hypothesisID, location, message string, data map[string]any) {
-	payload := map[string]any{
-		"sessionId":    "360165",
-		"hypothesisId": hypothesisID,
-		"location":     location,
-		"message":      message,
-		"data":         data,
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	line, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	f, err := os.OpenFile(agentDebugLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	_, _ = f.Write(append(line, '\n'))
-	_ = f.Close()
-}
-
-// #endregion
 
 // Config controls fallback order as an ordered list of catalog model ids.
 type Config struct {
@@ -130,6 +102,12 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		if catalogID == "" || strings.HasPrefix(strings.ToLower(catalogID), "xiangyun/") {
 			continue
 		}
+		if strings.HasPrefix(strings.ToLower(catalogID), "gemini/") {
+			norm := strings.TrimPrefix(catalogID, "gemini/")
+			if alt := geminiconfig.ResolveMappedCatalogID(norm, req.ImageSize); alt != "" {
+				catalogID = alt
+			}
+		}
 		subProv, modelInfo, ok := provider.ProviderForModel(catalogID)
 		if !ok || subProv == nil || subProv.Name() == p.Name() {
 			lastErr = pkgerrors.New(http.StatusInternalServerError, pkgerrors.TypeInternal, "xiangyun_backend", "model "+catalogID+" is not registered")
@@ -151,50 +129,7 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			subReq.ResponseFormat = "url"
 		}
 
-		ctxDeadlineMs := int64(-1)
-		if dl, ok := ctx.Deadline(); ok {
-			ctxDeadlineMs = time.Until(dl).Milliseconds()
-		}
-		// #region agent log
-		agentDebugLog("H1", "xiangyun.go:Generate:attempt_start", "xiangyun model attempt start", map[string]any{
-			"catalog": catalogID, "provider": b, "upstream_wire": upstreamWire,
-			"response_format": subReq.ResponseFormat, "n": subReq.N,
-			"ctx_deadline_ms": ctxDeadlineMs,
-		})
-		// #endregion
-
-		attemptStart := time.Now()
 		resp, err := subProv.Generate(ctx, subReq)
-		attemptMs := time.Since(attemptStart).Milliseconds()
-
-		errType, errCode := "", ""
-		if err != nil {
-			if ae, ok := pkgerrors.As(err); ok {
-				errType = ae.Type
-				errCode = ae.Code
-			} else if errors.Is(err, context.DeadlineExceeded) {
-				errType = "context_deadline"
-				errCode = "deadline_exceeded"
-			} else {
-				errType = "raw_error"
-				errCode = err.Error()
-			}
-		}
-		imgCount := 0
-		renderable := false
-		if resp != nil {
-			imgCount = len(resp.Images)
-			renderable = responseHasRenderableImages(resp)
-		}
-		// #region agent log
-		agentDebugLog("H2", "xiangyun.go:Generate:attempt_done", "xiangyun model attempt done", map[string]any{
-			"catalog": catalogID, "provider": b, "upstream_wire": upstreamWire,
-			"duration_ms": attemptMs, "err_type": errType, "err_code": errCode,
-			"retriable": isRetriableUpstreamFailure(err), "image_count": imgCount,
-			"renderable": renderable,
-		})
-		// #endregion
-
 		if err == nil && responseHasRenderableImages(resp) {
 			out := *resp
 			if out.EffectiveProvider == "" {
@@ -202,6 +137,9 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 			}
 			if out.EffectiveCatalogModelID == "" {
 				out.EffectiveCatalogModelID = modelInfo.ID
+			}
+			if out.EffectiveUpstreamModel == "" {
+				out.EffectiveUpstreamModel = upstreamWire
 			}
 			return &out, nil
 		}
@@ -214,12 +152,6 @@ func (p *Provider) Generate(ctx context.Context, req provider.GenerateRequest) (
 		}
 		lastErr = err
 		if !isRetriableUpstreamFailure(err) {
-			// #region agent log
-			agentDebugLog("H5", "xiangyun.go:Generate:short_circuit", "xiangyun non-retriable error, abort chain", map[string]any{
-				"catalog": catalogID, "provider": b, "duration_ms": attemptMs,
-				"err_type": errType, "err_code": errCode,
-			})
-			// #endregion
 			return nil, err
 		}
 		if logger.DevMode() {
