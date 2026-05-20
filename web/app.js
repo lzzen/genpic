@@ -1825,6 +1825,8 @@ function canUseAssetLibrary() {
 const assetPickerState = {
   tab: 'upload',
   items: [],
+  allItems: [],
+  totalCount: 0,
   selected: new Map(),
   loading: false,
   activeGroupId: 'all',
@@ -1854,6 +1856,15 @@ function saveAssetGroupsData(data) {
   localStorage.setItem(assetGroupsStorageKey(), JSON.stringify(data));
 }
 
+function countAssetsInGroup(data, groupId) {
+  const known = new Set(assetPickerState.allItems.map((it) => it.id));
+  let n = 0;
+  for (const [assetId, gid] of Object.entries(data.mapping)) {
+    if (gid === groupId && known.has(assetId)) n += 1;
+  }
+  return n;
+}
+
 function assetIdsForActiveGroup(data) {
   if (assetPickerState.activeGroupId === 'all') return null;
   const ids = new Set();
@@ -1863,39 +1874,128 @@ function assetIdsForActiveGroup(data) {
   return ids;
 }
 
+function setActiveAssetPickerGroup(groupId) {
+  assetPickerState.activeGroupId = groupId;
+  const allBtn = $('asset-picker-group-all');
+  if (allBtn) allBtn.classList.toggle('active', groupId === 'all');
+  document.querySelectorAll('.asset-picker-group-row').forEach((row) => {
+    row.classList.toggle('active', row.dataset.groupId === groupId);
+  });
+  closeAssetPickerMoveMenu();
+  void loadAssetPickerGrid(true);
+}
+
 function renderAssetPickerGroups() {
   const list = $('asset-picker-group-list');
   if (!list) return;
   const data = loadAssetGroupsData();
   list.innerHTML = '';
   for (const g of data.groups) {
+    const row = document.createElement('div');
+    row.className = 'asset-picker-group-row';
+    row.dataset.groupId = g.id;
+    if (assetPickerState.activeGroupId === g.id) row.classList.add('active');
+
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'asset-picker-group';
-    btn.dataset.groupId = g.id;
-    const count = Object.values(data.mapping).filter((gid) => gid === g.id).length;
-    btn.textContent = (g.name || '未命名') + ' ' + count;
-    if (assetPickerState.activeGroupId === g.id) btn.classList.add('active');
-    btn.addEventListener('click', () => {
-      assetPickerState.activeGroupId = g.id;
-      document.querySelectorAll('.asset-picker-group').forEach((el) => {
-        el.classList.toggle('active', el.dataset.groupId === g.id);
-      });
-      updateAssetPickerGroupToolbar();
-      void loadAssetPickerGrid(true);
+    const count = countAssetsInGroup(data, g.id);
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = g.name || '未命名';
+    const countSpan = document.createElement('span');
+    countSpan.className = 'asset-picker-group-count';
+    countSpan.textContent = String(count);
+    btn.appendChild(nameSpan);
+    btn.appendChild(countSpan);
+    btn.addEventListener('click', () => setActiveAssetPickerGroup(g.id));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'asset-picker-group-del';
+    del.title = '删除分组';
+    del.setAttribute('aria-label', '删除分组');
+    del.textContent = '🗑';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteAssetPickerGroup(g.id, g.name);
     });
-    list.appendChild(btn);
+
+    row.appendChild(btn);
+    row.appendChild(del);
+    list.appendChild(row);
   }
   const allBtn = $('asset-picker-group-all');
   if (allBtn) allBtn.classList.toggle('active', assetPickerState.activeGroupId === 'all');
-  updateAssetPickerGroupToolbar();
+  const gc = $('asset-picker-group-count');
+  if (gc) gc.textContent = String(assetPickerState.totalCount);
 }
 
-function updateAssetPickerGroupToolbar() {
-  const addBtn = $('asset-picker-add-to-group');
-  if (!addBtn) return;
-  const show = assetPickerState.activeGroupId !== 'all';
-  addBtn.hidden = !show;
+function updateAssetPickerToolbar() {
+  const moveBtn = $('asset-picker-move-to-group');
+  if (moveBtn) moveBtn.hidden = assetPickerState.selected.size === 0;
+}
+
+function closeAssetPickerMoveMenu() {
+  const menu = $('asset-picker-move-menu');
+  if (menu) menu.hidden = true;
+}
+
+function openAssetPickerMoveMenu() {
+  const menu = $('asset-picker-move-menu');
+  const moveBtn = $('asset-picker-move-to-group');
+  if (!menu || !moveBtn) return;
+  const data = loadAssetGroupsData();
+  if (!data.groups.length) {
+    showGenpicToast('请先创建分组');
+    return;
+  }
+  if (!assetPickerState.selected.size) {
+    showGenpicToast('请先选择要移动的图片');
+    return;
+  }
+  menu.innerHTML = '';
+  for (const g of data.groups) {
+    const opt = document.createElement('button');
+    opt.type = 'button';
+    opt.role = 'menuitem';
+    opt.textContent = g.name || '未命名';
+    opt.addEventListener('click', () => {
+      moveSelectedAssetsToGroup(g.id, g.name);
+      closeAssetPickerMoveMenu();
+    });
+    menu.appendChild(opt);
+  }
+  menu.hidden = false;
+}
+
+function moveSelectedAssetsToGroup(groupId, groupName) {
+  if (!assetPickerState.selected.size) return;
+  const data = loadAssetGroupsData();
+  for (const id of assetPickerState.selected.keys()) {
+    data.mapping[id] = groupId;
+  }
+  saveAssetGroupsData(data);
+  assetPickerState.selected.clear();
+  renderAssetPickerGroups();
+  void loadAssetPickerGrid(true);
+  showGenpicToast('已移动到「' + (groupName || '分组') + '」');
+  updateAssetPickerSelectionUI();
+}
+
+function deleteAssetPickerGroup(groupId, groupName) {
+  const label = groupName || '该分组';
+  if (!window.confirm('确定删除分组「' + label + '」？\n图片将保留在资源库中，仅取消分组归类。')) return;
+  const data = loadAssetGroupsData();
+  data.groups = data.groups.filter((g) => g.id !== groupId);
+  for (const [assetId, gid] of Object.entries(data.mapping)) {
+    if (gid === groupId) delete data.mapping[assetId];
+  }
+  saveAssetGroupsData(data);
+  if (assetPickerState.activeGroupId === groupId) assetPickerState.activeGroupId = 'all';
+  assetPickerState.selected.clear();
+  renderAssetPickerGroups();
+  void loadAssetPickerGrid(true);
+  showGenpicToast('已删除分组');
 }
 
 function createAssetPickerGroup() {
@@ -1911,27 +2011,9 @@ function createAssetPickerGroup() {
   const id = 'g_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
   data.groups.push({ id, name: trimmed });
   saveAssetGroupsData(data);
-  assetPickerState.activeGroupId = id;
-  renderAssetPickerGroups();
-  void loadAssetPickerGrid(true);
   showGenpicToast('已创建分组「' + trimmed + '」');
-}
-
-function addSelectedAssetsToActiveGroup() {
-  if (assetPickerState.activeGroupId === 'all') return;
-  if (!assetPickerState.selected.size) {
-    showGenpicToast('请先选择要加入分组的图片');
-    return;
-  }
-  const data = loadAssetGroupsData();
-  for (const id of assetPickerState.selected.keys()) {
-    data.mapping[id] = assetPickerState.activeGroupId;
-  }
-  saveAssetGroupsData(data);
-  assetPickerState.selected.clear();
+  setActiveAssetPickerGroup(id);
   renderAssetPickerGroups();
-  void loadAssetPickerGrid(true);
-  showGenpicToast('已加入当前分组');
 }
 
 function assetPickerSlotsLeft() {
@@ -1944,10 +2026,13 @@ function updateAssetPickerSelectionUI() {
   if (label) label.textContent = '已选择 ' + n + ' 张图片';
   const left = assetPickerSlotsLeft();
   const confirm = $('asset-picker-confirm');
-  if (confirm) confirm.disabled = n === 0 || n > left;
+  if (confirm) {
+    confirm.disabled = n === 0 || n > left;
+    confirm.textContent = n > 0 ? '确定 (' + n + ')' : '确定';
+  }
   const gc = $('asset-picker-group-count');
-  if (gc) gc.textContent = String(assetPickerState.items.length);
-  updateAssetPickerGroupToolbar();
+  if (gc) gc.textContent = String(assetPickerState.totalCount);
+  updateAssetPickerToolbar();
 }
 
 function openAssetPickerModal() {
@@ -2004,13 +2089,15 @@ async function loadAssetPickerGrid(reset) {
       if (empty) empty.hidden = false;
       return;
     }
-    let rows = Array.isArray(data.data) ? data.data : [];
+    const rows = Array.isArray(data.data) ? data.data : [];
+    assetPickerState.allItems = rows;
+    assetPickerState.totalCount = rows.length;
     const groupData = loadAssetGroupsData();
     const inGroup = assetIdsForActiveGroup(groupData);
-    if (inGroup) rows = rows.filter((item) => inGroup.has(item.id));
-    assetPickerState.items = rows;
+    const visible = inGroup ? rows.filter((item) => inGroup.has(item.id)) : rows;
+    assetPickerState.items = visible;
     grid.innerHTML = '';
-    if (!rows.length) {
+    if (!visible.length) {
       if (empty) {
         empty.hidden = false;
         const t = $('asset-picker-empty-text');
@@ -2021,7 +2108,7 @@ async function loadAssetPickerGrid(reset) {
       }
     } else {
       if (empty) empty.hidden = true;
-      for (const item of rows) {
+      for (const item of visible) {
         const card = document.createElement('button');
         card.type = 'button';
         card.className = 'asset-picker-card';
@@ -2042,11 +2129,6 @@ async function loadAssetPickerGrid(reset) {
             assetPickerState.selected.delete(item.id);
             card.classList.remove('selected');
           } else {
-            const left = assetPickerSlotsLeft();
-            if (assetPickerState.selected.size >= left) {
-              showGenpicToast('最多还能选 ' + left + ' 张（参考图上限 6 张）');
-              return;
-            }
             assetPickerState.selected.set(item.id, item);
             card.classList.add('selected');
           }
@@ -2056,6 +2138,7 @@ async function loadAssetPickerGrid(reset) {
       }
     }
     updateAssetPickerSelectionUI();
+    renderAssetPickerGroups();
   } catch (e) {
     if (msg) {
       msg.textContent = e.message || String(e);
@@ -2081,7 +2164,12 @@ async function fetchAssetContentAsDataUrl(assetId) {
 
 async function confirmAssetPickerSelection() {
   const left = assetPickerSlotsLeft();
-  const picks = [...assetPickerState.selected.values()].slice(0, left);
+  const n = assetPickerState.selected.size;
+  if (n > left) {
+    showGenpicToast('参考图最多 ' + left + ' 张，请减少选择');
+    return;
+  }
+  const picks = [...assetPickerState.selected.values()];
   if (!picks.length) return;
   const confirmBtn = $('asset-picker-confirm');
   const msg = $('asset-picker-msg');
@@ -2217,16 +2305,20 @@ function initAssetPickerModal() {
       void loadAssetPickerGrid(true);
     });
   });
-  $('asset-picker-group-all')?.addEventListener('click', () => {
-    assetPickerState.activeGroupId = 'all';
-    document.querySelectorAll('.asset-picker-group').forEach((el) => {
-      el.classList.toggle('active', el.dataset.groupId === 'all');
-    });
-    updateAssetPickerGroupToolbar();
-    void loadAssetPickerGrid(true);
-  });
+  $('asset-picker-group-all')?.addEventListener('click', () => setActiveAssetPickerGroup('all'));
   $('asset-picker-group-add')?.addEventListener('click', () => createAssetPickerGroup());
-  $('asset-picker-add-to-group')?.addEventListener('click', () => addSelectedAssetsToActiveGroup());
+  $('asset-picker-move-to-group')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = $('asset-picker-move-menu');
+    if (menu && !menu.hidden) closeAssetPickerMoveMenu();
+    else openAssetPickerMoveMenu();
+  });
+  document.addEventListener('click', (e) => {
+    const menu = $('asset-picker-move-menu');
+    if (!menu || menu.hidden) return;
+    if (e.target.closest('#asset-picker-move-menu, #asset-picker-move-to-group')) return;
+    closeAssetPickerMoveMenu();
+  });
   $('asset-picker-upload')?.addEventListener('click', () => $('asset-picker-input')?.click());
   $('asset-picker-input')?.addEventListener('change', async (e) => {
     const files = e.target.files;

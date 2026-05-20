@@ -364,8 +364,11 @@
         </div>
         <div class="asset-picker-toolbar">
           <span id="asset-picker-selected-label">已选择 0 张图片</span>
-          <button type="button" class="asset-picker-add-group" id="asset-picker-add-to-group" hidden>加入当前分组</button>
-          <button type="button" class="asset-picker-refresh" id="asset-picker-refresh">↻ 刷新</button>
+          <div class="asset-picker-toolbar-actions">
+            <button type="button" class="asset-picker-move-group" id="asset-picker-move-to-group" hidden>移动到分组</button>
+            <div id="asset-picker-move-menu" class="asset-picker-move-menu" hidden role="menu" aria-label="选择目标分组"></div>
+            <button type="button" class="asset-picker-refresh" id="asset-picker-refresh">↻ 刷新</button>
+          </div>
         </div>
         <div id="asset-picker-grid" class="asset-picker-grid" role="list"></div>
         <div id="asset-picker-empty" class="asset-picker-empty" hidden>
