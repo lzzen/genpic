@@ -717,7 +717,7 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 }
 .auth-dropdown[hidden] { display: none !important; }
 .auth-dropdown-email { font-size: .72rem; color: var(--muted); padding: 6px 8px; word-break: break-all; }
-.auth-dropdown-storage { font-size: .72rem; color: var(--muted); padding: 0 8px 6px; }
+.auth-dropdown-storage { font-size: .72rem; color: var(--muted); padding: 0 8px 6px; cursor: help; }
 .auth-dropdown button {
   display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; background: none;
   font-size: .82rem; cursor: pointer; border-radius: 6px; color: var(--text); font-family: var(--font);
@@ -761,11 +761,17 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 18px; border-bottom: 1px solid var(--border);
 }
+.asset-picker-header-main { min-width: 0; flex: 1; }
 .asset-picker-title { margin: 0; font-size: 1rem; font-weight: 700; }
-.asset-picker-header-actions { display: flex; align-items: center; gap: 8px; }
+.asset-picker-storage { margin: 4px 0 0; font-size: .74rem; color: var(--muted); font-weight: 400; cursor: help; }
+.asset-picker-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .asset-picker-upload-btn {
-  padding: 7px 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff;
-  font-size: .82rem; cursor: pointer; font-family: var(--font);
+  display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff; font-size: .82rem; cursor: pointer; font-family: var(--font);
+}
+.asset-picker-upload-btn.is-disabled { opacity: .55; pointer-events: none; cursor: not-allowed; }
+.asset-picker-file-input {
+  position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; overflow: hidden;
 }
 .asset-picker-close {
   width: 32px; height: 32px; border: none; background: transparent; font-size: 1.4rem;
@@ -775,22 +781,30 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 .asset-picker-body { display: flex; flex: 1; min-height: 0; }
 .asset-picker-sidebar {
   width: 160px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 14px 12px;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 4px;
 }
-.asset-picker-sidebar-title { font-size: .78rem; color: var(--muted); margin-bottom: 4px; }
-.asset-picker-group-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.asset-picker-sidebar-title { font-size: .78rem; color: var(--muted); margin-bottom: 2px; }
+.asset-picker-group-list { display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow-y: auto; }
 .asset-picker-group-row {
-  display: flex; align-items: center; gap: 4px; border-radius: 8px;
+  display: flex; align-items: center; gap: 2px; border-radius: 6px;
 }
 .asset-picker-group-row.active .asset-picker-group { background: rgba(99,102,241,.12); border-color: rgba(99,102,241,.35); color: var(--accent); font-weight: 600; }
 .asset-picker-group {
-  flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent;
+  text-align: left; padding: 5px 8px; border-radius: 6px; border: 1px solid transparent;
   background: transparent; cursor: pointer; font-size: .82rem; font-family: var(--font); color: var(--text);
+  line-height: 1.35;
 }
-.asset-picker-group-count { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.asset-picker-group-row .asset-picker-group {
+  flex: 1; min-width: 0;
+}
 .asset-picker-group-del {
-  flex-shrink: 0; width: 28px; height: 28px; border: none; border-radius: 6px;
-  background: transparent; color: var(--muted); cursor: pointer; font-size: .9rem; line-height: 1;
+  flex-shrink: 0; width: 0; height: 24px; padding: 0; border: none; border-radius: 4px;
+  background: transparent; color: var(--muted); cursor: pointer; font-size: .85rem; line-height: 1;
+  opacity: 0; overflow: hidden; transition: opacity .15s, width .15s;
+}
+.asset-picker-group-row:hover .asset-picker-group-del,
+.asset-picker-group-row:focus-within .asset-picker-group-del {
+  width: 24px; opacity: 1;
 }
 .asset-picker-group-del:hover { background: rgba(239,68,68,.1); color: #ef4444; }
 .asset-picker-group-add {
@@ -814,7 +828,10 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
   font-size: .82rem; font-family: var(--font); cursor: pointer; color: var(--text);
 }
 .asset-picker-move-menu button:hover { background: rgba(99,102,241,.08); color: var(--accent); }
-.asset-picker-main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px 16px 8px; }
+.asset-picker-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 16px 8px; }
+.asset-picker-content-area {
+  flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;
+}
 .asset-picker-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
 .asset-picker-tab {
   padding: 8px 2px; border: none; background: none; cursor: pointer; font-size: .88rem;
@@ -830,8 +847,9 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
   cursor: pointer; font-size: .78rem; font-family: var(--font); color: var(--text);
 }
 .asset-picker-grid {
-  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 10px; align-content: start; min-height: 200px;
+  flex: 1; min-height: 0; overflow-y: auto; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px; align-content: start;
 }
 .asset-picker-card {
   position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; cursor: pointer;
@@ -845,8 +863,9 @@ input[type=range] { padding: 0; height: 4px; accent-color: var(--accent); }
 }
 .asset-picker-card.selected .asset-picker-card-check { display: flex; }
 .asset-picker-empty {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  color: var(--muted); text-align: center; padding: 32px 16px; min-height: 200px;
+  position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; color: var(--muted); text-align: center;
+  padding: 16px; pointer-events: none;
 }
 .asset-picker-empty[hidden] { display: none !important; }
 .asset-picker-empty-icon { font-size: 2.5rem; opacity: .4; margin-bottom: 8px; }

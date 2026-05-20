@@ -342,9 +342,12 @@
 <div id="asset-picker-modal" class="modal-backdrop asset-picker-backdrop" hidden>
   <div class="asset-picker-panel" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
     <header class="asset-picker-header">
-      <h2 class="asset-picker-title" id="asset-picker-title">选择图片</h2>
+      <div class="asset-picker-header-main">
+        <h2 class="asset-picker-title" id="asset-picker-title">选择图片</h2>
+        <p id="asset-picker-storage" class="asset-picker-storage" hidden></p>
+      </div>
       <div class="asset-picker-header-actions">
-        <button type="button" class="asset-picker-upload-btn" id="asset-picker-upload">↑ 上传图片</button>
+        <label for="asset-picker-input" class="asset-picker-upload-btn" id="asset-picker-upload">↑ 上传图片</label>
         <button type="button" class="asset-picker-close" id="asset-picker-close" aria-label="关闭">×</button>
       </div>
     </header>
@@ -352,7 +355,7 @@
       <aside class="asset-picker-sidebar">
         <div class="asset-picker-sidebar-title">图片分组</div>
         <button type="button" class="asset-picker-group active" id="asset-picker-group-all" data-group-id="all">
-          全部 <span id="asset-picker-group-count">0</span>
+          全部<span id="asset-picker-group-count">(0)</span>
         </button>
         <div id="asset-picker-group-list" class="asset-picker-group-list"></div>
         <button type="button" class="asset-picker-group-add" id="asset-picker-group-add">+ 创建分组</button>
@@ -370,11 +373,13 @@
             <button type="button" class="asset-picker-refresh" id="asset-picker-refresh">↻ 刷新</button>
           </div>
         </div>
-        <div id="asset-picker-grid" class="asset-picker-grid" role="list"></div>
-        <div id="asset-picker-empty" class="asset-picker-empty" hidden>
-          <div class="asset-picker-empty-icon" aria-hidden="true">🖼</div>
-          <p id="asset-picker-empty-text">暂无图片</p>
-          <p class="asset-picker-empty-hint">请先上传图片，或完成一次 AI 生图</p>
+        <div class="asset-picker-content-area">
+          <div id="asset-picker-grid" class="asset-picker-grid" role="list"></div>
+          <div id="asset-picker-empty" class="asset-picker-empty" hidden>
+            <div class="asset-picker-empty-icon" aria-hidden="true">🖼</div>
+            <p id="asset-picker-empty-text">暂无图片</p>
+            <p class="asset-picker-empty-hint">请先上传图片，或完成一次 AI 生图</p>
+          </div>
         </div>
         <p id="asset-picker-msg" class="asset-picker-msg" hidden></p>
       </div>
@@ -384,8 +389,8 @@
       <button type="button" class="primary" id="asset-picker-confirm">确定</button>
     </footer>
   </div>
-  <input type="file" id="asset-picker-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
 </div>
+<input type="file" id="asset-picker-input" class="asset-picker-file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" />
 
 <div id="privacy-modal" class="modal-backdrop" hidden>
   <div class="modal-panel" role="dialog" aria-modal="true">

@@ -862,12 +862,7 @@ function updateAuthChrome() {
     btn.setAttribute('aria-label', '登录');
   }
   if (em) em.textContent = authUser && authUser.email ? authUser.email : '';
-  const stEl = $('auth-dropdown-storage');
-  if (stEl) {
-    const line = authUser && authUser.storage ? formatStorageQuotaLine(authUser.storage) : '';
-    stEl.textContent = line;
-    stEl.hidden = !line;
-  }
+  applyStorageQuotaElement($('auth-dropdown-storage'), authUser?.storage);
 }
 
 function closeAuthDropdown() {
@@ -1753,6 +1748,8 @@ function isXiangyunModel() {
   return m.startsWith('xiangyun/');
 }
 
+const STORAGE_QUOTA_HINT = '已使用 / 总额度';
+
 function formatStorageQuotaLine(st) {
   if (!st || typeof st.used_bytes !== 'number' || typeof st.quota_bytes !== 'number') return '';
   const quota = st.quota_bytes;
@@ -1765,6 +1762,40 @@ function formatStorageQuotaLine(st) {
     return n + ' B';
   };
   return '存储：' + fmt(used) + ' / ' + fmt(quota);
+}
+
+function applyStorageQuotaElement(el, st) {
+  if (!el) return;
+  const line = st ? formatStorageQuotaLine(st) : '';
+  el.textContent = line;
+  el.hidden = !line;
+  if (line) {
+    el.title = STORAGE_QUOTA_HINT;
+  } else {
+    el.removeAttribute('title');
+  }
+}
+
+function formatAssetPickerGroupLabel(name, count) {
+  return String(name || '未命名') + '(' + count + ')';
+}
+
+function isImageUploadFile(file) {
+  if (!file) return false;
+  if (file.type && file.type.startsWith('image/')) return true;
+  return /\.(jpe?g|png|gif|webp)$/i.test(file.name || '');
+}
+
+function updateAssetPickerStorageLine() {
+  applyStorageQuotaElement($('asset-picker-storage'), authUser?.storage);
+}
+
+function setAssetPickerUploadBusy(busy) {
+  const uploadBtn = $('asset-picker-upload');
+  if (!uploadBtn) return;
+  uploadBtn.classList.toggle('is-disabled', !!busy);
+  if (busy) uploadBtn.setAttribute('aria-disabled', 'true');
+  else uploadBtn.removeAttribute('aria-disabled');
 }
 
 function parseDataURL(dataUrl) {
@@ -1900,13 +1931,7 @@ function renderAssetPickerGroups() {
     btn.type = 'button';
     btn.className = 'asset-picker-group';
     const count = countAssetsInGroup(data, g.id);
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = g.name || '未命名';
-    const countSpan = document.createElement('span');
-    countSpan.className = 'asset-picker-group-count';
-    countSpan.textContent = String(count);
-    btn.appendChild(nameSpan);
-    btn.appendChild(countSpan);
+    btn.textContent = formatAssetPickerGroupLabel(g.name, count);
     btn.addEventListener('click', () => setActiveAssetPickerGroup(g.id));
 
     const del = document.createElement('button');
@@ -1927,7 +1952,7 @@ function renderAssetPickerGroups() {
   const allBtn = $('asset-picker-group-all');
   if (allBtn) allBtn.classList.toggle('active', assetPickerState.activeGroupId === 'all');
   const gc = $('asset-picker-group-count');
-  if (gc) gc.textContent = String(assetPickerState.totalCount);
+  if (gc) gc.textContent = '(' + assetPickerState.totalCount + ')';
 }
 
 function updateAssetPickerToolbar() {
@@ -2031,21 +2056,23 @@ function updateAssetPickerSelectionUI() {
     confirm.textContent = n > 0 ? '确定 (' + n + ')' : '确定';
   }
   const gc = $('asset-picker-group-count');
-  if (gc) gc.textContent = String(assetPickerState.totalCount);
+  if (gc) gc.textContent = '(' + assetPickerState.totalCount + ')';
   updateAssetPickerToolbar();
 }
 
-function openAssetPickerModal() {
+async function openAssetPickerModal() {
   if (!canUseAssetLibrary()) {
     $('ref-input')?.click();
     return;
   }
+  await refreshAuthUser();
   assetPickerState.selected.clear();
   assetPickerState.tab = 'upload';
   assetPickerState.activeGroupId = 'all';
   const modal = $('asset-picker-modal');
   if (!modal) return;
   modal.hidden = false;
+  updateAssetPickerStorageLine();
   document.querySelectorAll('.asset-picker-tab').forEach((btn) => {
     const on = btn.dataset.tab === 'upload';
     btn.classList.toggle('active', on);
@@ -2213,13 +2240,16 @@ async function confirmAssetPickerSelection() {
 }
 
 async function uploadFilesToAssetLibrary(files) {
-  if (!canUseAssetLibrary() || !files?.length) return;
+  if (!files?.length) return;
+  if (!canUseAssetLibrary()) {
+    showGenpicToast('请先登录并启用对象存储后再上传');
+    return;
+  }
   const msg = $('asset-picker-msg');
-  const uploadBtn = $('asset-picker-upload');
   const refs = [];
   let skipped = 0;
   for (const file of files) {
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadFile(file)) {
       skipped += 1;
       continue;
     }
@@ -2242,7 +2272,7 @@ async function uploadFilesToAssetLibrary(files) {
     showGenpicToast(skipped ? '没有可上传的图片文件' : '请选择图片文件');
     return;
   }
-  if (uploadBtn) uploadBtn.disabled = true;
+  setAssetPickerUploadBusy(true);
   if (msg) {
     msg.textContent = '上传中…';
     msg.hidden = false;
@@ -2279,9 +2309,11 @@ async function uploadFilesToAssetLibrary(files) {
       saveAssetGroupsData(gdata);
       renderAssetPickerGroups();
     }
+    await refreshAuthUser();
+    updateAssetPickerStorageLine();
     await loadAssetPickerGrid(true);
   } finally {
-    if (uploadBtn) uploadBtn.disabled = false;
+    setAssetPickerUploadBusy(false);
   }
 }
 
@@ -2319,8 +2351,8 @@ function initAssetPickerModal() {
     if (e.target.closest('#asset-picker-move-menu, #asset-picker-move-to-group')) return;
     closeAssetPickerMoveMenu();
   });
-  $('asset-picker-upload')?.addEventListener('click', () => $('asset-picker-input')?.click());
-  $('asset-picker-input')?.addEventListener('change', async (e) => {
+  const assetInput = $('asset-picker-input');
+  assetInput?.addEventListener('change', async (e) => {
     const files = e.target.files;
     e.target.value = '';
     if (!files?.length) return;
